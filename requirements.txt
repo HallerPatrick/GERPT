@@ -1,0 +1,8 @@
+torch
+deepspeed
+pytorch-lightning
+flair
+nltk
+colorama
+datasets
+wandb
