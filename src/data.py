@@ -1,90 +1,17 @@
+import json
 import os
 import sys
-import json
-
 from collections import Counter, defaultdict
 from operator import itemgetter
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-from datasets.dataset_dict import DatasetDict
 
 import torch
-from colorama import init, Fore
-from torch import Tensor
-
+from colorama import Fore, init
+from datasets.dataset_dict import DatasetDict
 from nltk import ngrams
+from torch import Tensor
 from tqdm import tqdm
-
-class Dictionary:
-    def __init__(self):
-        self.word2idx = {}
-        self.idx2word = []
-        self._marker_tokens = []
-        self.ngram_indexes = defaultdict(list)
-
-    def add_word(self, word):
-        if word.startswith("<") and word.endswith(">"):
-            if word not in self._marker_tokens:
-                self._marker_tokens.append(word)
-
-        if word not in self.word2idx:
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-        return self.word2idx[word]
-
-    def add_item(self, word):
-        return self.add_word(word)
-
-    def get_marker_tokens(self) -> List[str]:
-        return self._marker_tokens
-
-    def __len__(self):
-        return len(self.idx2word)
-
-    def get_idx_for_item(self, item: str) -> int:
-        """
-        returns the ID of the string, otherwise 0
-        :param item: string for which ID is requested
-        :return: ID of string, otherwise 0
-        """
-        item = item.encode("utf-8")
-        if item in self.word2idx.keys():
-            return self.word2idx[item]
-        else:
-            return 0
-
-    def get_idx_for_items(self, items: List[str]) -> List[int]:
-        """
-        returns the IDs for each item of the list of string, otherwise 0 if not found
-        :param items: List of string for which IDs are requested
-        :return: List of ID of strings
-        """
-        if not hasattr(self, "item2idx_not_encoded"):
-            d = dict([(key, value) for key, value in self.word2idx.items()])
-            self.item2idx_not_encoded = defaultdict(int, d)
-
-        if not items:
-            return []
-        results = itemgetter(*items)(self.item2idx_not_encoded)
-        if isinstance(results, int):
-            return [results]
-        return list(results)
-
-    def get_items(self) -> List[str]:
-        items = []
-        for item in self.idx2word:
-            items.append(item)
-        return items
-
-    def get_item_for_index(self, idx):
-        return self.idx2word[idx]
-
-    def save(self, savefile):
-        import pickle
-
-        with open(savefile, "wb") as f:
-            mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
-            pickle.dump(mappings, f)
 
 
 class Corpus:
@@ -401,6 +328,7 @@ def prep_enwiki8():
     import os
     import sys
     import zipfile
+
     import requests
 
     if os.path.exists("data/enwik8/train.txt"):

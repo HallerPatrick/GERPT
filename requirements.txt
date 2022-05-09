@@ -6,3 +6,6 @@ nltk
 colorama
 datasets
 wandb
+
+black
+isort

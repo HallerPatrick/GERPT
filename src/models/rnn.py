@@ -1,15 +1,14 @@
 import math
-
 from typing import List
 
 import flair
 import pytorch_lightning as pl
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from src.data import tokenize_batch
+
 from .ngme import NGramsEmbedding
 
 
@@ -74,7 +73,17 @@ class RNNModel(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
-        pass
+
+        if batch_idx == 3:
+            exit()
+        
+        # TODO: Continue
+        print(batch_idx)
+        print(batch["tensor"])
+
+        
+
+
 
     def init_weights(self):
         initrange = 0.1
@@ -237,7 +246,8 @@ class RNNModel(pl.LightningModule):
 
                 # [ngram, 1, sequence]
                 n_gram_char_indices = tokenize_batch(
-                    self.dictionary, chars, self.ngrams, otf=True).unsqueeze(dim=1)
+                    self.dictionary, chars, self.ngrams, otf=True
+                ).unsqueeze(dim=1)
 
                 sequences_as_char_indices.append(n_gram_char_indices)
 
@@ -397,7 +407,7 @@ class TransformerModel(nn.Module):
             "dropout": self.dropout,
             "ngrams": self.ngrams,
             "unk_t": self.unk_t,
-            "nhead": self.nhead
+            "nhead": self.nhead,
         }
 
         return model_state
@@ -419,7 +429,7 @@ class TransformerModel(nn.Module):
                 is_forward_lm=d["is_forward_lm"],
                 document_delimiter=d["document_delimiter"],
                 dropout=d["dropout"],
-                nhead=d["nhead"]
+                nhead=d["nhead"],
             )
 
             language_model.load_state_dict(d["state_dict"])
@@ -449,7 +459,7 @@ class TransformerModel(nn.Module):
             "dropout": self.dropout,
             "ngrams": self.ngrams,
             "unk_t": self.unk_t,
-            "nhead": self.nhead
+            "nhead": self.nhead,
         }
 
         torch.save(model_state, str(file), pickle_protocol=4)

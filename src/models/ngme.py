@@ -3,7 +3,6 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
-
 from torch import Tensor, nn
 
 
@@ -42,36 +41,6 @@ def soft_n_hot(input, num_classes):
     return ret
 
 
-class GramsEmbedding(nn.Module):
-    """N-Hot encoder"""
-
-    def __init__(
-        self,
-        num_embeddings: int,
-        embedding_dim: int,
-        padding_idx: Optional[int] = None,
-        max_norm: Optional[float] = None,
-        norm_type: float = 2,
-        scale_grad_by_freq: bool = False,
-        sparse: bool = False,
-        _weight: Optional[Tensor] = None,
-        device=None,
-        dtype=None,
-    ) -> None:
-
-        super().__init__()
-
-        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
-        self.num_classes = num_embeddings
-
-    def forward(self, input: torch.Tensor, **kwargs):
-        # TODO: linear bias?
-        return self._forward(n_hot(input, self.num_classes, **kwargs))
-
-    def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
-        return F.linear(n_hot, self.embedding.weight.t())
-
-
 class NGramsEmbedding(nn.Embedding):
     """N-Hot encoder"""
 
@@ -105,7 +74,6 @@ class NGramsEmbedding(nn.Embedding):
         self.num_classes = num_embeddings
 
     def forward(self, input: torch.Tensor, **kwargs):
-        # TODO: linear bias?
         return self._forward(n_hot(input, self.num_classes, **kwargs))
 
     def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
