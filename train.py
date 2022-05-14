@@ -1,4 +1,7 @@
 from argparse import Namespace
+
+import torch
+
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import Trainer
 
@@ -14,19 +17,24 @@ args = {
     "max_dict_size": 0,
     "unk_threshold": 5,
     # "data": "wikitext/wikitext-103-raw-v1",
-    "data": "wikitext/wikitext-2-raw-v1",
-    # "data": "bookcorpus",
+    # "data": "wikitext/wikitext-2-raw-v1",
+    "data": "text/cash",
     "fallback": True,
     "nlayers": 2,
-    "hidden_size": 124,
+    "hidden_size": 200,
     "embedding_size": 124,
+    "batch_size": 20,
+    "bptt": 40,
+    "epochs": 10,
 }
 
 args = Namespace(**args)
 
-# wandb_logger = WandbLogger(project="gerpt")
+wandb_logger = WandbLogger(project="gerpt")
+wandb_logger.experiment.config.update(vars(args))
 
 tokenized_dataset, dictionary = load_tokenized_dataset(
+    args.bptt,
     args.ngram,
     args.max_dict_size,
     args.unk_threshold,
@@ -34,7 +42,20 @@ tokenized_dataset, dictionary = load_tokenized_dataset(
     *args.data.split("/")
 )
 
-dataloader = DataLoader(tokenized_dataset["train"])
+
+def batch_collate(batch):
+    # [ngram, seq_len, batch_size]
+    source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
+    target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
+    return dict(source=source, target=target)
+
+
+dataloader = DataLoader(
+    tokenized_dataset["train"],
+    batch_size=args.batch_size,
+    collate_fn=batch_collate,
+    drop_last=True,
+)
 
 model = RNNModel(
     dictionary,
@@ -45,5 +66,5 @@ model = RNNModel(
     None,
     args.embedding_size,
 )
-trainer = Trainer()
+trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs)
 trainer.fit(model, dataloader)

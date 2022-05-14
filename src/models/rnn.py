@@ -8,9 +8,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.data import tokenize_batch
+from src.loss import CrossEntropyLossSoft
 
-from .ngme import NGramsEmbedding
+from .ngme import NGramsEmbedding, soft_n_hot
 
+def repackage_hidden(h):
+    """Wraps hidden states in new Tensors, to detach them from their history."""
+
+    if isinstance(h, torch.Tensor):
+        return h.detach()
+    else:
+        return tuple(repackage_hidden(v) for v in h)
 
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -44,6 +52,8 @@ class RNNModel(pl.LightningModule):
         self.embedding_size = embedding_size
         self.dropout = dropout
 
+        self.criterion = CrossEntropyLossSoft()
+
         if nlayers == 1:
             self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers)
         else:
@@ -58,8 +68,10 @@ class RNNModel(pl.LightningModule):
         else:
             self.proj = None
             self.decoder = nn.Linear(hidden_size, len(dictionary))
-
+        self.save_hyperparameters()     
         self.init_weights()
+
+        self.hidden = None
 
     @staticmethod
     def initialize(matrix):
@@ -73,17 +85,47 @@ class RNNModel(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
+        batch_size = batch["source"].size()[-1]
+        if not self.hidden:
+            self.hidden = self.init_hidden(batch_size)
 
-        if batch_idx == 3:
-            exit()
+        self.hidden = repackage_hidden(self.hidden)
+
+        decoded, self.hidden = self.forward(batch["source"], self.hidden)
+        target = soft_n_hot(batch["target"], len(self.dictionary))
+        target = target.view(-1, len(self.dictionary))
+        loss = self.criterion(decoded, target)
+        self.log("train/loss": loss})
         
-        # TODO: Continue
-        print(batch_idx)
-        print(batch["tensor"])
+        # if batch_idx == 2:
+        #     exit()
+        return loss
 
+    def validation_step(self, batch, batch_idx):
+        batch_size = batch["source"].size()[-1]
+        if not self.hidden:
+            self.hidden = self.init_hidden(batch_size)
+
+        self.hidden = repackage_hidden(self.hidden)
+
+        decoded, self.hidden = self.forward(batch["source"], self.hidden)
+        target = soft_n_hot(batch["target"], len(self.dictionary))
+        target = target.view(-1, len(self.dictionary))
+        loss = self.criterion(decoded, target)
+        self.log("valid/loss": loss})
         
+    def test_step(self, batch, batch_idx):
+        batch_size = batch["source"].size()[-1]
+        if not self.hidden:
+            self.hidden = self.init_hidden(batch_size)
 
+        self.hidden = repackage_hidden(self.hidden)
 
+        decoded, self.hidden = self.forward(batch["source"], self.hidden)
+        target = soft_n_hot(batch["target"], len(self.dictionary))
+        target = target.view(-1, len(self.dictionary))
+        loss = self.criterion(decoded, target)
+        self.log("test/loss": loss})
 
     def init_weights(self):
         initrange = 0.1

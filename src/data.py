@@ -13,171 +13,13 @@ from nltk import ngrams
 from torch import Tensor
 from tqdm import tqdm
 
-
-class Corpus:
-
-    valid: Optional[Tensor]
-    test: Optional[Tensor]
-    train: Optional[Tensor]
-
-    def __init__(
-        self, path, ngrams, unk_threshold, max_dict_size, unk_fallback
-    ) -> None:
-        self.unk_threshold = unk_threshold
-        self.ngrams = ngrams
-        self.max_dict_size = max_dict_size
-        self.unk_fallback = unk_fallback
-
-        # Keep track of all indexes for each ngram, this is used
-        # for the generating task
-        self.ngram_indexes = defaultdict(list)
-
-        self.dictionary = Dictionary()
-
-        try:
-            self.load_dataset_from_path(path)
-        except FileNotFoundError as e:
-            print(e)
-            print("Try loading from huggingface")
-            self.load_dataset_from_huggingface(path)
-
-    def load_dataset_from_path(self, path: Union[str, Path]) -> None:
-
-        if isinstance(path, str):
-            path = Path(path)
-
-        if not path.is_dir():
-            raise FileNotFoundError(f"Directory: '{path}' cannot be found")
-
-        train_files = ["train", "test", "valid"]
-
-        train_to_lines: Dict[str, List[str]] = dict.fromkeys(train_files, [])
-
-        # Setting up dictionary
-        for train_split in train_files:
-
-            # Check if paths exists
-            train_file = Path(path) / (train_split + ".txt")
-            assert train_file.is_file
-
-            with open(str(train_file), "r") as f:
-                lines = f.readlines()
-
-            train_to_lines[train_split] = lines
-
-        self.load_dataset(train_to_lines)
-
-    def load_dataset_from_huggingface(self, path):
-
-        from datasets.load import load_dataset
-
-        name = path.split("/")
-
-        # Load dataset
-        dataset: DatasetDict = load_dataset(*name)
-
-        train_files = {
-            "train": dataset["train"]["text"],
-            "valid": dataset["validation"]["text"],
-            "test": dataset["test"]["text"],
+local_dataset_mapper = {
+        "cash": {
+            "train": "data/cash/train.txt",
+            "test": "data/cash/test.txt",
+            "validation": "data/cash/valid.txt"
         }
-
-        self.load_dataset(train_files)
-
-    def load_dataset(self, train_files: Dict[str, List[str]]):
-
-        frequencies = Counter()
-
-        # Setting up dictionary
-        for train_split, lines in train_files.items():
-            # Get token frequencies for every file
-            file_frequency = self.get_frequency(lines, train_split)
-
-            # Update global frequency count
-            frequencies.update(file_frequency)
-
-        print(frequencies)
-        # Populate dictionary
-        self.setup_dictionary(frequencies)
-
-        # Tokenizing
-        for train_split, lines in train_files.items():
-            tokenized_text = tokenize(
-                self.dictionary,
-                lines,
-                self.ngrams,
-                train_split,
-                False,
-                self.unk_fallback,
-            )
-
-            setattr(self, train_split, tokenized_text)
-
-    def setup_dictionary(self, token_frequencies: Counter):
-
-        with open("freqs.json", "w") as f:
-            json.dump(dict(token_frequencies), f)
-
-        self.dictionary.add_word("<start>")
-        self.dictionary.add_word("<eos>")
-
-        if self.max_dict_size > 0:
-            for token, _ in token_frequencies.most_common(self.max_dict_size):
-                sanit_token = self.remove_marker_tokens(token)
-                idx = self.dictionary.add_word(token)
-                if idx not in self.dictionary.ngram_indexes[len(sanit_token)]:
-                    self.dictionary.ngram_indexes[len(sanit_token)].append(idx)
-        else:
-            for toke, freq in token_frequencies.items():
-                if freq > self.unk_threshold or freq == -1:
-                    sanit_token = self.remove_marker_tokens(toke)
-                    idx = self.dictionary.add_word(toke)
-                    if idx not in self.dictionary.ngram_indexes[len(sanit_token)]:
-                        self.dictionary.ngram_indexes[len(sanit_token)].append(idx)
-
-        print(f"Dictionary Size: {len(self.dictionary)}")
-
-    def get_frequency(self, lines: List[str], train_split_label):
-        token_frequency = Counter()
-
-        for line in tqdm(
-            lines,
-            desc=f"Setup dictionary for {Fore.MAGENTA}{train_split_label}{Fore.RESET}",
-        ):
-            chars = ["<start>" for _ in range(1, self.ngrams)] + list(line) + ["<eos>"]
-            for i in range(1, self.ngrams + 1):
-                # Add UNK token for ngram
-                n_unk_token = f"<{i}-UNK>"
-
-                unk_idx = self.dictionary.add_word(n_unk_token)
-
-                if unk_idx not in self.dictionary.ngram_indexes[i]:
-                    self.dictionary.ngram_indexes[i].append(unk_idx)
-
-                for ngram in ngrams(chars, i):
-                    token_frequency["".join(ngram)] += 1
-
-        return token_frequency
-
-    def display_text(self, t):
-        for a in t:
-            print(repr(self.dictionary.idx2word[a.item()]), end="")
-        print()
-
-    def display_list(self, l):
-        for a in l:
-            print(repr(self.dictionary.idx2word[a]), end="")
-        print()
-
-    def remove_marker_tokens(self, token):
-        """Due to some str length comparison to determine what n-gram the token
-        is. We replace the marker tokens, with a single char, for easy comparison
-        """
-        for marker in self.dictionary.get_marker_tokens():
-            token = token.replace(marker, "i")
-
-        return token
-
+}
 
 def tokenize_batch(
     dictionary, lines: List[str], ngram, label=None, otf=False, fallback=False
@@ -322,6 +164,7 @@ def grouped(iterable, n):
     return zip(*[iter(iterable)] * n)
 
 
+# TODO: Make a hugginface dataloader here
 def prep_enwiki8():
     # From: https://github.com/salesforce/awd-lstm-lm/blob/master/data/enwik8/prep_enwik8.py
 
