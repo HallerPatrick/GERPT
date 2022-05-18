@@ -145,8 +145,8 @@ class Dictionary:
 
 
     def shift_right(self, t: torch.Tensor) -> torch.Tensor:
-        st = torch.roll(t, 1, 0)
-        st[0] = self.word2idx["<start>"]
+        st = torch.roll(t, 1, 1)
+        st[0][0] = self.word2idx["<start>"]
         return st
         
 def get_dictionary_cache() -> Path:
@@ -217,7 +217,6 @@ def load_tokenized_dataset(
         "validation": HfDataset.from_dict({"text": list(grouper(valid, bptt, " "))})
     })
 
-    print(dataset["train"][0]["text"])
     tokenized_dataset = dataset.map(lambda x: dictionary.tokenize_line(x["text"]), load_from_cache_file=USE_CACHE)
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")

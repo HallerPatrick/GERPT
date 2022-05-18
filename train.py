@@ -15,7 +15,7 @@ from src.dataset import load_tokenized_dataset
 args = {
     "ngram": 2,
     "max_dict_size": 0,
-    "unk_threshold": 5,
+    "unk_threshold": 10,
     # "data": "wikitext/wikitext-103-raw-v1",
     # "data": "wikitext/wikitext-2-raw-v1",
     "data": "text/cash",
@@ -26,11 +26,19 @@ args = {
     "batch_size": 20,
     "bptt": 40,
     "epochs": 10,
+    "cpus": 1,
+    "gpus": 1,
+}
+
+gen_args = {
+    "generate": True,
+    "chars": 1000,
+    "temperature": 0.0
 }
 
 args = Namespace(**args)
 
-wandb_logger = WandbLogger(project="gerpt")
+wandb_logger = WandbLogger(project="gerpt", offline=True)
 wandb_logger.experiment.config.update(vars(args))
 
 tokenized_dataset, dictionary = load_tokenized_dataset(
@@ -55,6 +63,7 @@ dataloader = DataLoader(
     batch_size=args.batch_size,
     collate_fn=batch_collate,
     drop_last=True,
+    # num_workers=args.cpus
 )
 
 model = RNNModel(
@@ -65,6 +74,8 @@ model = RNNModel(
     args.unk_threshold,
     None,
     args.embedding_size,
+    gen_args=gen_args
 )
-trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs)
+# trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs, accelerator="auto", devices=args.gpus)
+trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs, accelerator="auto", devices=args.gpus)
 trainer.fit(model, dataloader)
