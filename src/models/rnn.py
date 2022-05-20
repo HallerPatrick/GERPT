@@ -90,8 +90,7 @@ class RNNModel(pl.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
-        # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
+
         batch_size = batch["source"].size()[-1]
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
@@ -103,9 +102,8 @@ class RNNModel(pl.LightningModule):
         target = target.view(-1, len(self.dictionary))
         loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
+        self.log("train/ppl", math.exp(loss))
         
-        # if batch_idx == 2:
-        #     exit()
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -120,6 +118,7 @@ class RNNModel(pl.LightningModule):
         target = target.view(-1, len(self.dictionary))
         loss = self.criterion(decoded, target)
         self.log("valid/loss", loss)
+        self.log("valid/ppl", math.exp(loss))
         
     def test_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
@@ -150,7 +149,7 @@ class RNNModel(pl.LightningModule):
 
         ntokens = len(self.dictionary)
 
-        inp = torch.randint(ntokens, (self.ngrams, 1, 1), dtype=torch.long)
+        inp = torch.randint(ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device)
         generated_output = self.dictionary.idx2word[inp[0][0].item()]
 
         with torch.no_grad():
@@ -188,10 +187,13 @@ class RNNModel(pl.LightningModule):
                 # Use last 200 chars as sequence for new input
                 inp = self.dictionary.tokenize_line(
                     [generated_output[-200:]],
-                )["source"].unsqueeze(dim=2)
+                )["source"].unsqueeze(dim=2).to(self.device)
 
         # self.log("train/text", generated_output)
         print(generated_output)
+        
+        # Back to training mode
+        self.train()
     
     def init_weights(self):
         initrange = 0.1

@@ -77,5 +77,5 @@ model = RNNModel(
     gen_args=gen_args
 )
 # trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs, accelerator="auto", devices=args.gpus)
-trainer = Trainer(logger=wandb_logger, log_every_n_steps=10, max_epochs=args.epochs, accelerator="auto", devices=args.gpus)
+trainer = Trainer(logger=wandb_logger, max_epochs=args.epochs, accelerator="auto", devices=args.gpus)
 trainer.fit(model, dataloader)
