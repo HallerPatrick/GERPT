@@ -1,0 +1,31 @@
+# Hyperparameter configs
+
+# Training
+model: rnn
+data: "text/cash"
+save: model.pt
+cpus: 1
+gpus: 1
+epochs: 20
+wdecay: 1.2e-6
+lr: 0.1
+
+# Dictioarny
+ngram: 2
+unk_threshold: 30
+max_dict_size: 0
+fallback: True
+
+# Model
+embedding_size: 256
+hidden_size: 124
+batch_size: 20
+bptt: 200
+nlayers: 2
+nhead: 2
+dropout: 0.2
+
+unigram_ppl: false
+seed: 1111
+log_interval: 200
+

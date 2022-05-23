@@ -6,6 +6,7 @@ nltk
 colorama
 datasets
 wandb
+prettytable
 
 black
 isort
