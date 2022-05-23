@@ -1,0 +1,47 @@
+program: train.py
+method: bayes
+metric:
+  goal: minimize
+  name: epoch
+parameters:
+  embedding_size:
+    max: 248
+    min: 62
+    distribution: int_uniform
+  unk_threshold:
+    max: 10
+    min: 3
+    distribution: int_uniform
+  hidden_size:
+    max: 400
+    min: 100
+    distribution: int_uniform
+  batch_size:
+    max: 40
+    min: 10
+    distribution: int_uniform
+  fallback:
+    values:
+      - "true"
+      - "false"
+    distribution: categorical
+  nlayers:
+    max: 2
+    min: 1
+    distribution: int_uniform
+  dropout:
+    max: 0.2
+    min: 0.05
+    distribution: uniform
+  unk_t:
+    max: 10
+    min: 3
+    distribution: int_uniform
+  ngram:
+    max: 2
+    min: 1
+    distribution: int_uniform
+  bptt:
+    max: 80
+    min: 20
+    distribution: int_uniform
