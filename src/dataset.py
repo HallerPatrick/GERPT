@@ -145,8 +145,8 @@ class Dictionary:
 
 
     def shift_right(self, t: torch.Tensor) -> torch.Tensor:
-        st = torch.roll(t, 1, 1)
-        st[0][0] = self.word2idx["<start>"]
+        st = torch.roll(t, -1, 1)
+        st[0][-1] = self.word2idx["<eos>"]
         return st
         
 def get_dictionary_cache() -> Path:

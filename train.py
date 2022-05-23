@@ -13,19 +13,19 @@ from src.dataset import load_tokenized_dataset
 
 
 args = {
-    "ngram": 2,
+    "ngram": 1,
     "max_dict_size": 0,
-    "unk_threshold": 10,
+    "unk_threshold": 0,
     # "data": "wikitext/wikitext-103-raw-v1",
     # "data": "wikitext/wikitext-2-raw-v1",
     "data": "text/cash",
-    "fallback": True,
+    "fallback": False,
     "nlayers": 2,
     "hidden_size": 200,
     "embedding_size": 124,
-    "batch_size": 20,
-    "bptt": 40,
-    "epochs": 10,
+    "batch_size": 1,
+    "bptt": 200,
+    "epochs": 20,
     "cpus": 1,
     "gpus": 1,
 }
