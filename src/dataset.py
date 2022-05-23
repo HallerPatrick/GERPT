@@ -1,21 +1,23 @@
-from functools import reduce
 import hashlib
 import sys
 import textwrap
 from collections import Counter, defaultdict
-from operator import itemgetter, add
+from functools import reduce
+from itertools import zip_longest
+from operator import add, itemgetter
 from pathlib import Path
 from typing import List, Tuple
-from itertools import zip_longest
-from datasets.dataset_dict import DatasetDict
-from datasets.load import load_from_disk
 
 import torch
+import pytorch_lightning as pl
 from colorama.ansi import Fore
-from datasets import load_dataset as ld
-from datasets.fingerprint import Hasher
 from datasets import Dataset as HfDataset
+from datasets import load_dataset as ld
+from datasets.dataset_dict import DatasetDict
+from datasets.fingerprint import Hasher
+from datasets.load import load_from_disk
 from nltk import ngrams as ngram_tokenizer
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
 
@@ -23,7 +25,46 @@ from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
 
 
+def batch_collate(batch):
+    # [ngram, seq_len, batch_size]
+    source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
+    target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
+    return dict(source=source, target=target)
 
+class GenericDataModule(pl.LightningDataModule):
+
+    def __init__(self, dataset, batch_size, cpus=1):
+        super().__init__()
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.cpus = cpus
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.dataset["train"],
+            batch_size=self.batch_size,
+            collate_fn=batch_collate,
+            drop_last=True,
+            num_workers=self.cpus
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.dataset["validation"],
+            batch_size=self.batch_size,
+            collate_fn=batch_collate,
+            drop_last=True,
+            num_workers=self.cpus
+        )
+
+    def test_dataloader(self):
+        return DataLoader(
+            self.dataset["test"],
+            batch_size=self.batch_size,
+            collate_fn=batch_collate,
+            drop_last=True,
+            num_workers=self.cpus
+        )
 
 class Dictionary:
     def __init__(

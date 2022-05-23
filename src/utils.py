@@ -1,5 +1,6 @@
 import torch.nn.functional as F
 
+
 def display_text(dictionary, t):
     for a in t:
         print(repr(dictionary.idx2word[a.item()]), end="")

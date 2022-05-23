@@ -6,13 +6,14 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import wandb
 
+import wandb
 from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
 from src.utils import display_input_n_gram_sequences, display_prediction
 
 from .ngme import NGramsEmbedding, soft_n_hot
+
 
 def repackage_hidden(h):
     """Wraps hidden states in new Tensors, to detach them from their history."""
@@ -21,6 +22,7 @@ def repackage_hidden(h):
         return h.detach()
     else:
         return tuple(repackage_hidden(v) for v in h)
+
 
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -37,7 +39,7 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.1,
-        gen_args: Optional[dict] = None
+        gen_args: Optional[dict] = None,
     ):
         super(RNNModel, self).__init__()
 
@@ -71,7 +73,7 @@ class RNNModel(pl.LightningModule):
         else:
             self.proj = None
             self.decoder = nn.Linear(hidden_size, len(dictionary))
-        self.save_hyperparameters()     
+        self.save_hyperparameters()
         self.init_weights()
 
         self.hidden = None
@@ -89,7 +91,7 @@ class RNNModel(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
-        return optimizer # ], [lr_scheduler]
+        return optimizer  # ], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
         # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
@@ -99,7 +101,7 @@ class RNNModel(pl.LightningModule):
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
-        
+
         output, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
@@ -108,26 +110,25 @@ class RNNModel(pl.LightningModule):
         loss = self.criterion(output, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss))
-        
+
         return loss
 
     def validation_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
-        
+
         ntokens = len(self.dictionary)
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
-        
+
         target = soft_n_hot(batch["target"], ntokens)
         target = target.view(-1, ntokens)
         loss = self.criterion(decoded, target)
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss))
-        
+
     def test_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
         if not self.hidden:
@@ -142,14 +143,23 @@ class RNNModel(pl.LightningModule):
         self.log("test/loss", loss)
 
     def training_epoch_end(self, outputs) -> None:
+
         self.epoch += 1
 
-        if not self.generate:
-            return
+        if self.generate:
+            print(self.generate_text())
+            self.train()
+        # Reset hidden after each epoch
+        self.hidden = None
+
+    def generate_text(self) -> str:
 
         if self.ngrams > 2:
             unk_idxs = set(
-                [self.dictionary.word2idx[f"<{i}-UNK>"] for i in range(3, self.ngrams + 1)]
+                [
+                    self.dictionary.word2idx[f"<{i}-UNK>"]
+                    for i in range(3, self.ngrams + 1)
+                ]
             )
             token_idxs = set(self.dictionary.word2idx.values())
             token_idxs = torch.tensor(
@@ -158,7 +168,9 @@ class RNNModel(pl.LightningModule):
 
         ntokens = len(self.dictionary)
 
-        inp = torch.randint(ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device)
+        inp = torch.randint(
+            ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
+        )
         generated_output = self.dictionary.idx2word[inp[0][0].item()]
 
         with torch.no_grad():
@@ -168,10 +180,7 @@ class RNNModel(pl.LightningModule):
                 # Reset hidden
                 hidden = self.init_hidden(1)
                 output, hidden = self(inp, hidden)
-                    
-                if self.epoch == 15:
-                    display_prediction(output, self.dictionary)
-                    exit()
+
                 # Only use the generated ngrams
                 output = output[-1]
 
@@ -198,22 +207,26 @@ class RNNModel(pl.LightningModule):
                 generated_output = generated_output + word
 
                 # Use last 200 chars as sequence for new input
-                inp = self.dictionary.tokenize_line(
-                    [generated_output[-200:]],
-                )["source"].unsqueeze(dim=2).to(self.device)
+                inp = (
+                    self.dictionary.tokenize_line(
+                        generated_output[-200:],
+                    )["source"]
+                    .unsqueeze(dim=2)
+                    .to(self.device)
+                )
                 # print(inp.size())
-                # exit()
 
             self.train()
 
+        self.logger.log_text(
+            "samples",
+            columns=["epoch", "temperatue", "text"],
+            data=[[self.epoch, self.temperature, generated_output]],
+        )
         wandb.log({"train/text": generated_output})
-        print(generated_output)
-        
-        # Back to training mode
 
-        # Reset hidden after each epoch
-        self.hidden = None
-    
+        return generated_output
+
     def init_weights(self):
         initrange = 0.1
         nn.init.uniform_(self.encoder.weight, -initrange, initrange)
@@ -396,5 +409,3 @@ class RNNModel(pl.LightningModule):
         output = torch.cat(output_parts)
 
         return output
-
-

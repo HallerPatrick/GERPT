@@ -1,16 +1,20 @@
 import math
-from typing import List
+from typing import List, Optional
+
 import flair
-
+import pytorch_lightning as pl
 import torch
-from torch import nn
 import torch.nn.functional as F
-from src.data import tokenize_batch
+import wandb
+from torch import nn
 
-from src.models.ngme import NGramsEmbedding
+from src.data import tokenize_batch
+from src.loss import CrossEntropyLossSoft
+from src.models.ngme import NGramsEmbedding, soft_n_hot
+
 
 # Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
-class PositionalEncoding(nn.Module):
+class PositionalEncoding(pl.LightningModule):
     r"""Inject some information about the relative or absolute position of the tokens in the sequence.
         The positional encodings have the same dimension as the embeddings, so that the two can be summed.
         Here, we use sine and cosine functions of different frequencies.
@@ -55,7 +59,7 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class TransformerModel(nn.Module):
+class TransformerModel(pl.LightningModule):
     """Container module with an encoder, a recurrent or transformer module, and a decoder."""
 
     def __init__(
@@ -70,6 +74,7 @@ class TransformerModel(nn.Module):
         is_forward_lm=True,
         document_delimiter="\n",
         dropout=0.5,
+        gen_args: Optional[dict] = None,
     ):
         super(TransformerModel, self).__init__()
         try:
@@ -88,6 +93,8 @@ class TransformerModel(nn.Module):
         self.document_delimiter = document_delimiter
         self.dropout = dropout
 
+        self.criterion = CrossEntropyLossSoft()
+
         self.hidden_size = nhid
         self.nhead = nhead
 
@@ -103,6 +110,10 @@ class TransformerModel(nn.Module):
         self.decoder = nn.Linear(embedding_size, self.ntoken)
 
         self.init_weights()
+        self.epoch = 0
+
+        for key, value in gen_args.items():
+            setattr(self, key, value)
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -112,6 +123,11 @@ class TransformerModel(nn.Module):
             .masked_fill(mask == 1, float(0.0))
         )
         return mask
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+        return optimizer  # ], [lr_scheduler]
 
     def init_weights(self):
         initrange = 0.1
@@ -132,6 +148,119 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
         return F.log_softmax(output, dim=-1)
+
+    def training_step(self, batch, batch_idx):
+        ntokens = len(self.dictionary)
+        output = self.forward(batch["source"])
+        output = output.view(-1, ntokens)
+        target = soft_n_hot(batch["target"], ntokens)
+        target = target.view(-1, ntokens)
+        loss = self.criterion(output, target)
+        self.log("train/loss", loss)
+        self.log("train/ppl", math.exp(loss), prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        ntokens = len(self.dictionary)
+        output = self.forward(batch["source"])
+        output = output.view(-1, ntokens)
+        target = soft_n_hot(batch["target"], ntokens)
+        target = target.view(-1, ntokens)
+        loss = self.criterion(output, target)
+        self.log("val/loss", loss)
+        self.log("val/ppl", math.exp(loss))
+
+    def test_step(self, batch, batch_idx):
+        ntokens = len(self.dictionary)
+        output = self.forward(batch["source"])
+        output = output.view(-1, ntokens)
+        target = soft_n_hot(batch["target"], ntokens)
+        target = target.view(-1, ntokens)
+        loss = self.criterion(output, target)
+        self.log("test/loss", loss)
+        self.log("test/ppl", math.exp(loss))
+
+    def training_epoch_end(self, outputs) -> None:
+
+        self.epoch += 1
+
+        if self.generate:
+            print(self.generate_text())
+            self.train()
+        # Reset hidden after each epoch
+
+
+    def generate_text(self) -> str:
+
+        if self.ngrams > 2:
+            unk_idxs = set(
+                [
+                    self.dictionary.word2idx[f"<{i}-UNK>"]
+                    for i in range(3, self.ngrams + 1)
+                ]
+            )
+            token_idxs = set(self.dictionary.word2idx.values())
+            token_idxs = torch.tensor(
+                list(token_idxs.difference(unk_idxs)), dtype=torch.int64
+            )
+
+        ntokens = len(self.dictionary)
+
+        inp = torch.randint(
+            ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
+        )
+        generated_output = self.dictionary.idx2word[inp[0][0].item()]
+
+        with torch.no_grad():
+            self.eval()
+            for i in range(self.chars):
+
+                output = self(inp, False)
+
+                # Only use the generated ngrams
+                output = output[-1]
+
+                if self.temperature == 0.0:
+                    # output = F.softmax(output, dim=0).cpu()
+                    # Just get highest confidence
+                    ngram_idx = torch.argmax(output)
+                else:
+                    # output = F.log_softmax(output, dim=0)
+
+                    # Remove all UNK tokens for ngram > 2
+                    if self.ngrams > 2:
+                        output = torch.index_select(output, 0, token_idxs).cpu()
+
+                    word_weights = output[-1].squeeze().div(args.temperature).exp().cpu()   
+                    # multinomial over all tokens
+                    ngram_idx = torch.multinomial(word_weights, 1)[0]
+
+                # Get ngram word
+                word = self.dictionary.idx2word[ngram_idx]
+
+                # Append to generated sequence
+                generated_output = generated_output + word
+
+                # Use last 200 chars as sequence for new input
+                inp = (
+                    self.dictionary.tokenize_line(
+                        generated_output[-200:],
+                    )["source"]
+                    .unsqueeze(dim=2)
+                    .to(self.device)
+                )
+                # print(inp.size())
+
+            self.train()
+
+        self.logger.log_text(
+            "samples",
+            columns=["epoch", "temperatue", "text"],
+            data=[[self.epoch, self.temperature, generated_output]],
+        )
+        wandb.log({"train/text": generated_output})
+
+        return generated_output
 
     def __getstate__(self):
 
