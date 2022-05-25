@@ -1,5 +1,6 @@
 import math
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 
 import flair
 import pytorch_lightning as pl
@@ -9,6 +10,7 @@ import torch.nn.functional as F
 
 import wandb
 from src.data import tokenize_batch
+from src.dataset import Dictionary
 from src.loss import CrossEntropyLossSoft
 from src.utils import display_input_n_gram_sequences, display_prediction
 
@@ -29,7 +31,7 @@ class RNNModel(pl.LightningModule):
 
     def __init__(
         self,
-        dictionary,
+        dictionary: Dictionary,
         nlayers: int,
         ngrams: int,
         hidden_size: int,
@@ -43,7 +45,7 @@ class RNNModel(pl.LightningModule):
     ):
         super(RNNModel, self).__init__()
 
-        self.ntoken = len(dictionary)
+        self.ntokens = len(dictionary)
 
         self.encoder = NGramsEmbedding(len(dictionary), embedding_size)
         self.ngrams = ngrams
@@ -65,14 +67,14 @@ class RNNModel(pl.LightningModule):
             self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, dropout=dropout)
 
         self.drop = nn.Dropout(dropout)
-        self.decoder = nn.Linear(hidden_size, len(dictionary))
+        self.decoder = nn.Linear(hidden_size, self.ntokens)
         if nout is not None:
             self.proj = nn.Linear(hidden_size, nout)
             self.initialize(self.proj.weight)
-            self.decoder = nn.Linear(nout, len(dictionary))
+            self.decoder = nn.Linear(nout, self.ntokens)
         else:
             self.proj = None
-            self.decoder = nn.Linear(hidden_size, len(dictionary))
+            self.decoder = nn.Linear(hidden_size, self.ntokens)
         self.save_hyperparameters()
         self.init_weights()
 
@@ -97,7 +99,6 @@ class RNNModel(pl.LightningModule):
         # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
         # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
         batch_size = batch["source"].size()[-1]
-        ntokens = len(self.dictionary)
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
@@ -105,29 +106,28 @@ class RNNModel(pl.LightningModule):
         output, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], ntokens)
-        target = target.view(-1, ntokens)
+        target = soft_n_hot(batch["target"], self.ntokens)
+        target = target.view(-1, self.ntokens)
         loss = self.criterion(output, target)
         self.log("train/loss", loss)
-        self.log("train/ppl", math.exp(loss))
+        self.log("train/ppl", math.exp(loss), prog_bar=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
 
-        ntokens = len(self.dictionary)
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], ntokens)
-        target = target.view(-1, ntokens)
+        target = soft_n_hot(batch["target"], self.ntokens)
+        target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
         self.log("valid/loss", loss)
-        self.log("valid/ppl", math.exp(loss))
+        self.log("valid/ppl", math.exp(loss), prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
@@ -137,10 +137,11 @@ class RNNModel(pl.LightningModule):
         self.hidden = repackage_hidden(self.hidden)
 
         decoded, self.hidden = self.forward(batch["source"], self.hidden)
-        target = soft_n_hot(batch["target"], len(self.dictionary))
-        target = target.view(-1, len(self.dictionary))
+        target = soft_n_hot(batch["target"], self.ntokens)
+        target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
         self.log("test/loss", loss)
+        self.log("valid/ppl", math.exp(loss), prog_bar=True)
 
     def training_epoch_end(self, outputs) -> None:
 
@@ -166,10 +167,8 @@ class RNNModel(pl.LightningModule):
                 list(token_idxs.difference(unk_idxs)), dtype=torch.int64
             )
 
-        ntokens = len(self.dictionary)
-
         inp = torch.randint(
-            ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
+            self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
         )
         generated_output = self.dictionary.idx2word[inp[0][0].item()]
 
@@ -214,7 +213,6 @@ class RNNModel(pl.LightningModule):
                     .unsqueeze(dim=2)
                     .to(self.device)
                 )
-                # print(inp.size())
 
             self.train()
 
@@ -223,7 +221,7 @@ class RNNModel(pl.LightningModule):
             columns=["epoch", "temperatue", "text"],
             data=[[self.epoch, self.temperature, generated_output]],
         )
-        wandb.log({"train/text": generated_output})
+        # wandb.log({"train/text": generated_output})
 
         return generated_output
 
@@ -239,12 +237,13 @@ class RNNModel(pl.LightningModule):
         # emb = self.drop(emb)
         output, hidden = self.rnn(emb, hidden)
         decoded = self.decoder(output)
-        decoded = decoded.view(-1, self.ntoken)
+        decoded = decoded.view(-1, self.ntokens)
 
         return decoded, hidden
 
     def forward2(self, input, hidden, ordered_sequence_lengths=None):
 
+        # input: [ngram, sequence_length, batch]
         encoded = self.encoder(input)
         encoded = self.drop(encoded)
 
@@ -259,6 +258,7 @@ class RNNModel(pl.LightningModule):
             output.view(output.size(0) * output.size(1), output.size(2))
         )
 
+        # output: [seq_len, batch_size, ntokens]
         return (
             decoded.view(output.size(0), output.size(1), decoded.size(1)),
             output,
@@ -323,7 +323,8 @@ class RNNModel(pl.LightningModule):
         else:
             self.__dict__ = d
 
-    def save(self, file):
+    def save(self, file: Union[str, Path]):
+
         model_state = {
             "state_dict": self.state_dict(),
             "dictionary": self.dictionary,
@@ -338,6 +339,13 @@ class RNNModel(pl.LightningModule):
             "unk_t": self.unk_t,
         }
 
+        if isinstance(file, str):
+            file = Path(file)
+
+        # Prepend "flair_" prefix
+        file = file.parent / ("flair_" + str(file.name))
+
+        print(f"Save flair model state: {str(file)}")
         torch.save(model_state, str(file), pickle_protocol=4)
 
     def get_representation(

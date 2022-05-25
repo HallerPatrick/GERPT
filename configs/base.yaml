@@ -1,7 +1,7 @@
 # Hyperparameter configs
 
 # Training
-model: rnn
+model: transformer
 data: "text/cash"
 save: model.pt
 cpus: 1

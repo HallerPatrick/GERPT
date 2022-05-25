@@ -1,48 +1,27 @@
 from argparse import Namespace
-
-import torch
+from pathlib import Path
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import Trainer
-from src.args import parse_args
+from src.args import parse_args, print_args
+from src.models import load_model
 
-from src.models.rnn import RNNModel
 from src.dataset import GenericDataModule, load_tokenized_dataset
-from src.models.transformer import TransformerModel
 
-args = parse_args()
 
-# args = {
-#     # "model": "transformer",
-#     "model": "rnn",
-#     "ngram": 1,
-#     "max_dict_size": 0,
-#     "unk_threshold": 0,
-#     # "data": "wikitext/wikitext-103-raw-v1",
-#     # "data": "wikitext/wikitext-2-raw-v1",
-#     "data": "text/cash",
-#     "fallback": False,
-#     "nlayers": 2,
-#     "hidden_size": 200,
-#     "embedding_size": 124,
-#     "batch_size": 1,
-#     "bptt": 200,
-#     "nhead": 2,
-#     "epochs": 20,
-#     "cpus": 1,
-#     "gpus": 1,
-# }
-#
-# args = Namespace(**args)
-
-gen_args = {"generate": True, "chars": 1000, "temperature": 0.0}
 
 if __name__ == "__main__":
+    args = parse_args()
+
+    gen_args = {"generate": True, "chars": 1000, "temperature": 0.0}
 
     wandb_logger = WandbLogger(project="gerpt", offline=True)
     wandb_logger.experiment.config.update(vars(args))
-    
-    print(args.data)
+
+    print_args(args)
+
     tokenized_dataset, dictionary = load_tokenized_dataset(
         args.bptt,
         args.ngram,
@@ -54,30 +33,30 @@ if __name__ == "__main__":
 
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
-    if args.model == "rnn":
-        model = RNNModel(
-            dictionary,
-            args.nlayers,
-            args.ngram,
-            args.hidden_size,
-            args.unk_threshold,
-            None,
-            args.embedding_size,
-            gen_args=gen_args,
-        )
-    else:
-        model = TransformerModel(
-            dictionary,
-            args.embedding_size,
-            args.nhead,
-            args.hidden_size,
-            args.nlayers,
-            args.ngram,
-            args.unk_threshold,
-            gen_args=gen_args
-        )
+    checkpoint_callback = ModelCheckpoint(
+        monitor="train/loss",
+        save_on_train_epoch_end=True,
+        dirpath="checkpoints",
+        filename=args.save + "-{epoch:02d}",
+    )
+
+    early_stop_callback = EarlyStopping(
+        monitor="train/loss", patience=3, verbose=True, mode="min"
+    )
 
     trainer = Trainer(
-        logger=wandb_logger, max_epochs=args.epochs, accelerator="auto", devices=args.gpus
+        logger=wandb_logger,
+        max_epochs=args.epochs,
+        accelerator="auto",
+        devices=args.gpus,
+        callbacks=[checkpoint_callback, early_stop_callback],
+        # Disable validation during training
+        limit_val_batches=0.0
     )
+
+    model = load_model(dictionary, args, gen_args)
+
     trainer.fit(model, data_module)
+
+    # Custom save for flair
+    model.save("checkpoints" / Path(args.save))

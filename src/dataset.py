@@ -8,8 +8,8 @@ from operator import add, itemgetter
 from pathlib import Path
 from typing import List, Tuple
 
-import torch
 import pytorch_lightning as pl
+import torch
 from colorama.ansi import Fore
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
@@ -31,8 +31,8 @@ def batch_collate(batch):
     target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
     return dict(source=source, target=target)
 
-class GenericDataModule(pl.LightningDataModule):
 
+class GenericDataModule(pl.LightningDataModule):
     def __init__(self, dataset, batch_size, cpus=1):
         super().__init__()
         self.dataset = dataset
@@ -45,7 +45,7 @@ class GenericDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus
+            num_workers=self.cpus,
         )
 
     def val_dataloader(self):
@@ -54,7 +54,7 @@ class GenericDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus
+            num_workers=self.cpus,
         )
 
     def test_dataloader(self):
@@ -63,8 +63,9 @@ class GenericDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus
+            num_workers=self.cpus,
         )
+
 
 class Dictionary:
     def __init__(
@@ -170,7 +171,7 @@ class Dictionary:
                     else:
                         ids.append(self.word2idx[f"<{n}-UNK>"])
                 length += 1
-            
+
             seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
             length = seq.size(1)
 
@@ -184,12 +185,12 @@ class Dictionary:
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
         return {"text": line, "source": sequence, "target": target}
 
-
     def shift_right(self, t: torch.Tensor) -> torch.Tensor:
         st = torch.roll(t, -1, 1)
         st[0][-1] = self.word2idx["<eos>"]
         return st
-        
+
+
 def get_dictionary_cache() -> Path:
     path = Path(HF_CACHE_DICTIONARIES)
 
@@ -198,12 +199,14 @@ def get_dictionary_cache() -> Path:
 
     return path
 
+
 def get_tokenized_cache() -> Path:
     path = Path(HF_CACHE_TOKENIZED)
     if not path.exists():
         path.mkdir()
 
     return path
+
 
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
@@ -216,54 +219,62 @@ def load_tokenized_dataset(
     bptt, ngram, max_dict_size, unk_threshold, fallback, *args, **kwargs
 ) -> Tuple[Dataset, Dictionary]:
     """🤗"""
-    
-    
+
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
     else:
         # Load the datasets from huggingface
         dataset = ld(*args, **kwargs)
-    
+
     # Load according dictionary for dataset
     dictionary = load_dictionary_from_hf(
         dataset, ngram, max_dict_size, unk_threshold, fallback
     )
 
     # Check if we have a cached tokenized version of the dataset already in the huggingface cache
-  
-    hash_value = hashlib.md5(f"{Hasher.hash(dataset)}{Hasher.hash(dictionary)}".encode()).hexdigest()
+
+    hash_value = hashlib.md5(
+        f"{Hasher.hash(dataset)}{Hasher.hash(dictionary)}".encode()
+    ).hexdigest()
     hashed_file = get_tokenized_cache() / hash_value
 
     if hashed_file.exists() and USE_CACHE:
         print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
         return load_from_disk(hashed_file), dictionary
-    
+
     train = map(lambda x: x["text"], dataset["train"])
     test = map(lambda x: x["text"], dataset["test"])
     valid = map(lambda x: x["text"], dataset["validation"])
-    
+
     def concat(x, y):
         return x + "\n" + y
-    
+
     # Make continuous sequence
     train = reduce(concat, train)
     test = reduce(concat, test)
     valid = reduce(concat, valid)
-    
-    # Divide sequence into bptt
-    dataset = DatasetDict({
-        "train": HfDataset.from_dict({"text": list(grouper(train, bptt, " "))}),
-        "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
-        "validation": HfDataset.from_dict({"text": list(grouper(valid, bptt, " "))})
-    })
 
-    tokenized_dataset = dataset.map(lambda x: dictionary.tokenize_line(x["text"]), load_from_cache_file=USE_CACHE)
+    # Divide sequence into bptt
+    dataset = DatasetDict(
+        {
+            "train": HfDataset.from_dict({"text": list(grouper(train, bptt, " "))}),
+            "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
+            "validation": HfDataset.from_dict(
+                {"text": list(grouper(valid, bptt, " "))}
+            ),
+        }
+    )
+
+    tokenized_dataset = dataset.map(
+        lambda x: dictionary.tokenize_line(x["text"]), load_from_cache_file=USE_CACHE
+    )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")
     tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
 
     return tokenized_dataset, dictionary
+
 
 def load_dictionary_from_hf(
     source: Dataset, ngrams: int, max_dict_size: int, unk_threshold: int, fallback: bool
@@ -339,5 +350,3 @@ def remove_marker_tokens(token, dictionary):
         token = token.replace(marker, "i")
 
     return token
-
-

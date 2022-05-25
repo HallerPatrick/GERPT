@@ -1,13 +1,14 @@
 import math
+
+from pathlib import Path
 from typing import List, Optional
 
-import flair
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-import wandb
 from torch import nn
 
+import wandb
 from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
 from src.models.ngme import NGramsEmbedding, soft_n_hot
@@ -189,7 +190,6 @@ class TransformerModel(pl.LightningModule):
             self.train()
         # Reset hidden after each epoch
 
-
     def generate_text(self) -> str:
 
         if self.ngrams > 2:
@@ -231,7 +231,9 @@ class TransformerModel(pl.LightningModule):
                     if self.ngrams > 2:
                         output = torch.index_select(output, 0, token_idxs).cpu()
 
-                    word_weights = output[-1].squeeze().div(args.temperature).exp().cpu()   
+                    word_weights = (
+                        output[-1].squeeze().div(self.temperature).exp().cpu()
+                    )
                     # multinomial over all tokens
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
 
@@ -323,7 +325,6 @@ class TransformerModel(pl.LightningModule):
             "hidden_size": self.hidden_size,
             "nlayers": self.nlayers,
             "embedding_size": self.embedding_size,
-            # "nout": self.nout,
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
@@ -331,6 +332,13 @@ class TransformerModel(pl.LightningModule):
             "nhead": self.nhead,
         }
 
+        if isinstance(file, str):
+            file = Path(file)
+
+        # Prepend "flair_" prefix
+        file = file.parent / ("flair_" + str(file.name))
+
+        print(f"Save flair model state: {str(file)}")
         torch.save(model_state, str(file), pickle_protocol=4)
 
     def forward2(self, input, ordered_sequence_lengths=None):
@@ -341,13 +349,11 @@ class TransformerModel(pl.LightningModule):
         output = self.transformer_encoder(encoded, self.src_mask)
         decoded = self.decoder(output)
 
-        # if self.proj is not None:
-        #     output = self.proj(output)
-
         # decoded = self.decoder(
         #     output.view(output.size(0) * output.size(1), output.size(2))
         # )
 
+        # output: [seq_len, batch_size, hidden]
         return decoded, output
 
     def get_representation(
@@ -396,7 +402,7 @@ class TransformerModel(pl.LightningModule):
 
                 # [ngram, 1, sequence]
                 n_gram_char_indices = tokenize_batch(
-                    self.dictionary, chars, self.ngrams, otf=True, device=flair.device
+                    self.dictionary, chars, self.ngrams, otf=True
                 ).unsqueeze(dim=1)
 
                 sequences_as_char_indices.append(n_gram_char_indices)

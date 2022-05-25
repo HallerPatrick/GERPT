@@ -14,12 +14,13 @@ from torch import Tensor
 from tqdm import tqdm
 
 local_dataset_mapper = {
-        "cash": {
-            "train": "data/cash/train.txt",
-            "test": "data/cash/test.txt",
-            "validation": "data/cash/valid.txt"
-        }
+    "cash": {
+        "train": "data/cash/train.txt",
+        "test": "data/cash/test.txt",
+        "validation": "data/cash/valid.txt",
+    }
 }
+
 
 def tokenize_batch(
     dictionary, lines: List[str], ngram, label=None, otf=False, fallback=False

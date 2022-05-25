@@ -1,10 +1,12 @@
 import torch.nn.functional as F
+from pytorch_lightning.callbacks.base import Callback
 
 
 def display_text(dictionary, t):
     for a in t:
         print(repr(dictionary.idx2word[a.item()]), end="")
     print()
+
 
 def display_input_n_gram_sequences(input, dictionary):
     for i in range(input.size()[0]):
