@@ -43,7 +43,7 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.1,
-        gen_args: Optional[dict] = None,
+        gen_args: dict = {},
     ):
         super(RNNModel, self).__init__()
 

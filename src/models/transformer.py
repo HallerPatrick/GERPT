@@ -77,7 +77,7 @@ class TransformerModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter="\n",
         dropout=0.5,
-        gen_args: Optional[dict] = None,
+        gen_args: dict = {},
     ):
         super(TransformerModel, self).__init__()
         try:
