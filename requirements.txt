@@ -1,6 +1,7 @@
 torch
 deepspeed
 pytorch-lightning
+rich
 flair
 nltk
 colorama

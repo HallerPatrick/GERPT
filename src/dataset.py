@@ -17,9 +17,9 @@ from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
 from datasets.load import load_from_disk
 from nltk import ngrams as ngram_tokenizer
+from rich.progress import track
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
-from tqdm import tqdm
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
@@ -300,9 +300,9 @@ def load_dictionary_from_hf(
 
         split_frequency = Counter()
 
-        for line in tqdm(
+        for line in track(
             lines,
-            desc=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
+            description=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
         ):
             chars = ["<start>" for _ in range(1, ngrams)] + list(line) + ["<eos>"]
             for i in range(1, ngrams + 1):

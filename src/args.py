@@ -3,7 +3,8 @@ import json
 from types import SimpleNamespace
 
 import yaml
-from prettytable.prettytable import PrettyTable
+from rich.console import Console
+from rich.table import Table
 
 
 def parse_args():
@@ -26,13 +27,17 @@ def parse_args():
 
 
 def print_args(args):
-    table = PrettyTable(["Parameter", "Value"])
 
-    for parameter, value in args.__dict__.items():
-        table.add_row([parameter, value])
+    table = Table(title="Configurations")
+    table.add_column(" ", no_wrap=True)
+    table.add_column("Parameter", style="cyan", no_wrap=True)
+    table.add_column("Value", style="cyan", no_wrap=True)
 
-    print("Configurations:")
-    print(table)
+    for i, (parameter, value) in enumerate(args.__dict__.items()):
+        table.add_row(str(i), parameter, str(value))
+
+    console = Console()
+    console.print(table)
 
 
 def read_config(path):
@@ -42,6 +47,17 @@ def read_config(path):
         conf = yaml.safe_load(f)
 
     return json.loads(json.dumps(conf), object_hook=lambda d: SimpleNamespace(**d))
+
+
+def write_to_yaml(path, param, value):
+
+    with open(path, "r") as f:
+        conf = yaml.safe_load(f)
+
+    conf[param] = value
+
+    with open(path, "w") as f:
+        yaml.dump(conf, f)
 
 
 def argparser_train():

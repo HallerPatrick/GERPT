@@ -7,6 +7,8 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from rich import print
+from rich.panel import Panel
 
 import wandb
 from src.data import tokenize_batch
@@ -148,7 +150,7 @@ class RNNModel(pl.LightningModule):
         self.epoch += 1
 
         if self.generate:
-            print(self.generate_text())
+            print(Panel(self.generate_text(), title="[green]Generated text"))
             self.train()
         # Reset hidden after each epoch
         self.hidden = None

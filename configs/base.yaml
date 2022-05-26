@@ -29,3 +29,5 @@ unigram_ppl: false
 seed: 1111
 log_interval: 200
 
+# Pass wandb run id to run config for fine-tuning with flair
+wandb_flair_yaml: configs/flair_base.yaml

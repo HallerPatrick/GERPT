@@ -1,17 +1,11 @@
-import json
-import os
 import sys
-from collections import Counter, defaultdict
-from operator import itemgetter
-from pathlib import Path
-from typing import Dict, List, Optional, Union
+from collections import Counter
+from typing import Dict, List, Optional
 
 import torch
-from colorama import Fore, init
-from datasets.dataset_dict import DatasetDict
+from colorama import Fore
 from nltk import ngrams
-from torch import Tensor
-from tqdm import tqdm
+from rich.progress import track
 
 local_dataset_mapper = {
     "cash": {
@@ -47,7 +41,7 @@ def tokenize_batch(
         idss_n = []
 
         _lines = (
-            tqdm(lines, desc=f"Tokenize for {n}-gram sequence for {label}")
+            track(lines, description=f"Tokenize for {n}-gram sequence for {label}")
             if label
             else lines
         )
@@ -115,9 +109,9 @@ def tokenize(dictionary, lines: List[str], ngram, label, otf=False, fallback=Fal
         idss_n = []
 
         _lines = (
-            tqdm(
+            track(
                 lines,
-                desc=f"Tokenize for {n}-gram sequence for {Fore.GREEN}{label}{Fore.RESET}",
+                description=f"Tokenize for {n}-gram sequence for {Fore.GREEN}{label}{Fore.RESET}",
             )
             if label
             else lines

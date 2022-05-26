@@ -1,18 +1,20 @@
-from argparse import Namespace
 from pathlib import Path
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import RichProgressBar
 
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning import Trainer
-from src.args import parse_args, print_args
+from src.args import parse_args, print_args, write_to_yaml
 from src.models import load_model
 
 from src.dataset import GenericDataModule, load_tokenized_dataset
 
 
-
 if __name__ == "__main__":
+
+    # --- Init ---
     args = parse_args()
 
     gen_args = {"generate": True, "chars": 1000, "temperature": 0.0}
@@ -21,7 +23,8 @@ if __name__ == "__main__":
     wandb_logger.experiment.config.update(vars(args))
 
     print_args(args)
-
+    
+    # --- Dataloading & Tokenization ---
     tokenized_dataset, dictionary = load_tokenized_dataset(
         args.bptt,
         args.ngram,
@@ -32,7 +35,8 @@ if __name__ == "__main__":
     )
 
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
-
+    
+    # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpoint(
         monitor="train/loss",
         save_on_train_epoch_end=True,
@@ -44,12 +48,15 @@ if __name__ == "__main__":
         monitor="train/loss", patience=3, verbose=True, mode="min"
     )
 
+    rick_prog_bar_callback = RichProgressBar()
+    
+    # --- Training ---
     trainer = Trainer(
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
         devices=args.gpus,
-        callbacks=[checkpoint_callback, early_stop_callback],
+        callbacks=[checkpoint_callback, early_stop_callback, rick_prog_bar_callback],
         # Disable validation during training
         limit_val_batches=0.0
     )
@@ -60,3 +67,9 @@ if __name__ == "__main__":
 
     # Custom save for flair
     model.save("checkpoints" / Path(args.save))
+    
+    # Save wandb run id in config for fine tuning run
+    if args.wandb_flair_yaml:
+        write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
+
+

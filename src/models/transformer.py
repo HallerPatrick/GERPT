@@ -1,12 +1,13 @@
 import math
-
 from pathlib import Path
 from typing import List, Optional
-import flair
 
+import flair
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from rich import print
+from rich.panel import Panel
 from torch import nn
 
 import wandb
@@ -140,7 +141,9 @@ class TransformerModel(pl.LightningModule):
     def forward(self, src, has_mask=True):
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != len(src):
-                mask = self._generate_square_subsequent_mask(src.size(1)).to(self.device)
+                mask = self._generate_square_subsequent_mask(src.size(1)).to(
+                    self.device
+                )
                 self.src_mask = mask
         else:
             self.src_mask = None
@@ -186,7 +189,7 @@ class TransformerModel(pl.LightningModule):
         self.epoch += 1
 
         if self.generate:
-            print(self.generate_text())
+            print(Panel(self.generate_text(), title="[green]Generated text"))
             self.train()
 
     def generate_text(self) -> str:
@@ -351,7 +354,7 @@ class TransformerModel(pl.LightningModule):
         # decoded = self.decoder(
         #     output.view(output.size(0) * output.size(1), output.size(2))
         # )
-       
+
         # output: [seq_len, batch_size, hidden]
         return decoded, output
 
