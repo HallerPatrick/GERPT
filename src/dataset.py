@@ -216,7 +216,14 @@ def grouper(iterable, n, fillvalue=None):
 
 
 def load_tokenized_dataset(
-    bptt, ngram, max_dict_size, unk_threshold, fallback, *args, **kwargs
+    bptt: int,
+    ngram: int,
+    max_dict_size: int,
+    unk_threshold: int,
+    fallback: bool,
+    num_proc: int,
+    *args,
+    **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
     """🤗"""
 
@@ -242,18 +249,24 @@ def load_tokenized_dataset(
     if hashed_file.exists() and USE_CACHE:
         print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
         return load_from_disk(hashed_file), dictionary
+    
+    print("Preprocess dataset...")
+    train = [x["text"] for x in dataset["train"]]
+    test = [x["text"] for x in dataset["test"]]
+    valid = [x["text"] for x in dataset["validation"]]
 
-    train = map(lambda x: x["text"], dataset["train"])
-    test = map(lambda x: x["text"], dataset["test"])
-    valid = map(lambda x: x["text"], dataset["validation"])
+    # train = map(lambda x: x["text"], dataset["train"])
+    # test = map(lambda x: x["text"], dataset["test"])
+    # valid = map(lambda x: x["text"], dataset["validation"])
 
-    def concat(x, y):
-        return x + "\n" + y
+    train = "\n".join(train)
+    test = "\n".join(test)
+    valid = "\n".join(valid)
 
-    # Make continuous sequence
-    train = reduce(concat, train)
-    test = reduce(concat, test)
-    valid = reduce(concat, valid)
+    # # Make continuous sequence
+    # train = reduce(concat, train)
+    # test = reduce(concat, test)
+    # valid = reduce(concat, valid)
 
     # Divide sequence into bptt
     dataset = DatasetDict(
@@ -265,9 +278,12 @@ def load_tokenized_dataset(
             ),
         }
     )
-
+    
+    print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
-        lambda x: dictionary.tokenize_line(x["text"]), load_from_cache_file=USE_CACHE
+        lambda x: dictionary.tokenize_line(x["text"]),
+        load_from_cache_file=USE_CACHE,
+        num_proc=num_proc,
     )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")

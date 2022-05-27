@@ -31,6 +31,7 @@ if __name__ == "__main__":
         args.max_dict_size,
         args.unk_threshold,
         args.fallback,
+        args.cpus,
         *args.data.split("/")
     )
 
