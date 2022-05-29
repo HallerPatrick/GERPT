@@ -1,15 +1,18 @@
+import logging
 from pathlib import Path
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import RichProgressBar
 
+import torch
 import wandb
+from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning import Trainer
-from src.args import parse_args, print_args, write_to_yaml
-from src.models import load_model
+from pytorch_lightning.plugins import DeepSpeedPlugin
 
+from src.args import parse_args, print_args, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
+from src.models import load_model
 
 
 if __name__ == "__main__":
@@ -51,12 +54,18 @@ if __name__ == "__main__":
 
     rick_prog_bar_callback = RichProgressBar()
 
+    # --- PL Plugins ---
+    plugins = []
+    if torch.cuda.is_available():
+        plugins.append(DeepSpeedPlugin(logging_level=logging.INFO))
+
     # --- Training ---
     trainer = Trainer(
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        strategy="deepspeed",
+        # strategy="deepspeed",
+        plugins=plugins,
         devices=args.gpus,
         callbacks=[checkpoint_callback, early_stop_callback, rick_prog_bar_callback],
         # Disable validation during training
