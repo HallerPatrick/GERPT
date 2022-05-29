@@ -1,5 +1,7 @@
 import argparse
 import json
+
+from pathlib import Path
 from types import SimpleNamespace
 
 import yaml
@@ -49,14 +51,18 @@ def read_config(path):
     return json.loads(json.dumps(conf), object_hook=lambda d: SimpleNamespace(**d))
 
 
-def write_to_yaml(path, param, value):
+def write_to_yaml(path_name: str, param: str, value: str):
+    
+    path: Path = Path(path_name)
+    
+    conf = {}
 
-    with open(path, "r") as f:
-        conf = yaml.safe_load(f)
-
+    if path.exists():
+        with open(str(path), "r") as f:
+            conf = yaml.safe_load(f)
     conf[param] = value
 
-    with open(path, "w") as f:
+    with open(str(path), "w") as f:
         yaml.dump(conf, f)
 
 

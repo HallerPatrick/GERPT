@@ -56,6 +56,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
+        strategy="deepspeed",
         devices=args.gpus,
         callbacks=[checkpoint_callback, early_stop_callback, rick_prog_bar_callback],
         # Disable validation during training
