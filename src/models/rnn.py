@@ -236,7 +236,10 @@ class RNNModel(pl.LightningModule):
     def forward(self, input, hidden):
         # [#ngram, #seq_len, #batch_size]
         emb = self.encoder(input)
-        # emb = self.drop(emb)
+        emb = self.drop(emb)
+
+        self.rnn.flatten_parameters()
+
         output, hidden = self.rnn(emb, hidden)
         decoded = self.decoder(output)
         decoded = decoded.view(-1, self.ntokens)

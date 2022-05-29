@@ -23,7 +23,7 @@ if __name__ == "__main__":
     wandb_logger.experiment.config.update(vars(args))
 
     print_args(args)
-    
+
     # --- Dataloading & Tokenization ---
     tokenized_dataset, dictionary = load_tokenized_dataset(
         args.bptt,
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     )
 
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
-    
+
     # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpoint(
         monitor="train/loss",
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     )
 
     rick_prog_bar_callback = RichProgressBar()
-    
+
     # --- Training ---
     trainer = Trainer(
         logger=wandb_logger,
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         devices=args.gpus,
         callbacks=[checkpoint_callback, early_stop_callback, rick_prog_bar_callback],
         # Disable validation during training
-        limit_val_batches=0.0
+        limit_val_batches=0.0,
     )
 
     model = load_model(dictionary, args, gen_args)
@@ -68,9 +68,7 @@ if __name__ == "__main__":
 
     # Custom save for flair
     model.save("checkpoints" / Path(args.save))
-    
+
     # Save wandb run id in config for fine tuning run
-    if args.wandb_flair_yaml:
+    if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
         write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
-
-
