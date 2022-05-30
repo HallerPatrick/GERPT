@@ -98,8 +98,9 @@ class RNNModel(pl.LightningModule):
         return optimizer  # ], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
-        # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
+        # display_input_n_gram_sequences(batch["source"][:,:], self.dictionary)
+        # display_input_n_gram_sequences(batch["target"][:,:], self.dictionary)
+        # exit()
         batch_size = batch["source"].size()[-1]
 
         if not self.hidden:
@@ -172,7 +173,9 @@ class RNNModel(pl.LightningModule):
         inp = torch.randint(
             self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
         )
-        generated_output = self.dictionary.idx2word[inp[0][0].item()]
+        idx = inp[0][0].detach()
+        generated_output = self.dictionary.idx2word[idx]
+        sample_text = self.dictionary.idx2word[idx]
 
         with torch.no_grad():
             self.eval()
@@ -186,7 +189,7 @@ class RNNModel(pl.LightningModule):
                 output = output[-1]
 
                 if self.temperature == 0.0:
-                    output = F.softmax(output, dim=0).cpu()
+                    output = F.softmax(output, dim=0).detach()
                     # Just get highest confidence
                     ngram_idx = torch.argmax(output)
                 else:
@@ -194,9 +197,9 @@ class RNNModel(pl.LightningModule):
 
                     # Remove all UNK tokens for ngram > 2
                     if self.ngrams > 2:
-                        output = torch.index_select(output, 0, token_idxs).cpu()
+                        output = torch.index_select(output, 0, token_idxs).detach()
 
-                    word_weights = output.squeeze().div(self.temperature).exp().cpu()
+                    word_weights = output.squeeze().div(self.temperature).exp().detach()
 
                     # multinomial over all tokens
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
@@ -205,12 +208,14 @@ class RNNModel(pl.LightningModule):
                 word = self.dictionary.idx2word[ngram_idx]
 
                 # Append to generated sequence
-                generated_output = generated_output + word
+                generated_output = generated_output +  word
+                sample_text = sample_text + "·" + word
 
                 # Use last 200 chars as sequence for new input
                 inp = (
                     self.dictionary.tokenize_line(
                         generated_output[-200:],
+                        otf=True
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
@@ -221,11 +226,11 @@ class RNNModel(pl.LightningModule):
         self.logger.log_text(
             "samples",
             columns=["epoch", "temperatue", "text"],
-            data=[[self.epoch, self.temperature, generated_output]],
+            data=[[self.epoch, self.temperature, sample_text]],
         )
         # wandb.log({"train/text": generated_output})
 
-        return generated_output
+        return sample_text
 
     def init_weights(self):
         initrange = 0.1

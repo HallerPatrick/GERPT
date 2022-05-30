@@ -144,10 +144,14 @@ class Dictionary:
             mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
             pickle.dump(mappings, f)
 
-    def tokenize_line(self, line: str) -> dict:
+    def tokenize_line(self, line: List, otf: bool = False) -> dict:
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
+        
+        for i, c in enumerate(line):
+            if c == "\n":
+                line[i] = "<eos>"
 
         for n in range(1, self.ngram + 1):
 
@@ -156,7 +160,7 @@ class Dictionary:
             words.extend(list(line))
 
             # TODO: Do we need that?
-            # if not self.otf:
+            # if not otf:
             #     words.append("<eos>")
 
             ids = []
@@ -165,6 +169,8 @@ class Dictionary:
                 try:
                     ids.append(self.word2idx["".join(word)])
                 except KeyError:
+
+                    # print(f"COuld not find word: {word}")
                     # Fall back on n-1 gram if possible
                     if self.fallback and word[1:] in self.word2idx:
                         ids.append(self.word2idx[word])
@@ -278,7 +284,7 @@ def load_tokenized_dataset(
             ),
         }
     )
-
+    
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),

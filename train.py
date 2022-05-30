@@ -61,7 +61,7 @@ if __name__ == "__main__":
     # --- PL Plugins ---
     plugins = []
     if torch.cuda.is_available():
-        plugins.append(DeepSpeedPlugin(logging_level=logging.INFO))
+        plugins.append(DeepSpeedPlugin(logging_level=logging.DEBUG))
 
     # --- Training ---
     trainer = Trainer(

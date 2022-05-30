@@ -8,7 +8,7 @@ from src.models.transformer import TransformerModel
 
 def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
 
-    if args.model == "rnn":
+    if args.model == "lstm":
         model = RNNModel(
             dictionary,
             args.nlayers,
