@@ -52,9 +52,9 @@ def read_config(path):
 
 
 def write_to_yaml(path_name: str, param: str, value: str):
-    
+
     path: Path = Path(path_name)
-    
+
     conf = {}
 
     if path.exists():

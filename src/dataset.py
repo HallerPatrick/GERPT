@@ -249,7 +249,7 @@ def load_tokenized_dataset(
     if hashed_file.exists() and USE_CACHE:
         print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
         return load_from_disk(hashed_file), dictionary
-    
+
     print("Preprocess dataset...")
     train = [x["text"] for x in dataset["train"]]
     test = [x["text"] for x in dataset["test"]]
@@ -278,7 +278,7 @@ def load_tokenized_dataset(
             ),
         }
     )
-    
+
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),

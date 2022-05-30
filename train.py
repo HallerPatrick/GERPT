@@ -1,26 +1,28 @@
 import logging
 from pathlib import Path
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import RichProgressBar
 
 import torch
-import wandb
 from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    RichModelSummary,
+)
+from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.plugins import DeepSpeedPlugin
 
+import wandb
 from src.args import parse_args, print_args, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
-
 
 if __name__ == "__main__":
 
     # --- Init ---
     args = parse_args()
 
-    gen_args = {"generate": True, "chars": 1000, "temperature": 0.0}
+    gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
 
     wandb_logger = WandbLogger(project="gerpt", offline=True)
     wandb_logger.experiment.config.update(vars(args))
@@ -52,7 +54,9 @@ if __name__ == "__main__":
         monitor="train/loss", patience=3, verbose=True, mode="min"
     )
 
+    # Make it 🌟 pretty
     rick_prog_bar_callback = RichProgressBar()
+    rich_model_summary_callback = RichModelSummary()
 
     # --- PL Plugins ---
     plugins = []
@@ -67,9 +71,15 @@ if __name__ == "__main__":
         # strategy="deepspeed",
         plugins=plugins,
         devices=args.gpus,
-        callbacks=[checkpoint_callback, early_stop_callback, rick_prog_bar_callback],
+        callbacks=[
+            checkpoint_callback,
+            early_stop_callback,
+            rick_prog_bar_callback,
+            rich_model_summary_callback,
+        ],
         # Disable validation during training
         limit_val_batches=0.0,
+        profiler="simple",
     )
 
     model = load_model(dictionary, args, gen_args)
