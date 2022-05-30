@@ -11,6 +11,7 @@ from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins import DeepSpeedPlugin
+from pytorch_lightning.plugins.precision import MixedPrecisionPlugin
 
 import wandb
 from src.args import parse_args, print_args, write_to_yaml
@@ -61,7 +62,10 @@ if __name__ == "__main__":
     # --- PL Plugins ---
     plugins = []
     if torch.cuda.is_available():
-        plugins.append(DeepSpeedPlugin(logging_level=logging.DEBUG))
+        # plugins.append(DeepSpeedPlugin(logging_level=logging.DEBUG))
+        # plugins.append(MixedPrecisionPlugin())
+        pass
+
 
     # --- Training ---
     trainer = Trainer(
@@ -70,6 +74,7 @@ if __name__ == "__main__":
         accelerator="auto",
         # strategy="deepspeed",
         plugins=plugins,
+        precision=16,
         devices=args.gpus,
         callbacks=[
             checkpoint_callback,
