@@ -1,17 +1,11 @@
-import logging
 from pathlib import Path
 
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import (
-    ModelCheckpoint,
-    RichModelSummary,
-)
+from pytorch_lightning.callbacks import ModelCheckpoint 
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins import DeepSpeedPlugin
-from pytorch_lightning.plugins.precision import MixedPrecisionPlugin
 
 import wandb
 from src.args import parse_args, print_args, write_to_yaml
@@ -57,7 +51,6 @@ if __name__ == "__main__":
 
     # Make it 🌟 pretty
     rick_prog_bar_callback = RichProgressBar()
-    rich_model_summary_callback = RichModelSummary()
 
     # --- PL Plugins ---
     plugins = []
@@ -65,7 +58,6 @@ if __name__ == "__main__":
         # plugins.append(DeepSpeedPlugin(logging_level=logging.DEBUG))
         # plugins.append(MixedPrecisionPlugin())
         pass
-
 
     # --- Training ---
     trainer = Trainer(
@@ -80,11 +72,11 @@ if __name__ == "__main__":
             checkpoint_callback,
             early_stop_callback,
             rick_prog_bar_callback,
-            rich_model_summary_callback,
         ],
         # Disable validation during training
         limit_val_batches=0.0,
         profiler="simple",
+        # fast_dev_run=True
     )
 
     model = load_model(dictionary, args, gen_args)

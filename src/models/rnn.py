@@ -212,9 +212,10 @@ class RNNModel(pl.LightningModule):
                 sample_text = sample_text + "·" + word
 
                 # Use last 200 chars as sequence for new input
+
                 inp = (
                     self.dictionary.tokenize_line(
-                        generated_output[-200:],
+                        list(generated_output[-200:]),
                         otf=True
                     )["source"]
                     .unsqueeze(dim=2)
