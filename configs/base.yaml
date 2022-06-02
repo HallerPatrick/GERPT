@@ -1,18 +1,19 @@
 # Hyperparameter configs
 
 # Training
-model: transformer
+model: lstm
 data: "text/cash"
+# data: "wikitext/wikitext-103-raw-v1"
 save: model.pt
-cpus: 1
+cpus: 16
 gpus: 1
 epochs: 20
 wdecay: 1.2e-6
 lr: 0.1
 
 # Dictioarny
-ngram: 2
-unk_threshold: 30
+ngram: 1
+unk_threshold: 0
 max_dict_size: 0
 fallback: True
 
@@ -20,7 +21,7 @@ fallback: True
 embedding_size: 256
 hidden_size: 124
 batch_size: 20
-bptt: 200
+bptt: 35
 nlayers: 2
 nhead: 2
 dropout: 0.2

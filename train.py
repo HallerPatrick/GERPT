@@ -64,7 +64,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        # strategy="deepspeed",
+        strategy="dp",
         plugins=plugins,
         precision=16,
         devices=args.gpus,

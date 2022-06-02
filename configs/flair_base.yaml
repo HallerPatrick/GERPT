@@ -1,19 +1,13 @@
-wandb_run_id: hallerpatrick/gerpt/ff0zrap3
-saved_model: checkpoints/flair_model.pt
-model_name: transformer
-
 downstream_tasks:
-  - task:
-      task_name: ner
-      dataset: conll_03
-      base_path: data
-      hidden_size: 256
-      lr: 0.1
-      mini_batch_size: 32
-      max_epochs: 150
-      save: "resources/taggers/conll_03-ner"
-
-  # pos:
-  #   dataset: conll_03
-
-
+- task:
+    base_path: data
+    dataset: conll_03
+    hidden_size: 256
+    lr: 0.1
+    max_epochs: 150
+    mini_batch_size: 32
+    save: resources/taggers/conll_03-ner
+    task_name: ner
+model_name: transformer
+saved_model: checkpoints/flair_model.pt
+wandb_run_id: gerpt/hwbhw824
