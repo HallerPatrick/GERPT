@@ -6,7 +6,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins import DDPPlugin
 
 import wandb
 from src.args import parse_args, print_args, write_to_yaml
@@ -57,14 +56,14 @@ if __name__ == "__main__":
     # --- PL Plugins ---
     plugins = []
     if torch.cuda.is_available():
-        plugins.append(DDPPlugin(find_unused_parameters=False))
+        pass
 
     # --- Training ---
     trainer = Trainer(
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        strategy="ddp",
+        strategy="ddp_find_unused_parameters_false",
         plugins=plugins,
         precision=16,
         devices=args.gpus,

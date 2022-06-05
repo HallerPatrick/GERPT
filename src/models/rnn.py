@@ -108,12 +108,26 @@ class RNNModel(pl.LightningModule):
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-        output, hidden = self.forward(batch["source"], self.hidden)
+        decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
         target = soft_n_hot(batch["target"], self.ntokens)
         target = target.view(-1, self.ntokens)
-        loss = self.criterion(output, target)
+        if self.unigram_ppl:
+            output = torch.index_select(
+                decoded,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
+            )
+
+            targets = torch.index_select(
+                target,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
+            )
+            loss = self.criterion(output, targets)
+        else:
+            loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
@@ -130,7 +144,21 @@ class RNNModel(pl.LightningModule):
 
         target = soft_n_hot(batch["target"], self.ntokens)
         target = target.view(-1, self.ntokens)
-        loss = self.criterion(decoded, target)
+        if self.unigram_ppl:
+            output = torch.index_select(
+                decoded,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
+            )
+
+            targets = torch.index_select(
+                target,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
+            )
+            loss = self.criterion(output, targets)
+        else:
+            loss = self.criterion(decoded, target)
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
 
