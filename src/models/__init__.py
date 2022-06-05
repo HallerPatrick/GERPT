@@ -18,6 +18,7 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
             None,
             args.embedding_size,
             gen_args=gen_args,
+            unigram_ppl=args.unigram_ppl
         )
     else:
         model = TransformerModel(

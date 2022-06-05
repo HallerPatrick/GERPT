@@ -44,6 +44,7 @@ class RNNModel(pl.LightningModule):
         document_delimiter: str = "\n",
         dropout=0.1,
         gen_args: dict = {},
+        unigram_ppl: bool = False
     ):
         super(RNNModel, self).__init__()
 
@@ -60,6 +61,7 @@ class RNNModel(pl.LightningModule):
         self.hidden_size = hidden_size
         self.embedding_size = embedding_size
         self.dropout = dropout
+        self.unigram_ppl = unigram_ppl
 
         self.criterion = CrossEntropyLossSoft()
 
@@ -142,7 +144,23 @@ class RNNModel(pl.LightningModule):
         decoded, self.hidden = self.forward(batch["source"], self.hidden)
         target = soft_n_hot(batch["target"], self.ntokens)
         target = target.view(-1, self.ntokens)
-        loss = self.criterion(decoded, target)
+        
+        if self.unigram_ppl:
+            output = torch.index_select(
+                decoded,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
+            )
+
+            targets = torch.index_select(
+                target,
+                1,
+                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
+            )
+            loss = self.criterion(output, targets)
+        else:
+            loss = self.criterion(decoded, target)
+
         self.log("test/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
 

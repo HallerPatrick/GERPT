@@ -10,4 +10,4 @@ downstream_tasks:
     task_name: ner
 model_name: transformer
 saved_model: checkpoints/flair_model.pt
-wandb_run_id: gerpt/hwbhw824
+wandb_run_id: gerpt/1mdi78ku

@@ -18,9 +18,10 @@ if __name__ == "__main__":
     args = parse_args()
 
     gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
-
+    
+    wandb.require(experiment="service")
     wandb_logger = WandbLogger(project="gerpt", offline=True)
-    wandb_logger.experiment.config.update(vars(args))
+    # wandb_logger.experiment.config.update(vars(args))
 
     print_args(args)
 
@@ -64,7 +65,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        strategy="dp",
+        strategy="ddp",
         plugins=plugins,
         precision=16,
         devices=args.gpus,
