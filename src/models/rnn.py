@@ -79,11 +79,14 @@ class RNNModel(pl.LightningModule):
         else:
             self.proj = None
             self.decoder = nn.Linear(hidden_size, self.ntokens)
+
         self.save_hyperparameters()
         self.init_weights()
 
         self.hidden = None
         self.epoch = 0
+
+        self.register_buffer("nram_indexes", torch.tensor(self.dictionary.ngram_indexes[1]))
 
         for key, value in gen_args.items():
             setattr(self, key, value)
@@ -113,21 +116,7 @@ class RNNModel(pl.LightningModule):
 
         target = soft_n_hot(batch["target"], self.ntokens)
         target = target.view(-1, self.ntokens)
-        if self.unigram_ppl:
-            output = torch.index_select(
-                decoded,
-                1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
-            )
-
-            targets = torch.index_select(
-                target,
-                1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
-            )
-            loss = self.criterion(output, targets)
-        else:
-            loss = self.criterion(decoded, target)
+        loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
@@ -148,17 +137,18 @@ class RNNModel(pl.LightningModule):
             output = torch.index_select(
                 decoded,
                 1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
+                self.ngram_indexes
             )
 
             targets = torch.index_select(
                 target,
                 1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
+                self.ngram_indexes
             )
             loss = self.criterion(output, targets)
         else:
             loss = self.criterion(decoded, target)
+
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
 
@@ -177,13 +167,13 @@ class RNNModel(pl.LightningModule):
             output = torch.index_select(
                 decoded,
                 1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(decoded.device),
+                self.ngram_indexes
             )
 
             targets = torch.index_select(
                 target,
                 1,
-                torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device),
+                self.ngram_indexes
             )
             loss = self.criterion(output, targets)
         else:
