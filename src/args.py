@@ -106,6 +106,11 @@ def argparser_train():
         action="store_true",
         help="Fallback on n-1-gram if UNK for n-gram",
     )
+    parser.add_argument(
+        "--weighted-loss",
+        action="store_true",
+        help="Use a weighted loss for n-gram",
+    )
     # parser.add_argument(
     #     "--unigram-ppl",
     #     action="store_true",
