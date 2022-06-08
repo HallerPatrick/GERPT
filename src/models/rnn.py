@@ -44,7 +44,8 @@ class RNNModel(pl.LightningModule):
         document_delimiter: str = "\n",
         dropout=0.1,
         gen_args: dict = {},
-        unigram_ppl: bool = False
+        unigram_ppl: bool = False,
+        weighted_loss: bool = False
     ):
         super(RNNModel, self).__init__()
 
@@ -63,7 +64,11 @@ class RNNModel(pl.LightningModule):
         self.dropout = dropout
         self.unigram_ppl = unigram_ppl
 
-        self.criterion = CrossEntropyLossSoft()
+
+        if weighted_loss:
+            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+        else:
+            self.criterion = CrossEntropyLossSoft()
 
         if nlayers == 1:
             self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers)

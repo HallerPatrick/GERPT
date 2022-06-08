@@ -6,7 +6,7 @@ from functools import reduce
 from itertools import zip_longest
 from operator import add, itemgetter
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -79,6 +79,7 @@ class Dictionary:
         self.max_dict_size = max_dict_size
         self.unk_threshold = unk_threshold
         self.fallback = fallback
+        self.frequencies: Optional[Counter] = None
 
     def add_word(self, word):
         if word.startswith("<") and word.endswith(">"):
@@ -195,6 +196,20 @@ class Dictionary:
         st = torch.roll(t, -1, 1)
         st[0][-1] = self.word2idx["<eos>"]
         return st
+
+    def create_weight_tensor(self) -> Optional[torch.Tensor]:
+        if not self.frequencies:
+            return
+        
+        t = [0 for _ in range(len(self))]
+        
+        for token, freq in self.frequencies.items():
+            idx = self.word2idx[token]
+            t[idx] = freq
+
+        normed_weights = [1 - (x / sum(t)) for x in t]
+
+        return torch.tensor(normed_weights)
 
 
 def get_dictionary_cache() -> Path:
@@ -360,6 +375,7 @@ def load_dictionary_from_hf(
 
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)
+    dictionary.frequencies = frequencies
 
     return dictionary
 

@@ -17,6 +17,7 @@ unk_threshold: 0
 max_dict_size: 0
 fallback: True
 unigram_ppl: False
+weighted_loss: True
 
 # Model
 embedding_size: 256
