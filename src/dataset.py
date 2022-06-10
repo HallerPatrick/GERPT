@@ -207,6 +207,8 @@ class Dictionary:
             idx = self.word2idx[token]
             t[idx] = freq
 
+        print(t)
+
         normed_weights = [1 - (x / sum(t)) for x in t]
 
         return torch.tensor(normed_weights)

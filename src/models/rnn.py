@@ -45,7 +45,9 @@ class RNNModel(pl.LightningModule):
         dropout=0.1,
         gen_args: dict = {},
         unigram_ppl: bool = False,
-        weighted_loss: bool = False
+        weighted_loss: bool = False,
+        weighted_labels: bool = False
+
     ):
         super(RNNModel, self).__init__()
 
@@ -63,10 +65,12 @@ class RNNModel(pl.LightningModule):
         self.embedding_size = embedding_size
         self.dropout = dropout
         self.unigram_ppl = unigram_ppl
+        self.weighted_labels = weighted_labels
 
 
         if weighted_loss:
             self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+            print(self.criterion.weight)
         else:
             self.criterion = CrossEntropyLossSoft()
 
@@ -108,8 +112,8 @@ class RNNModel(pl.LightningModule):
         return optimizer  # ], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
-        # display_input_n_gram_sequences(batch["source"][:,:], self.dictionary)
-        # display_input_n_gram_sequences(batch["target"][:,:], self.dictionary)
+        # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
+        # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
         # exit()
         batch_size = batch["source"].size()[-1]
 
@@ -119,7 +123,7 @@ class RNNModel(pl.LightningModule):
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], self.ntokens)
+        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
@@ -136,7 +140,7 @@ class RNNModel(pl.LightningModule):
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], self.ntokens)
+        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         if self.unigram_ppl:
             output = torch.index_select(
@@ -165,7 +169,7 @@ class RNNModel(pl.LightningModule):
         self.hidden = repackage_hidden(self.hidden)
 
         decoded, self.hidden = self.forward(batch["source"], self.hidden)
-        target = soft_n_hot(batch["target"], self.ntokens)
+        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         
         if self.unigram_ppl:
