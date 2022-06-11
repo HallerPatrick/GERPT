@@ -112,8 +112,12 @@ class RNNModel(pl.LightningModule):
         return optimizer  # ], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
+        # print(batch["source"][:,:,0].size())
         # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
+        # display_input_n_gram_sequences(batch["source"][:,:,1], self.dictionary)
+        # print("---")
         # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
+        # display_input_n_gram_sequences(batch["target"][:,:,1], self.dictionary)
         # exit()
         batch_size = batch["source"].size()[-1]
 

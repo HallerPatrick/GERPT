@@ -21,6 +21,8 @@ from rich.progress import track
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
+from src.utils import display_input_n_gram_sequences
+
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
 
@@ -186,15 +188,20 @@ class Dictionary:
                 min_length = length
 
             ngram_sequences.append(seq)
-            ngram_target_sequences.append(self.shift_right(seq))
+            ngram_target_sequences.append(self.shift_left(seq, n))
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
+        # display_input_n_gram_sequences(sequence, self)
+        # display_input_n_gram_sequences(target, self)
+        # exit()
         return {"text": line, "source": sequence, "target": target}
 
-    def shift_right(self, t: torch.Tensor) -> torch.Tensor:
-        st = torch.roll(t, -1, 1)
+    def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
+        st = torch.roll(t, -shifts, 1)
         st[0][-1] = self.word2idx["<eos>"]
+        for i in range(1, shifts+1):
+            st[0][-i] = self.word2idx["<eos>"]
         return st
 
     def create_weight_tensor(self) -> Optional[torch.Tensor]:
