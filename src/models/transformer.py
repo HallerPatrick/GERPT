@@ -78,6 +78,10 @@ class TransformerModel(pl.LightningModule):
         document_delimiter="\n",
         dropout=0.5,
         gen_args: dict = {},
+        unigram_ppl: bool = False,
+        weighted_loss: bool = False,
+        weighted_labels: bool = False,
+        n_pos_embeddings: bool = False
     ):
         super(TransformerModel, self).__init__()
         try:
@@ -96,8 +100,6 @@ class TransformerModel(pl.LightningModule):
         self.document_delimiter = document_delimiter
         self.dropout = dropout
 
-        self.criterion = CrossEntropyLossSoft()
-
         self.hidden_size = nhid
         self.nhead = nhead
 
@@ -111,6 +113,14 @@ class TransformerModel(pl.LightningModule):
         self.encoder = NGramsEmbedding(self.ntoken, embedding_size)
         self.embedding_size = embedding_size
         self.decoder = nn.Linear(embedding_size, self.ntoken)
+
+        self.unigram_ppl = unigram_ppl
+        self.weighted_labels = weighted_labels
+        if weighted_loss:
+            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+            print(self.criterion.weight)
+        else:
+            self.criterion = CrossEntropyLossSoft()
 
         self.init_weights()
         self.epoch = 0
@@ -148,6 +158,7 @@ class TransformerModel(pl.LightningModule):
         else:
             self.src_mask = None
         src = self.encoder(src) * math.sqrt(self.embedding_size)
+        print(src.size())
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
@@ -157,7 +168,7 @@ class TransformerModel(pl.LightningModule):
         ntokens = len(self.dictionary)
         output = self.forward(batch["source"])
         output = output.view(-1, ntokens)
-        target = soft_n_hot(batch["target"], ntokens)
+        target = soft_n_hot(batch["target"], ntokens, self.weighted_labels)
         target = target.view(-1, ntokens)
         loss = self.criterion(output, target)
         self.log("train/loss", loss)
@@ -168,7 +179,7 @@ class TransformerModel(pl.LightningModule):
         ntokens = len(self.dictionary)
         output = self.forward(batch["source"])
         output = output.view(-1, ntokens)
-        target = soft_n_hot(batch["target"], ntokens)
+        target = soft_n_hot(batch["target"], ntokens, self.weighted_labels)
         target = target.view(-1, ntokens)
         loss = self.criterion(output, target)
         self.log("val/loss", loss)
@@ -178,7 +189,7 @@ class TransformerModel(pl.LightningModule):
         ntokens = len(self.dictionary)
         output = self.forward(batch["source"])
         output = output.view(-1, ntokens)
-        target = soft_n_hot(batch["target"], ntokens)
+        target = soft_n_hot(batch["target"], ntokens, self.weighted_labels)
         target = target.view(-1, ntokens)
         loss = self.criterion(output, target)
         self.log("test/loss", loss)

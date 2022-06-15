@@ -8,7 +8,8 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 
 import wandb
-from src.args import parse_args, print_args, write_to_yaml
+from fine_tune import fine_tune
+from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 
@@ -63,7 +64,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        strategy="ddp_find_unused_parameters_false",
+        # strategy="ddp_find_unused_parameters_false",
         plugins=plugins,
         precision=16,
         devices=args.gpus,
@@ -84,7 +85,16 @@ if __name__ == "__main__":
 
     # Custom save for flair
     model.save("checkpoints" / Path(args.save))
+    
+    try:
+        # Save wandb run id in config for fine tuning run
+        if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
+            write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
+    except:
+        pass
 
-    # Save wandb run id in config for fine tuning run
-    if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
-        write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
+    if args.fine_tune:
+        assert args.fine_tune_configs is not None
+        fine_tune_args = read_config(args.fine_tune_configs)
+        fine_tune(fine_tune_args, wandb.run.path)
+

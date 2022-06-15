@@ -1,5 +1,6 @@
 downstream_tasks:
 - task:
+    use: False
     base_path: data
     dataset: conll_03
     hidden_size: 256
@@ -8,6 +9,27 @@ downstream_tasks:
     mini_batch_size: 32
     save: resources/taggers/conll_03-ner
     task_name: ner
+- task:
+    use: False
+    base_path: 
+    dataset: ud_english
+    hidden_size: 256
+    lr: 0.1
+    max_epochs: 150
+    mini_batch_size: 32
+    save: resources/taggers/ud_english-upos
+    task_name: upos
+- task:
+    use: True
+    base_path: 
+    dataset: imdb
+    hidden_size: 256
+    lr: 0.1
+    max_epochs: 150
+    mini_batch_size: 32
+    save: resources/taggers/imdb-tc
+    task_name: sentiment
+
 model_name: transformer
 saved_model: checkpoints/flair_model.pt
-wandb_run_id: gerpt/2nyzwdba
+wandb_run_id: gerpt/1kqxbz1e

@@ -62,10 +62,12 @@ def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None
 ) -> Corpus:
 
-    from flair.datasets import CONLL_03
+    from flair.datasets import CONLL_03, UD_ENGLISH, IMDB
 
     corpus_mapper = {
         "conll_03": CONLL_03,
+        "ud_english": UD_ENGLISH,
+        "imdb": IMDB
     }
 
     return corpus_mapper[corpus_name](base_path)
