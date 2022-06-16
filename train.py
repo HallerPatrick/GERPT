@@ -21,7 +21,7 @@ if __name__ == "__main__":
     gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
     
     wandb.require(experiment="service")
-    wandb_logger = WandbLogger(project="gerpt", offline=True)
+    wandb_logger = WandbLogger(project="gerpt", offline=False)
     # wandb_logger.experiment.config.update(vars(args))
 
     print_args(args)
@@ -64,7 +64,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        # strategy="ddp_find_unused_parameters_false",
+        strategy="ddp_find_unused_parameters_false",
         plugins=plugins,
         precision=16,
         devices=args.gpus,
