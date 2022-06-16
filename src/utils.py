@@ -1,5 +1,22 @@
+from datetime import timedelta
+import timeit
+
 import torch.nn.functional as F
+
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks.base import Callback
+
+
+class TimePerEpochCallback(Callback):
+
+    def on_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        self.start = timeit.default_timer()
+        return super().on_epoch_start(trainer, pl_module)
+
+    def on_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        end = timeit.default_timer()
+        trainer.logger.log_metrics({"train/secs_per_epoch": timedelta(seconds=end-self.start).seconds})
+        return super().on_epoch_end(trainer, pl_module)
 
 
 def display_text(dictionary, t):
