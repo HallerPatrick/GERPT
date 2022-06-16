@@ -22,11 +22,8 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
     if wandb_run_id:
         args.wandb_run_id = wandb_run_id
 
-    try:
-        api = wandb.Api()
-        run = api.run(args.wandb_run_id)
-    except:
-        run = None
+    api = wandb.Api()
+    run = api.run(args.wandb_run_id)
 
     for task_settings in args.downstream_tasks:
 
@@ -76,10 +73,13 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
             mini_batch_size=settings.mini_batch_size,
             max_epochs=settings.max_epochs,
         )
-
+        
         # Update run with results
         if run:
-            run.summary[f"{settings.task_name}-{settings.dataset}/f1-score"] = score
+            if isinstance(score, dict):
+                score = score["test_score"]
+
+            run.summary[f"{settings.task_name}/f1-score"] = score
             run.summary.update()
 
 if __name__ == "__main__":

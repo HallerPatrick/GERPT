@@ -214,10 +214,13 @@ class Dictionary:
             idx = self.word2idx[token]
             t[idx] = freq
 
-        print(t)
+        # print(t)
+        
+        # unk_idx = self.get_idx_for_item("<UNK-2>")
 
-        normed_weights = [1 - (x / sum(t)) for x in t]
+        # normed_weights = [1 - (x / sum(t)) for x in t]
 
+        normed_weights = [1 - (x / (max(t) + 1)) for x in t]
         return torch.tensor(normed_weights)
 
 
