@@ -20,10 +20,6 @@ if __name__ == "__main__":
     args = parse_args()
 
     gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
-    
-    wandb.require(experiment="service")
-    wandb_logger = WandbLogger(project="gerpt", offline=False)
-    # wandb_logger.experiment.config.update(vars(args))
 
     print_args(args)
 
@@ -37,6 +33,10 @@ if __name__ == "__main__":
         args.cpus,
         *args.data.split("/")
     )
+
+    wandb.require(experiment="service")
+    configs = {**vars(args), "dict_size": len(dictionary)}
+    wandb_logger = WandbLogger(project="gerpt", offline=False, config=configs)
 
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
