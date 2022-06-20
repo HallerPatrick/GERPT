@@ -68,6 +68,9 @@ class GenericDataModule(pl.LightningDataModule):
             num_workers=self.cpus,
         )
 
+# Cant pickle lambdas...
+def zero():
+    return 0
 
 class Dictionary:
     def __init__(
@@ -82,6 +85,9 @@ class Dictionary:
         self.unk_threshold = unk_threshold
         self.fallback = fallback
         self.frequencies: Optional[Counter] = None
+        self.total_n_tokens = defaultdict(zero)
+        self.unk_n_tokens = defaultdict(zero)
+
 
     def add_word(self, word):
         if word.startswith("<") and word.endswith(">"):
@@ -171,13 +177,15 @@ class Dictionary:
             for i, word in enumerate(ngram_tokenizer(words, n)):
                 try:
                     ids.append(self.word2idx["".join(word)])
+                    self.total_n_tokens[n] += 1
                 except KeyError:
 
-                    # print(f"COuld not find word: {word}")
                     # Fall back on n-1 gram if possible
                     if self.fallback and word[1:] in self.word2idx:
+                        self.total_n_tokens[n] += 1
                         ids.append(self.word2idx[word])
                     else:
+                        self.unk_n_tokens[n] += 1
                         ids.append(self.word2idx[f"<{n}-UNK>"])
                 length += 1
 

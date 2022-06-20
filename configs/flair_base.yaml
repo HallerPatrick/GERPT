@@ -8,7 +8,7 @@ downstream_tasks:
     mini_batch_size: 32
     save: resources/taggers/conll_03-ner
     task_name: ner
-    use: true
+    use: false
 - task:
     base_path: null
     dataset: ud_english
@@ -28,7 +28,19 @@ downstream_tasks:
     mini_batch_size: 32
     save: resources/taggers/imdb-tc
     task_name: sentiment
+    use: true
+- task:
+    base_path: null
+    dataset: glue/sst2
+    hidden_size: 256
+    lr: 0.1
+    max_epochs: 150
+    mini_batch_size: 32
+    save: resources/class/sst2-sent-class
+    task_name: sentiment
     use: false
+
+
 model_name: transformer
 saved_model: checkpoints/flair_model.pt
-wandb_run_id: hallerpatrick/gerpt/2qywl9sa
+wandb_run_id: hallerpatrick/gerpt/1p8xp28l

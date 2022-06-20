@@ -37,6 +37,15 @@ if __name__ == "__main__":
     wandb.require(experiment="service")
     configs = {**vars(args), "dict_size": len(dictionary)}
     wandb_logger = WandbLogger(project="gerpt", offline=False, config=configs)
+        
+    dset_metrics = {}
+
+    dset_metrics[f"total_tokens"] = sum(dictionary.total_n_tokens.values()) + sum(dictionary.unk_n_tokens.values())
+    for n in range(1, args.ngram+1):
+        dset_metrics[f"total_{n}_gram_tokens"] = dictionary.total_n_tokens[n]
+        dset_metrics[f"total_{n}_gram_unk_tokens"] = dictionary.unk_n_tokens[n]
+
+    wandb_logger.log_metrics(dset_metrics)
 
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
