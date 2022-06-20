@@ -18,6 +18,10 @@ class TimePerEpochCallback(Callback):
         trainer.logger.log_metrics({"train/secs_per_epoch": timedelta(seconds=end-self.start).seconds})
         return super().on_epoch_end(trainer, pl_module)
 
+def get_encoder_params(model):
+    for name, parameter in model.named_parameters():
+        if name.startswith("encoder"):
+            return parameter.numel()
 
 def display_text(dictionary, t):
     for a in t:

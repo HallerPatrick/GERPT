@@ -12,7 +12,7 @@ from fine_tune import fine_tune
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
-from src.utils import TimePerEpochCallback
+from src.utils import TimePerEpochCallback, get_encoder_params
 
 if __name__ == "__main__":
 
@@ -93,6 +93,8 @@ if __name__ == "__main__":
     )
 
     model = load_model(dictionary, args, gen_args)
+
+    wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
     trainer.fit(model, data_module)
 
