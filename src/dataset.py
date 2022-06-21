@@ -1,4 +1,5 @@
 import hashlib
+import re
 import sys
 import textwrap
 from collections import Counter, defaultdict
@@ -68,9 +69,11 @@ class GenericDataModule(pl.LightningDataModule):
             num_workers=self.cpus,
         )
 
+
 # Cant pickle lambdas...
 def zero():
     return 0
+
 
 class Dictionary:
     def __init__(
@@ -87,7 +90,6 @@ class Dictionary:
         self.frequencies: Optional[Counter] = None
         self.total_n_tokens = defaultdict(zero)
         self.unk_n_tokens = defaultdict(zero)
-
 
     def add_word(self, word):
         if word.startswith("<") and word.endswith(">"):
@@ -157,7 +159,7 @@ class Dictionary:
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
-        
+
         for i, c in enumerate(line):
             if c == "\n":
                 line[i] = "<eos>"
@@ -208,23 +210,23 @@ class Dictionary:
     def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
         st = torch.roll(t, -shifts, 1)
         st[0][-1] = self.word2idx["<eos>"]
-        for i in range(1, shifts+1):
+        for i in range(1, shifts + 1):
             st[0][-i] = self.word2idx["<eos>"]
         return st
 
     def create_weight_tensor(self) -> Optional[torch.Tensor]:
         if not self.frequencies:
             return
-        
+
         t = [0 for _ in range(len(self))]
-        
+
         for token, freq in self.frequencies.items():
             idx = self.word2idx[token]
-            t[idx] = freq
-
-        # print(t)
-        
-        # unk_idx = self.get_idx_for_item("<UNK-2>")
+            if "<UNK-" in token:
+                n_gram = re.findall(r"\d+", token)[0]
+                t[idx] = int(freq * n_gram)
+            else:
+                t[idx] = freq
 
         # normed_weights = [1 - (x / sum(t)) for x in t]
 
@@ -319,7 +321,7 @@ def load_tokenized_dataset(
             ),
         }
     )
-    
+
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),
