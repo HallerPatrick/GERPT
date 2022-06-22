@@ -66,13 +66,9 @@ class RNNModel(pl.LightningModule):
         self.dropout = dropout
         self.unigram_ppl = unigram_ppl
         self.weighted_labels = weighted_labels
-
-
-        if weighted_loss:
-            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
-            print(self.criterion.weight)
-        else:
-            self.criterion = CrossEntropyLossSoft()
+        self.weighted_loss = weighted_loss
+        
+        self.criterion = None
 
         if nlayers == 1:
             self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers)
@@ -99,6 +95,13 @@ class RNNModel(pl.LightningModule):
 
         for key, value in gen_args.items():
             setattr(self, key, value)
+    
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.weighted_loss:
+            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+            print(self.criterion.weight)
+        else:
+            self.criterion = CrossEntropyLossSoft()
 
     @staticmethod
     def initialize(matrix):

@@ -222,11 +222,20 @@ class Dictionary:
 
         for token, freq in self.frequencies.items():
             idx = self.word2idx[token]
-            if "<UNK-" in token:
-                n_gram = re.findall(r"\d+", token)[0]
-                t[idx] = int(freq * n_gram)
-            else:
-                t[idx] = freq
+            t[idx] = freq
+
+        max_freq = max(t)
+
+        for i, f in enumerate(t):
+
+            if f < 0:
+                token = self.idx2word[i]
+
+                if "UNK" in token:
+                    n_gram = int(re.findall(r"\d+", token)[0])
+                    t[i] = int(( max_freq / 2 ) * n_gram)
+                else:
+                    assert False
 
         # normed_weights = [1 - (x / sum(t)) for x in t]
 
