@@ -1,8 +1,7 @@
 from pathlib import Path
-
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint 
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
@@ -19,7 +18,7 @@ if __name__ == "__main__":
     # --- Init ---
     args = parse_args()
 
-    gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
+    gen_args = {"generate": False, "chars": 1000, "temperature": 0.7}
 
     print_args(args)
 
@@ -31,17 +30,19 @@ if __name__ == "__main__":
         args.unk_threshold,
         args.fallback,
         args.cpus,
-        *args.data.split("/")
+        *args.data.split("/"),
     )
 
     wandb.require(experiment="service")
     configs = {**vars(args), "dict_size": len(dictionary)}
-    wandb_logger = WandbLogger(project="gerpt", offline=False, config=configs)
-        
+    wandb_logger = WandbLogger(project="gerpt", offline=True, config=configs)
+
     dset_metrics = {}
 
-    dset_metrics[f"total_tokens"] = sum(dictionary.total_n_tokens.values()) + sum(dictionary.unk_n_tokens.values())
-    for n in range(1, args.ngram+1):
+    dset_metrics[f"total_tokens"] = sum(dictionary.total_n_tokens.values()) + sum(
+        dictionary.unk_n_tokens.values()
+    )
+    for n in range(1, args.ngram + 1):
         dset_metrics[f"total_{n}_gram_tokens"] = dictionary.total_n_tokens[n]
         dset_metrics[f"total_{n}_gram_unk_tokens"] = dictionary.unk_n_tokens[n]
 
@@ -76,7 +77,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        strategy="ddp_find_unused_parameters_false",
+        # strategy="ddp_find_unused_parameters_false",
         plugins=plugins,
         precision=16,
         devices=args.gpus,
@@ -84,7 +85,7 @@ if __name__ == "__main__":
             checkpoint_callback,
             early_stop_callback,
             rick_prog_bar_callback,
-            log_time_per_epoch_callback
+            log_time_per_epoch_callback,
         ],
         # Disable validation during training
         limit_val_batches=0.0,
@@ -94,13 +95,17 @@ if __name__ == "__main__":
 
     model = load_model(dictionary, args, gen_args)
 
+    for name, parameter in model.rnn.named_parameters():
+        if parameter.requires_grad:
+            print(name, parameter.numel())
+
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
     trainer.fit(model, data_module)
 
     # Custom save for flair
     model.save("checkpoints" / Path(args.save))
-    
+
     try:
         # Save wandb run id in config for fine tuning run
         if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
@@ -108,8 +113,7 @@ if __name__ == "__main__":
     except:
         pass
 
-    if args.fine_tune:
+    if hasattr(args, "fine_tune") and args.fine_tune:
         assert args.fine_tune_configs is not None
         fine_tune_args = read_config(args.fine_tune_configs)
         fine_tune(fine_tune_args, wandb.run.path)
-

@@ -123,6 +123,9 @@ def argparser_train():
     # )
     parser.add_argument("--embedding-size", type=int, help="size of word embeddings")
     parser.add_argument(
+        "--expected-size", type=int, help="Size of model adjusted by tuning hidden size"
+    )
+    parser.add_argument(
         "--hidden-size", type=int, help="number of hidden units per layer"
     )
     parser.add_argument("--nlayers", type=int, help="number of layers")

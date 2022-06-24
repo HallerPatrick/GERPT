@@ -63,11 +63,13 @@ def load_corpus(
 ) -> Corpus:
 
     from flair.datasets import CONLL_03, UD_ENGLISH, IMDB
+    from flair.datasets.document_classification import SENTEVAL_SST_BINARY
 
     corpus_mapper = {
-        "conll_03": CONLL_03,
-        "ud_english": UD_ENGLISH,
-        "imdb": IMDB
+        "conll_03": {"corpus": CONLL_03, "args": [base_path]},
+        "ud_english": {"corpus": UD_ENGLISH, "args": []},
+        "imdb": {"corpus": IMDB, "args": []},
+        "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},
     }
 
-    return corpus_mapper[corpus_name](base_path)
+    return corpus_mapper[corpus_name]["corpus"](*corpus_mapper[corpus_name]["args"])

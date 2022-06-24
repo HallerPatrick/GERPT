@@ -208,6 +208,22 @@ class Dictionary:
         return {"text": line, "source": sequence, "target": target}
 
     def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
+        """
+        "hello world"
+
+        1. "h"   "e"   "l"   "l"   "o"
+        2. "he"  "el"  "ll"  "lo"  "o "  " w"
+        3. "hel" "ell" "llo" "lo " "o w" " wo"
+
+
+
+        1. "e"   "l"   "l"   "o"   " "
+        2. "ll"  "lo"  "o "  " w"  :offset 2
+        3. "lo " "o w" " wo"       :offset 3
+
+
+        Shifts have to be applied ngram * 2 for correct target matching
+        """
         st = torch.roll(t, -shifts, 1)
         st[0][-1] = self.word2idx["<eos>"]
         for i in range(1, shifts + 1):
@@ -233,7 +249,7 @@ class Dictionary:
 
                 if "UNK" in token:
                     n_gram = int(re.findall(r"\d+", token)[0])
-                    t[i] = int(( max_freq / 2 ) * n_gram)
+                    t[i] = int((max_freq / 2) * n_gram)
                 else:
                     assert False
 

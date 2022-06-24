@@ -81,7 +81,7 @@ class TransformerModel(pl.LightningModule):
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
-        n_pos_embeddings: bool = False
+        n_pos_embeddings: bool = False,
     ):
         super(TransformerModel, self).__init__()
         try:
@@ -117,7 +117,9 @@ class TransformerModel(pl.LightningModule):
         self.unigram_ppl = unigram_ppl
         self.weighted_labels = weighted_labels
         if weighted_loss:
-            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+            self.criterion = CrossEntropyLossSoft(
+                weight=self.dictionary.create_weight_tensor()
+            )
             print(self.criterion.weight)
         else:
             self.criterion = CrossEntropyLossSoft()

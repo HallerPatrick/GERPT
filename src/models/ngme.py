@@ -5,12 +5,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-n_dists = {
-    0: [1],
-    1: [0.4, 0.6],
-    2: [0.2, 0.3, 0.5],
-    3: [0.1, 0.2, 0.3, 0.4]
-}
+n_dists = {0: [1], 1: [0.4, 0.6], 2: [0.2, 0.3, 0.5], 3: [0.1, 0.2, 0.3, 0.4]}
+
 
 def n_hot(t, num_clases):
     shape = list(t.size())[1:]
@@ -32,7 +28,7 @@ def soft_dist(n):
 
 @lru_cache(maxsize=5)
 def soft_weigthed_n_dist(n):
-    return n_dists[n-1]
+    return n_dists[n - 1]
 
 
 def soft_n_hot(input, num_classes, weighted=False):
@@ -43,7 +39,7 @@ def soft_n_hot(input, num_classes, weighted=False):
     shape.append(num_classes)
 
     ret = torch.zeros(shape).to(input.device)
-    
+
     if weighted:
         soft_labels = soft_weigthed_n_dist(input.size()[0])
     else:

@@ -6,10 +6,6 @@ from src.models.flair_models import load_corpus, patch_flair
 
 import wandb
 
-from flair.embeddings import FlairEmbeddings, StackedEmbeddings
-from flair.models import SequenceTagger, TextClassifier
-from flair.trainers import ModelTrainer
-
 
 def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
 
@@ -18,12 +14,18 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
 
     # Has to be called first, before importing flair modules
     patch_flair(args.model_name)
-    
+
+    from flair.embeddings import FlairEmbeddings, StackedEmbeddings
+    from flair.models import SequenceTagger, TextClassifier
+    from flair.trainers import ModelTrainer
+
     if wandb_run_id:
         args.wandb_run_id = wandb_run_id
 
-    api = wandb.Api()
-    run = api.run(args.wandb_run_id)
+        api = wandb.Api()
+        run = api.run(args.wandb_run_id)
+    else:
+        run = None
 
     for task_settings in args.downstream_tasks:
 
@@ -32,7 +34,7 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
         if not settings.use:
             print(f"Skipping fine-tune task {settings.task_name}")
             continue
-        
+
         if run:
             run.config.update({settings.task_name: vars(settings)})
             run.update()
@@ -44,7 +46,7 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
         embedding_types = [FlairEmbeddings(args.saved_model)]
 
         embeddings = StackedEmbeddings(embeddings=embedding_types)
-        
+
         if settings.task_name in ["ner", "upos"]:
             task_model = SequenceTagger(
                 hidden_size=256,
@@ -73,7 +75,7 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
             mini_batch_size=settings.mini_batch_size,
             max_epochs=settings.max_epochs,
         )
-        
+
         # Update run with results
         if run:
             if isinstance(score, dict):
@@ -81,6 +83,7 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
 
             run.summary[f"{settings.task_name}/f1-score"] = score
             run.summary.update()
+
 
 if __name__ == "__main__":
     fine_tune()

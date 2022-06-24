@@ -46,8 +46,7 @@ class RNNModel(pl.LightningModule):
         gen_args: dict = {},
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
-        weighted_labels: bool = False
-
+        weighted_labels: bool = False,
     ):
         super(RNNModel, self).__init__()
 
@@ -67,7 +66,7 @@ class RNNModel(pl.LightningModule):
         self.unigram_ppl = unigram_ppl
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
-        
+
         self.criterion = None
 
         if nlayers == 1:
@@ -91,14 +90,18 @@ class RNNModel(pl.LightningModule):
         self.hidden = None
         self.epoch = 0
 
-        self.register_buffer("nram_indexes", torch.tensor(self.dictionary.ngram_indexes[1]))
+        self.register_buffer(
+            "nram_indexes", torch.tensor(self.dictionary.ngram_indexes[1])
+        )
 
         for key, value in gen_args.items():
             setattr(self, key, value)
-    
+
     def setup(self, stage: Optional[str] = None) -> None:
         if self.weighted_loss:
-            self.criterion = CrossEntropyLossSoft(weight=self.dictionary.create_weight_tensor())
+            self.criterion = CrossEntropyLossSoft(
+                weight=self.dictionary.create_weight_tensor()
+            )
             print(self.criterion.weight)
         else:
             self.criterion = CrossEntropyLossSoft()
@@ -150,17 +153,9 @@ class RNNModel(pl.LightningModule):
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         if self.unigram_ppl:
-            output = torch.index_select(
-                decoded,
-                1,
-                self.ngram_indexes
-            )
+            output = torch.index_select(decoded, 1, self.ngram_indexes)
 
-            targets = torch.index_select(
-                target,
-                1,
-                self.ngram_indexes
-            )
+            targets = torch.index_select(target, 1, self.ngram_indexes)
             loss = self.criterion(output, targets)
         else:
             loss = self.criterion(decoded, target)
@@ -178,19 +173,11 @@ class RNNModel(pl.LightningModule):
         decoded, self.hidden = self.forward(batch["source"], self.hidden)
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
-        
-        if self.unigram_ppl:
-            output = torch.index_select(
-                decoded,
-                1,
-                self.ngram_indexes
-            )
 
-            targets = torch.index_select(
-                target,
-                1,
-                self.ngram_indexes
-            )
+        if self.unigram_ppl:
+            output = torch.index_select(decoded, 1, self.ngram_indexes)
+
+            targets = torch.index_select(target, 1, self.ngram_indexes)
             loss = self.criterion(output, targets)
         else:
             loss = self.criterion(decoded, target)
@@ -260,15 +247,14 @@ class RNNModel(pl.LightningModule):
                 word = self.dictionary.idx2word[ngram_idx]
 
                 # Append to generated sequence
-                generated_output = generated_output +  word
+                generated_output = generated_output + word
                 sample_text = sample_text + "·" + word
 
                 # Use last 200 chars as sequence for new input
 
                 inp = (
                     self.dictionary.tokenize_line(
-                        list(generated_output[-200:]),
-                        otf=True
+                        list(generated_output[-200:]), otf=True
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
