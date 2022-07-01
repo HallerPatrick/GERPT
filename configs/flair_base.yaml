@@ -8,7 +8,7 @@ downstream_tasks:
     mini_batch_size: 32
     save: resources/taggers/conll_03-ner
     task_name: ner
-    use: true
+    use: false
 - task:
     base_path: null
     dataset: ud_english
@@ -28,7 +28,7 @@ downstream_tasks:
     mini_batch_size: 32
     save: resources/taggers/imdb-tc
     task_name: sentiment
-    use: false
+    use: true
 - task:
     base_path: null
     dataset: glue/sst2

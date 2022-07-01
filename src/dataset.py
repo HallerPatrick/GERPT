@@ -237,6 +237,10 @@ class Dictionary:
         t = [0 for _ in range(len(self))]
 
         for token, freq in self.frequencies.items():
+
+            if token not in self.word2idx:
+                continue
+
             idx = self.word2idx[token]
             t[idx] = freq
 

@@ -1,6 +1,8 @@
 from argparse import Namespace
 from typing import Optional
 
+from flair.embeddings.document import DocumentRNNEmbeddings
+
 from src.args import argparse_flair_train, read_config
 from src.models.flair_models import load_corpus, patch_flair
 
@@ -43,11 +45,11 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
 
         label_dict = corpus.make_label_dictionary(label_type=settings.task_name)
 
-        embedding_types = [FlairEmbeddings(args.saved_model)]
-
-        embeddings = StackedEmbeddings(embeddings=embedding_types)
-
         if settings.task_name in ["ner", "upos"]:
+            embeddings = StackedEmbeddings(
+                embeddings=[FlairEmbeddings(args.saved_model)]
+            )
+
             task_model = SequenceTagger(
                 hidden_size=256,
                 embeddings=embeddings,
@@ -56,8 +58,16 @@ def fine_tune(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = No
                 use_crf=True,
             )
         elif settings.task_name in ["sentiment"]:
+
+            if args.model_name == "rnn":
+                document_embeddings = DocumentRNNEmbeddings(
+                    embeddings=[FlairEmbeddings(args.saved_model)]
+                )
+            else:
+                print("Not supported model for text classification")
+                exit()
             task_model = TextClassifier(
-                document_embeddings=embeddings,
+                document_embeddings=document_embeddings,
                 label_dictionary=label_dict,
                 label_type="class",
             )

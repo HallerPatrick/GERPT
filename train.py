@@ -78,8 +78,9 @@ if __name__ == "__main__":
         max_epochs=args.epochs,
         accelerator="auto",
         # strategy="ddp_find_unused_parameters_false",
+        # strategy="deepspeed_stage_2",
         plugins=plugins,
-        precision=16,
+        # precision=16,
         devices=args.gpus,
         callbacks=[
             checkpoint_callback,

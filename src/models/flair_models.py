@@ -62,11 +62,12 @@ def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None
 ) -> Corpus:
 
-    from flair.datasets import CONLL_03, UD_ENGLISH, IMDB
+    from flair.datasets import CONLL_03, UD_ENGLISH, IMDB, CONLL_03_GERMAN
     from flair.datasets.document_classification import SENTEVAL_SST_BINARY
 
     corpus_mapper = {
         "conll_03": {"corpus": CONLL_03, "args": [base_path]},
+        "conll_03_de": {"corpus": CONLL_03_GERMAN, "args": [base_path]},
         "ud_english": {"corpus": UD_ENGLISH, "args": []},
         "imdb": {"corpus": IMDB, "args": []},
         "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},

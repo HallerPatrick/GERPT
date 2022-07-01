@@ -139,6 +139,7 @@ def argparser_train():
         type=float,
         help="dropout applied to layers (0 = no dropout)",
     )
+    parser.add_argument("--gpus", type=int, help="number of gpus used")
     parser.add_argument("--seed", type=int, help="random seed")
     parser.add_argument("--save", type=str, help="path to save the final model")
     parser.add_argument(

@@ -81,7 +81,6 @@ class TransformerModel(pl.LightningModule):
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
-        n_pos_embeddings: bool = False,
     ):
         super(TransformerModel, self).__init__()
         try:
@@ -120,7 +119,6 @@ class TransformerModel(pl.LightningModule):
             self.criterion = CrossEntropyLossSoft(
                 weight=self.dictionary.create_weight_tensor()
             )
-            print(self.criterion.weight)
         else:
             self.criterion = CrossEntropyLossSoft()
 
@@ -160,7 +158,6 @@ class TransformerModel(pl.LightningModule):
         else:
             self.src_mask = None
         src = self.encoder(src) * math.sqrt(self.embedding_size)
-        print(src.size())
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)

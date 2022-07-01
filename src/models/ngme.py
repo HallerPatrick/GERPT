@@ -5,7 +5,13 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-n_dists = {0: [1], 1: [0.4, 0.6], 2: [0.2, 0.3, 0.5], 3: [0.1, 0.2, 0.3, 0.4]}
+n_dists = {
+    0: [1],
+    1: [0.4, 0.6],
+    2: [0.2, 0.3, 0.5],
+    3: [0.1, 0.2, 0.3, 0.4],
+    4: [0.1, 0.15, 0.2, 0.25, 0.3],
+}
 
 
 def n_hot(t, num_clases):
