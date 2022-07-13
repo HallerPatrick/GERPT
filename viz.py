@@ -8,7 +8,7 @@ from matplotlib.ticker import StrMethodFormatter, NullFormatter
 with open("results.json") as f:
     results = json.load(f)
 
-ngrams = 2
+ngrams = 1
 
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
 fig.subplots_adjust(hspace=0.5)

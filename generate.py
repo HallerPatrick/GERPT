@@ -104,11 +104,61 @@ def analyze(model, seed_text: str, target: str):
     with open("results.json", "w") as f:
         json.dump(results, f, indent=4)
 
+def generate(model, temp: float, seed: str, chars: int):
 
-def generate(args):
+    generated_output = seed
+
+    inp = (
+        model.dictionary.tokenize_line(list(generated_output), otf=True)["source"]
+        .unsqueeze(dim=2)
+        .to(model.device)
+    )
+
+    with torch.no_grad():
+        model.eval()
+
+        for i in range(chars):
+            hidden = model.init_hidden(1)
+            output, hidden = model(inp, hidden)
+
+            output = output[-1]
+
+            if temp == 0.0:
+                output = F.softmax(output, dim=0).cpu()
+                # Just get highest confidence
+                ngram_idx = torch.argmax(output)
+            else:
+                output = F.log_softmax(output, dim=0)
+
+                # Remove all UNK tokens for ngram > 2
+                # if model.ngrams > 2:
+                #     output = torch.index_select(output, 0, token_idxs).cpu()
+
+                word_weights = output.squeeze().div(temp).exp().cpu()
+
+                # multinomial over all tokens
+                ngram_idx = torch.multinomial(word_weights, 1)[0]
+
+            # Get ngram word
+            word = model.dictionary.idx2word[ngram_idx]
+
+            # Append to generated sequence
+            generated_output = generated_output + word
+
+            # Use last 200 chars as sequence for new input
+            inp = (
+                model.dictionary.tokenize_line(list(generated_output), otf=True)["source"]
+                .unsqueeze(dim=2)
+                .to(model.device)
+            )
+    print(generated_output)
+
+def main(args):
 
     seed = "love "
     target = "is a burning ring"
+
+    chars = 100
 
     if args.type == "rnn":
         model = RNNModel.load_from_checkpoint(args.model)
@@ -118,10 +168,11 @@ def generate(args):
     model.temperature = args.temperature
     model.eval()
 
-    analyze(model, seed, target)
-
-    # print(model.generate_text())
+    if args.mode == "gen":
+        generate(model, args.temperature, seed, chars)
+    else:
+        analyze(model, seed, target)
 
 
 if __name__ == "__main__":
-    generate(argparse_generate())
+    main(argparse_generate())

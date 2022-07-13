@@ -177,4 +177,9 @@ def argparse_generate():
         "--type",
         type=str,
     )
+
+    parser.add_argument(
+        "--mode",
+        type=str
+    )
     return parser.parse_args()

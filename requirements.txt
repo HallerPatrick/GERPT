@@ -8,6 +8,9 @@ colorama
 datasets
 wandb
 prettytable
+matplotlib
+numpy
+pandas
 
 black
 isort
