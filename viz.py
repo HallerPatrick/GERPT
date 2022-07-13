@@ -41,8 +41,9 @@ for ax, metric, color in settings:
             y_axis.append(val)
 
         xs = list(range(0, len(x_axis)))
-        ax.set_xticks(xs, x_axis)
+        ax.set_xticks(xs, x_axis, weight="bold")
         ax.set_ylabel(metric)
+
         (plot,) = ax.plot(
             xs,
             y_axis,
@@ -51,9 +52,9 @@ for ax, metric, color in settings:
             marker=ngram_settings[ngram-1][1],
             label=f"{ngram}-gram",
         )
-        legend = ax.legend(handles=[plot])
         # Add the legend manually to the Axes.
-        ax.add_artist(legend)
+        # ax.add_artist(legend)
+        ax.legend()
 
 
 # plot

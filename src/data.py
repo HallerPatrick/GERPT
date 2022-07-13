@@ -12,6 +12,11 @@ local_dataset_mapper = {
         "train": "data/cash/train.txt",
         "test": "data/cash/test.txt",
         "validation": "data/cash/valid.txt",
+    },
+    "wikitext-2": {
+        "train": "data/wikitext-2/train.txt",
+        "test": "data/wikitext-2/test.txt",
+        "validation": "data/wikitext-2/valid.txt",
     }
 }
 

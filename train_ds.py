@@ -1,6 +1,7 @@
 from argparse import Namespace
 from typing import Optional
 
+from flair.embeddings import WordEmbeddings
 from flair.embeddings.document import DocumentRNNEmbeddings
 
 from src.args import argparse_flair_train, read_config
@@ -28,6 +29,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         run = api.run(args.wandb_run_id)
     else:
         run = None
+
+    results = {}
 
     for task_settings in args.downstream_tasks:
 
@@ -57,7 +60,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 tag_type=settings.task_name,
                 use_crf=True,
             )
-        elif settings.task_name in ["sentiment"]:
+        elif settings.task_name in ["sentiment", "class"]:
 
             if args.model_name == "rnn":
                 document_embeddings = DocumentRNNEmbeddings(
@@ -69,7 +72,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             task_model = TextClassifier(
                 document_embeddings=document_embeddings,
                 label_dictionary=label_dict,
-                label_type="class",
+                label_type=settings.task_name,
             )
         else:
             print(f"Task {settings.task_name} not supported")
@@ -86,13 +89,17 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             max_epochs=settings.max_epochs,
         )
 
+        if isinstance(score, dict):
+            score = score["test_score"]
+
         # Update run with results
         if run:
-            if isinstance(score, dict):
-                score = score["test_score"]
-
             run.summary[f"{settings.task_name}/f1-score"] = score
             run.summary.update()
+
+        results[f"{settings.task_name}/f1-score"] = score
+    
+    print(results)
 
 
 if __name__ == "__main__":
