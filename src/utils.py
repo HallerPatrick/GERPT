@@ -1,5 +1,6 @@
 from datetime import timedelta
 from math import sqrt
+from typing import Any, Callable
 import timeit
 
 import torch.nn.functional as F
@@ -102,3 +103,51 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
         return result[0].evalf()
 
     return result.evalf()
+
+
+
+class DummyLogger:
+    """Dummy logger for internal use.
+    It is useful if we want to disable user's logger for a feature, but still ensure that user code can run
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # self._experiment = DummyExperiment()
+
+    # @property
+    # def experiment(self) -> DummyExperiment:
+    #     """Return the experiment object associated with this logger."""
+    #     return self._experiment
+
+    def log_metrics(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def log_hyperparams(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    @property
+    def name(self) -> str:
+        """Return the experiment name."""
+        return ""
+
+    @property
+    def version(self) -> str:
+        """Return the experiment version."""
+        return ""
+
+    def __getitem__(self, idx: int) -> "DummyLogger":
+        # enables self.logger[0].experiment.add_image(...)
+        return self
+
+    # def __iter__(self) -> Generator[None, None, None]:
+    #     # if DummyLogger is substituting a logger collection, pretend it is empty
+    #     yield from ()
+
+    def __getattr__(self, name: str) -> Callable:
+        """Allows the DummyLogger to be called with arbitrary methods, to avoid AttributeErrors."""
+
+        def method(*args: Any, **kwargs: Any) -> None:
+            return None
+
+        return method

@@ -161,3 +161,20 @@ def argparse_flair_train():
     )
 
     return parser.parse_args()
+
+def argparse_generate():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model",
+        type=str,
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+    )
+
+    parser.add_argument(
+        "--type",
+        type=str,
+    )
+    return parser.parse_args()

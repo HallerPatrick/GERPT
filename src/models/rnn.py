@@ -102,7 +102,6 @@ class RNNModel(pl.LightningModule):
             self.criterion = CrossEntropyLossSoft(
                 weight=self.dictionary.create_weight_tensor()
             )
-            print(self.criterion.weight)
         else:
             self.criterion = CrossEntropyLossSoft()
 
@@ -261,12 +260,14 @@ class RNNModel(pl.LightningModule):
                 )
 
             self.train()
-
-        self.logger.log_text(
-            "samples",
-            columns=["epoch", "temperatue", "text"],
-            data=[[self.epoch, self.temperature, sample_text]],
-        )
+        try:
+            self.logger.log_text(
+                "samples",
+                columns=["epoch", "temperatue", "text"],
+                data=[[self.epoch, self.temperature, sample_text]],
+            )
+        except:
+            pass
         # wandb.log({"train/text": generated_output})
 
         return sample_text

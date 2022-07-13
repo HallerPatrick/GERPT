@@ -7,7 +7,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 
 import wandb
-from fine_tune import fine_tune
+from train_ds import train_ds
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # --- Init ---
     args = parse_args()
 
-    gen_args = {"generate": False, "chars": 1000, "temperature": 0.7}
+    gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
 
     print_args(args)
 
@@ -117,4 +117,4 @@ if __name__ == "__main__":
     if hasattr(args, "fine_tune") and args.fine_tune:
         assert args.fine_tune_configs is not None
         fine_tune_args = read_config(args.fine_tune_configs)
-        fine_tune(fine_tune_args, wandb.run.path)
+        train_ds(fine_tune_args, wandb.run.path)
