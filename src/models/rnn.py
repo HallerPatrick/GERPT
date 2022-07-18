@@ -98,8 +98,10 @@ class RNNModel(pl.LightningModule):
             setattr(self, key, value)
 
     def setup(self, stage: Optional[str] = None) -> None:
+
         if self.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
+                ignore_index=self.dictionary.word2idx["<pad>"],
                 weight=self.dictionary.create_weight_tensor()
             )
         else:
@@ -234,8 +236,8 @@ class RNNModel(pl.LightningModule):
                     output = F.log_softmax(output, dim=0)
 
                     # Remove all UNK tokens for ngram > 2
-                    if self.ngrams > 2:
-                        output = torch.index_select(output, 0, token_idxs).detach()
+                    # if self.ngrams > 2:
+                    #     output = torch.index_select(output, 0, token_idxs).detach()
 
                     word_weights = output.squeeze().div(self.temperature).exp().detach()
 
@@ -252,9 +254,9 @@ class RNNModel(pl.LightningModule):
                 # Use last 200 chars as sequence for new input
 
                 inp = (
-                    self.dictionary.tokenize_line(
-                        list(generated_output[-200:]), otf=True
-                    )["source"]
+                    self.dictionary.tokenize_line(list(generated_output[-200:]))[
+                        "source"
+                    ]
                     .unsqueeze(dim=2)
                     .to(self.device)
                 )

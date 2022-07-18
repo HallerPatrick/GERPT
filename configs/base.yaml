@@ -4,32 +4,30 @@
 model: lstm
 # model: transformer
 data: "text/cash"
-# data: "wikitext/wikitext-103-raw-v1"
+# data: "text/wikitext-2"
 save: model.pt
 cpus: 1
 gpus: 1
-epochs: 0
+epochs: 10
 wdecay: 1.2e-6
 lr: 0.1
 
 # Dictioarny
-ngram: 1
+ngram: 4
 unk_threshold: 0
 max_dict_size: 0
 fallback: True
 unigram_ppl: False
 weighted_loss: True
-weighted_labels: False
-
-n_pos_embeddings: True
+weighted_labels: True
 
 # Model
-expected_size: 374000
+# expected_size: 374000
 embedding_size: 256
-hidden_size: 124
+hidden_size: 256
 batch_size: 1
-bptt: 35
-nlayers: 2
+bptt: 100
+nlayers: 1
 nhead: 2
 dropout: 0.2
 

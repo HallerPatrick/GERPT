@@ -1,5 +1,6 @@
 import hashlib
 import re
+import string
 import sys
 import textwrap
 from collections import Counter, defaultdict
@@ -155,14 +156,24 @@ class Dictionary:
             mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
             pickle.dump(mappings, f)
 
-    def tokenize_line(self, line: List, otf: bool = False) -> dict:
+    def tokenize_line(self, line: List) -> dict:
+        """
+
+        h       e     l  l  o
+
+        <s>h    he    el ll lo
+
+        <s><s>h <s>he hel
+
+        """
+
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
 
-        for i, c in enumerate(line):
-            if c == "\n":
-                line[i] = "<eos>"
+        # for i, c in enumerate(line):
+        #     if c == "\n":
+        #         line[i] = " "
 
         for n in range(1, self.ngram + 1):
 
@@ -170,20 +181,21 @@ class Dictionary:
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
 
-            # TODO: Do we need that?
-            # if not otf:
-            #     words.append("<eos>")
-
             ids = []
             length = 0
+            # print(f"Processed line: {words}")
             for i, word in enumerate(ngram_tokenizer(words, n)):
+
+                if "<start>" in word:
+                    word = [w for w in list(word) if w != "<start>"]
+
                 try:
                     ids.append(self.word2idx["".join(word)])
                     self.total_n_tokens[n] += 1
                 except KeyError:
 
                     # Fall back on n-1 gram if possible
-                    if self.fallback and word[1:] in self.word2idx:
+                    if self.fallback and tuple(word)[1:] in self.word2idx:
                         self.total_n_tokens[n] += 1
                         ids.append(self.word2idx[word])
                     else:
@@ -197,14 +209,15 @@ class Dictionary:
             if length < min_length:
                 min_length = length
 
+            # display_input_n_gram_sequences(seq, self)
             ngram_sequences.append(seq)
-            ngram_target_sequences.append(self.shift_left(seq, n))
+            s = self.shift_left(seq, n)
+            # display_input_n_gram_sequences(s, self)
+            ngram_target_sequences.append(s)
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
-        # display_input_n_gram_sequences(sequence, self)
-        # display_input_n_gram_sequences(target, self)
-        # exit()
+
         return {"text": line, "source": sequence, "target": target}
 
     def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
@@ -222,12 +235,13 @@ class Dictionary:
         3. "lo " "o w" " wo"       :offset 3
 
 
-        Shifts have to be applied ngram * 2 for correct target matching
+        Shifts have to be applied ngram-time for correct target matching
         """
         st = torch.roll(t, -shifts, 1)
-        st[0][-1] = self.word2idx["<eos>"]
+
+        st[0][-1] = self.word2idx["<pad>"]
         for i in range(1, shifts + 1):
-            st[0][-i] = self.word2idx["<eos>"]
+            st[0][-i] = self.word2idx["<pad>"]
         return st
 
     def create_weight_tensor(self) -> Optional[torch.Tensor]:
@@ -274,8 +288,12 @@ def get_dictionary_cache() -> Path:
 
 def get_tokenized_cache() -> Path:
     path = Path(HF_CACHE_TOKENIZED)
+
     if not path.exists():
-        path.mkdir()
+        try:
+            path.mkdir()
+        except FileNotFoundError as e:
+            print(e)
 
     return path
 
@@ -359,7 +377,10 @@ def load_tokenized_dataset(
     )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")
-    tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
+    try:
+        tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
+    except OSError:
+        print("Failed to save... 😢")
 
     return tokenized_dataset, dictionary
 
@@ -388,27 +409,47 @@ def load_dictionary_from_hf(
 
         split_frequency = Counter()
 
+        # To avoid UNKs from only looking line by line, we merge all lines for populating dict
+        continuous_line = []
         for line in track(
             lines,
             description=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
         ):
-            chars = ["<start>" for _ in range(1, ngrams)] + list(line) + ["<eos>"]
-            for i in range(1, ngrams + 1):
-                # Add UNK token for ngram
-                n_unk_token = f"<{i}-UNK>"
 
-                unk_idx = dictionary.add_word(n_unk_token)
+            line = line + "\n"
+            if not line:
+                continue
 
-                if unk_idx not in dictionary.ngram_indexes[i]:
-                    dictionary.ngram_indexes[i].append(unk_idx)
+            # TODO: Explain this
 
-                for ngram in ngram_tokenizer(chars, i):
-                    split_frequency["".join(ngram)] += 1
+            continuous_line.extend(list(line) + [" "])
+            continuous_line.extend(
+                ["<start>" for _ in range(1, ngrams)] + list(line) + ["<pad>"]
+            )
+            continuous_line.extend([line[-1]] + [" "])
+
+        for i in range(1, ngrams + 1):
+            # Add UNK token for ngram
+            n_unk_token = f"<{i}-UNK>"
+
+            unk_idx = dictionary.add_word(n_unk_token)
+
+            if unk_idx not in dictionary.ngram_indexes[i]:
+                dictionary.ngram_indexes[i].append(unk_idx)
+
+            for ngram in ngram_tokenizer(continuous_line, i):
+                split_frequency["".join(ngram)] += 1
 
         frequencies.update(split_frequency)
 
-        dictionary.add_word("<start>")
-        dictionary.add_word("<eos>")
+        # dictionary.add_word("<start>")
+
+        for i in range(1, ngrams + 1):
+
+            dictionary.add_word(" " * i)
+
+            for c in string.printable:
+                dictionary.add_word("<start>" * i + c)
 
         if max_dict_size > 0:
             for token, _ in frequencies.most_common(max_dict_size):
