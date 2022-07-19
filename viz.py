@@ -8,14 +8,14 @@ from matplotlib.ticker import StrMethodFormatter, NullFormatter
 with open("results.json") as f:
     results = json.load(f)
 
-ngrams = 1
+ngrams = 3
 
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
 fig.subplots_adjust(hspace=0.5)
 
 settings = [(ax1, "entropy", "b"), (ax2, "loss", "g"), (ax3, "rank", "r")]
 
-ngram_settings = [("-", "o"), ("--", "x")]
+ngram_settings = [("-", "o"), ("--", "x"), (":", ".")]
 
 for ax, metric, color in settings:
     
@@ -29,6 +29,7 @@ for ax, metric, color in settings:
     ax.grid(True)
 
     for ngram in range(1, ngrams + 1):
+
         x_axis = []
         y_axis = []
 
@@ -36,8 +37,9 @@ for ax, metric, color in settings:
             x_axis.append(value["char"])
             val = value[str(ngram)][metric]
 
-            if not val:
-                val = 1
+            # if not val:
+            #     val = 1
+
             y_axis.append(val)
 
         xs = list(range(0, len(x_axis)))

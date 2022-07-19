@@ -41,4 +41,4 @@ downstream_tasks:
     use: false
 model_name: rnn
 saved_model: checkpoints/flair_model.pt
-wandb_run_id: gerpt/3euf177c
+wandb_run_id: gerpt/rgdqik1a

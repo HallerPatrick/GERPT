@@ -100,6 +100,7 @@ class Dictionary:
         if word not in self.word2idx:
             self.idx2word.append(word)
             self.word2idx[word] = len(self.idx2word) - 1
+
         return self.word2idx[word]
 
     def add_item(self, word):
@@ -180,7 +181,7 @@ class Dictionary:
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
-
+            
             ids = []
             length = 0
             # print(f"Processed line: {words}")
@@ -216,7 +217,9 @@ class Dictionary:
             ngram_target_sequences.append(s)
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
+        # display_input_n_gram_sequences(sequence, self)
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
+        # display_input_n_gram_sequences(target, self)
 
         return {"text": line, "source": sequence, "target": target}
 
@@ -256,6 +259,7 @@ class Dictionary:
                 continue
 
             idx = self.word2idx[token]
+
             t[idx] = freq
 
         max_freq = max(t)
@@ -428,6 +432,7 @@ def load_dictionary_from_hf(
             )
             continuous_line.extend([line[-1]] + [" "])
 
+
         for i in range(1, ngrams + 1):
             # Add UNK token for ngram
             n_unk_token = f"<{i}-UNK>"
@@ -441,10 +446,16 @@ def load_dictionary_from_hf(
                 split_frequency["".join(ngram)] += 1
 
         frequencies.update(split_frequency)
+        
+        from pprint import pprint
 
+        pprint(frequencies)
         # dictionary.add_word("<start>")
 
         for i in range(1, ngrams + 1):
+
+            if i == 1:
+                continue
 
             dictionary.add_word(" " * i)
 
@@ -453,17 +464,19 @@ def load_dictionary_from_hf(
 
         if max_dict_size > 0:
             for token, _ in frequencies.most_common(max_dict_size):
-                sanit_token = remove_marker_tokens(token, dictionary)
+                token_len = len(remove_marker_tokens(token, dictionary))
                 idx = dictionary.add_word(token)
-                if idx not in dictionary.ngram_indexes[len(sanit_token)]:
-                    dictionary.ngram_indexes[len(sanit_token)].append(idx)
+                print(f"Token: {token}, IDX: {idx}")
+                if idx not in dictionary.ngram_indexes[token_len]:
+                    dictionary.ngram_indexes[token_len].append(idx)
         else:
             for token, freq in frequencies.items():
                 if freq > unk_threshold or freq == -1:
-                    sanit_token = remove_marker_tokens(token, dictionary)
+                    token_len = len(remove_marker_tokens(token, dictionary))
                     idx = dictionary.add_word(token)
-                    if idx not in dictionary.ngram_indexes[len(sanit_token)]:
-                        dictionary.ngram_indexes[len(sanit_token)].append(idx)
+                    print(f"Token: {token}, IDX: {idx}")
+                    if idx not in dictionary.ngram_indexes[token_len]:
+                        dictionary.ngram_indexes[token_len].append(idx)
 
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)

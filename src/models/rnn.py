@@ -198,17 +198,17 @@ class RNNModel(pl.LightningModule):
 
     def generate_text(self) -> str:
 
-        if self.ngrams > 2:
-            unk_idxs = set(
-                [
-                    self.dictionary.word2idx[f"<{i}-UNK>"]
-                    for i in range(3, self.ngrams + 1)
-                ]
-            )
-            token_idxs = set(self.dictionary.word2idx.values())
-            token_idxs = torch.tensor(
-                list(token_idxs.difference(unk_idxs)), dtype=torch.int64
-            ).to(self.device)
+        # if self.ngrams > 2:
+        #     unk_idxs = set(
+        #         [
+        #             self.dictionary.word2idx[f"<{i}-UNK>"]
+        #             for i in range(3, self.ngrams + 1)
+        #         ]
+        #     )
+        #     token_idxs = set(self.dictionary.word2idx.values())
+        #     token_idxs = torch.tensor(
+        #         list(token_idxs.difference(unk_idxs)), dtype=torch.int64
+        #     ).to(self.device)
 
         inp = torch.randint(
             self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device

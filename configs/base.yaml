@@ -13,12 +13,12 @@ wdecay: 1.2e-6
 lr: 0.1
 
 # Dictioarny
-ngram: 4
+ngram: 3
 unk_threshold: 0
 max_dict_size: 0
 fallback: True
 unigram_ppl: False
-weighted_loss: True
+weighted_loss: False
 weighted_labels: True
 
 # Model

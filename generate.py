@@ -15,7 +15,7 @@ def analyze(model, seed_text: str, target: str):
     current_text = seed_text
 
     inp = (
-        model.dictionary.tokenize_line(list(current_text), otf=True)["source"]
+        model.dictionary.tokenize_line(list(current_text))["source"]
         .unsqueeze(dim=2)
         .to(model.device)
     )
@@ -39,22 +39,23 @@ def analyze(model, seed_text: str, target: str):
 
             targets = (
                 model.dictionary.tokenize_line(
-                    list(current_text + c)[-len(current_text) :], otf=True
+                    list(current_text + c)[-len(current_text) :]
                 )["source"]
                 # .unsqueeze(dim=2)
                 .to(model.device)
             )
 
             targets = soft_n_hot(targets, len(model.dictionary))
-            
-            t_results = {
-                    "char": c
-            }
+
+            t_results = {"char": c}
             # Get all class of each n-gram
             for n in range(1, model.ngrams + 1):
-
+                    
+                token = "".join(list(current_text + c)[-n:])
+                
                 # Loss for each n-gram can be calculated by just using the subset of n-gram indexes
                 # of the output and target
+                # print(model.dictionary.ngram_indexes)
                 n_gram_output = torch.index_select(
                     output, 1, torch.tensor(model.dictionary.ngram_indexes[n])
                 )
@@ -70,23 +71,31 @@ def analyze(model, seed_text: str, target: str):
                 entropy = Categorical(out).entropy()
                 print(f"Entropy: {entropy}")
 
-                ngram_idx = torch.argmax(out)
+                # ngram_idx = torch.argmax(out)
+                # ngram_idx = model.dictionary.ngram_indexes[n][ngram_idx]
 
-                target_idx = model.dictionary.word2idx[c]
+                target_idx = model.dictionary.word2idx[token]
+                target_idx = model.dictionary.ngram_indexes[n].index(target_idx)
 
-                idx_to_pred = [(idx, pred.item())  for idx, pred in enumerate(out)]
+                idx_to_pred = [(idx, pred.item()) for idx, pred in enumerate(out)]
                 idx_to_pred.sort(key=lambda x: x[1], reverse=True)
-                    
+
                 r = None
                 for rank, pred in enumerate(idx_to_pred):
                     if target_idx == pred[0]:
-                        r = rank
+                        r = rank + 1
                         print(f"Rank of {n}-gram '{c}': {rank}")
+                        break
+                else:
+                    print(target_idx)
+                    print(c)
+                    print(idx_to_pred)
+
 
                 t_results[n] = {
-                        "loss": n_gram_loss.item(),
-                        "entropy": entropy.item(),
-                        "rank": r
+                    "loss": n_gram_loss.item(),
+                    "entropy": entropy.item(),
+                    "rank": r,
                 }
 
                 # But not the rank, due to the loss of index if we subset output and target
@@ -94,7 +103,7 @@ def analyze(model, seed_text: str, target: str):
             current_text = current_text + c
 
             inp = (
-                model.dictionary.tokenize_line(list(current_text), otf=True)["source"]
+                model.dictionary.tokenize_line(list(current_text))["source"]
                 .unsqueeze(dim=2)
                 .to(model.device)
             )
@@ -103,6 +112,7 @@ def analyze(model, seed_text: str, target: str):
 
     with open("results.json", "w") as f:
         json.dump(results, f, indent=4)
+
 
 def generate(model, temp: float, seed: str, chars: int):
 
@@ -147,16 +157,19 @@ def generate(model, temp: float, seed: str, chars: int):
 
             # Use last 200 chars as sequence for new input
             inp = (
-                model.dictionary.tokenize_line(list(generated_output), otf=True)["source"]
+                model.dictionary.tokenize_line(list(generated_output), otf=True)[
+                    "source"
+                ]
                 .unsqueeze(dim=2)
                 .to(model.device)
             )
     print(generated_output)
 
+
 def main(args):
 
     seed = "love "
-    target = "is a burning ring"
+    target = "is a burning thing"
 
     chars = 100
 
