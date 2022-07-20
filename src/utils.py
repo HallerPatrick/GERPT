@@ -1,7 +1,8 @@
 from datetime import timedelta
 from math import sqrt
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 import timeit
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
 import torch.nn.functional as F
 
@@ -26,6 +27,11 @@ class TimePerEpochCallback(Callback):
         )
         return super().on_epoch_end(trainer, pl_module)
 
+class ModelCheckpointCallback(ModelCheckpoint):
+
+    def on_save_checkpoint(self, trainer, pl_module, checkpoint) -> Optional[dict]:
+        self.save_path = f"{self.dirpath}/{self.filename}"
+        return super().on_save_checkpoint(trainer, pl_module, checkpoint)
 
 def get_encoder_params(model):
     for name, parameter in model.named_parameters():

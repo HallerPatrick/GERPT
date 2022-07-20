@@ -5,13 +5,14 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
 
 import wandb
 from train_ds import train_ds
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
-from src.utils import TimePerEpochCallback, get_encoder_params
+from src.utils import ModelCheckpointCallback, TimePerEpochCallback, get_encoder_params
 
 if __name__ == "__main__":
 
@@ -51,11 +52,11 @@ if __name__ == "__main__":
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
     # --- PL Callbacks ---
-    checkpoint_callback = ModelCheckpoint(
+    checkpoint_callback = ModelCheckpointCallback(
         monitor="train/loss",
         save_on_train_epoch_end=True,
         dirpath="checkpoints",
-        filename=args.save + "-{epoch:02d}",
+        filename=args.save,
     )
 
     early_stop_callback = EarlyStopping(
@@ -72,13 +73,15 @@ if __name__ == "__main__":
     if torch.cuda.is_available():
         pass
 
+    strategy = "deepspeed_stage_2"
+    strategy = None
+
     # --- Training ---
     trainer = Trainer(
         logger=wandb_logger,
         max_epochs=args.epochs,
         accelerator="auto",
-        # strategy="ddp_find_unused_parameters_false",
-        # strategy="deepspeed_stage_2",
+        strategy=strategy,
         plugins=plugins,
         # precision=16,
         devices=args.gpus,
@@ -90,7 +93,7 @@ if __name__ == "__main__":
         ],
         # Disable validation during training
         limit_val_batches=0.0,
-        profiler="simple",
+        # profiler="simple",
         # fast_dev_run=True
     )
 
@@ -101,8 +104,17 @@ if __name__ == "__main__":
             print(name, parameter.numel())
 
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
-
+    
+    # TRAIN!
     trainer.fit(model, data_module)
+    
+    ckpt_path = checkpoint_callback.save_path
+    
+    
+    # Combine sharded model checkpoints into one for future loading
+    if strategy and "deepspeed_stage_" in strategy:
+        print("Convert to single checkpoint: {ckpt_path}.single")
+        convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
 
     # Custom save for flair
     model.save("checkpoints" / Path(args.save))
