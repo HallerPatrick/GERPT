@@ -8,6 +8,11 @@ from nltk import ngrams
 from rich.progress import track
 
 local_dataset_mapper = {
+    "hp": {
+        "train": "data/hp/train.txt",
+        "test": "data/hp/test.txt",
+        "validation": "data/hp/valid.txt",
+    },
     "cash": {
         "train": "data/cash/train.txt",
         "test": "data/cash/test.txt",
