@@ -251,34 +251,45 @@ class Dictionary:
         if not self.frequencies:
             return
 
-        t = [0 for _ in range(len(self))]
+        # t = [0 for _ in range(len(self))]
 
-        for token, freq in self.frequencies.items():
+        t = torch.ones(len(self))
 
-            if token not in self.word2idx:
-                continue
+        for marker in self.get_marker_tokens():
+            idx = self.word2idx[marker]
+            t[idx] = 0
 
-            idx = self.word2idx[token]
+        return t
 
-            t[idx] = freq
-
-        max_freq = max(t)
-
-        for i, f in enumerate(t):
-
-            if f < 0:
-                token = self.idx2word[i]
-
-                if "UNK" in token:
-                    n_gram = int(re.findall(r"\d+", token)[0])
-                    t[i] = int((max_freq / 2) * n_gram)
-                else:
-                    assert False
-
-        # normed_weights = [1 - (x / sum(t)) for x in t]
-
-        normed_weights = [1 - (x / (max(t) + 1)) for x in t]
-        return torch.tensor(normed_weights)
+        # for token, freq in self.frequencies.items():
+        #
+        #     if token not in self.word2idx:
+        #         continue
+        #
+        #     idx = self.word2idx[token]
+        #
+        #     t[idx] = freq
+        #
+        # max_freq = max(t)
+        # 
+        #
+        #
+        #
+        # for i, f in enumerate(t):
+        #
+        #     if f < 0:
+        #         token = self.idx2word[i]
+        #
+        #         if "UNK" in token:
+        #             n_gram = int(re.findall(r"\d+", token)[0])
+        #             t[i] = int((max_freq / 2) * n_gram)
+        #         else:
+        #             assert False
+        #
+        # # normed_weights = [1 - (x / sum(t)) for x in t]
+        #
+        # normed_weights = [1 - (x / (max(t) + 1)) for x in t]
+        # return torch.tensor(normed_weights)
 
 
 def get_dictionary_cache() -> Path:
@@ -425,6 +436,9 @@ def load_dictionary_from_hf(
                 continue
 
             # TODO: Explain this
+            
+            continuous_line.extend(list(line))
+
 
             continuous_line.extend(list(line) + [" "])
             continuous_line.extend(
