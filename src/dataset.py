@@ -256,9 +256,10 @@ class Dictionary:
         t = torch.ones(len(self))
 
         for marker in self.get_marker_tokens():
+            print(marker)
             idx = self.word2idx[marker]
             t[idx] = 0
-
+        exit()
         return t
 
         # for token, freq in self.frequencies.items():

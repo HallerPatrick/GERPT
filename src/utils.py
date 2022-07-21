@@ -30,7 +30,7 @@ class TimePerEpochCallback(Callback):
 class ModelCheckpointCallback(ModelCheckpoint):
 
     def on_save_checkpoint(self, trainer, pl_module, checkpoint) -> Optional[dict]:
-        self.save_path = f"{self.dirpath}/{self.filename}"
+        self.save_path = f"{self.dirpath}/{self.filename}.ckpt"
         return super().on_save_checkpoint(trainer, pl_module, checkpoint)
 
 def get_encoder_params(model):

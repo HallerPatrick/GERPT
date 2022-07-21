@@ -55,7 +55,6 @@ def analyze(model, seed_text: str, target: str):
                 
                 # Loss for each n-gram can be calculated by just using the subset of n-gram indexes
                 # of the output and target
-                # print(model.dictionary.ngram_indexes)
                 n_gram_output = torch.index_select(
                     output, 1, torch.tensor(model.dictionary.ngram_indexes[n])
                 )
@@ -119,7 +118,7 @@ def generate(model, temp: float, seed: str, chars: int):
     generated_output = seed
 
     inp = (
-        model.dictionary.tokenize_line(list(generated_output), otf=True)["source"]
+        model.dictionary.tokenize_line(list(generated_output))["source"]
         .unsqueeze(dim=2)
         .to(model.device)
     )
@@ -157,7 +156,7 @@ def generate(model, temp: float, seed: str, chars: int):
 
             # Use last 200 chars as sequence for new input
             inp = (
-                model.dictionary.tokenize_line(list(generated_output), otf=True)[
+                model.dictionary.tokenize_line(list(generated_output))[
                     "source"
                 ]
                 .unsqueeze(dim=2)
@@ -168,8 +167,17 @@ def generate(model, temp: float, seed: str, chars: int):
 
 def main(args):
 
-    seed = "love "
-    target = "is a burning thing"
+    seed = "Harry heard the sarcasm in his \
+voice, but he was not sure that anyone else did. \
+Opposite Harry, Tonks was entertaining Hermione and Ginny by \
+transforming her nose between mouthfuls. Screwing up her eyes each \
+time with the same pained expression she had worn back in Harry’s \
+bedroom, her nose swelled to a beaklike protuberance like Snape’s, \
+shrank to something resembling a button mushroom, and then \
+sprouted a great deal of hair from each nostril. Apparently this was a \
+regular mealtime entertainment,"
+    target = " because after a while Hermione and \
+Ginny started requesting their favorite noses."
 
     chars = 100
 

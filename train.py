@@ -113,7 +113,7 @@ if __name__ == "__main__":
     
     # Combine sharded model checkpoints into one for future loading
     if strategy and "deepspeed_stage_" in strategy:
-        print("Convert to single checkpoint: {ckpt_path}.single")
+        print(f"Convert to single checkpoint: {ckpt_path}.single")
         convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
 
     # Custom save for flair
