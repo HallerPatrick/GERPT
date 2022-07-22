@@ -256,10 +256,8 @@ class Dictionary:
         t = torch.ones(len(self))
 
         for marker in self.get_marker_tokens():
-            print(marker)
             idx = self.word2idx[marker]
             t[idx] = 0
-        exit()
         return t
 
         # for token, freq in self.frequencies.items():
@@ -425,46 +423,61 @@ def load_dictionary_from_hf(
 
         split_frequency = Counter()
 
-        # To avoid UNKs from only looking line by line, we merge all lines for populating dict
-        continuous_line = []
-        for line in track(
-            lines,
-            description=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
-        ):
-
-            line = line + "\n"
-            if not line:
-                continue
-
-            # TODO: Explain this
-            
-            continuous_line.extend(list(line))
-
-
-            continuous_line.extend(list(line) + [" "])
-            continuous_line.extend(
-                ["<start>" for _ in range(1, ngrams)] + list(line) + ["<pad>"]
-            )
-            continuous_line.extend([line[-1]] + [" "])
-
-
+        unk_idx = dictionary.add_word("<start>")
+        unk_idx = dictionary.add_word("<pad>")
+    
         for i in range(1, ngrams + 1):
-            # Add UNK token for ngram
-            n_unk_token = f"<{i}-UNK>"
 
-            unk_idx = dictionary.add_word(n_unk_token)
+            unk_idx = dictionary.add_word(f"<{i}-UNK>")
 
             if unk_idx not in dictionary.ngram_indexes[i]:
                 dictionary.ngram_indexes[i].append(unk_idx)
 
+            continuous_line = "\n".join(lines)
+
             for ngram in ngram_tokenizer(continuous_line, i):
                 split_frequency["".join(ngram)] += 1
+            
+        # To avoid UNKs from only looking line by line, we merge all lines for populating dict
+        # continuous_line = []
+        # for line in track(
+        #     lines,
+        #     description=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
+        # ):
+        #
+        #     line = line + "\n"
+        #     if not line:
+        #         continue
+        #
+        #     # TODO: Explain this
+        #     
+        #     # continuous_line.extend(list(line))
+        #
+        #
+        #     continuous_line.extend(list(line) + [" "])
+        #     continuous_line.extend(
+        #         ["<start>" for _ in range(1, ngrams)] + list(line) + ["<pad>"]
+        #     )
+        #     continuous_line.extend([line[-1]] + [" "])
+        #
+        #
+        # for i in range(1, ngrams + 1):
+        #     # Add UNK token for ngram
+        #     n_unk_token = f"<{i}-UNK>"
+        #
+        #     unk_idx = dictionary.add_word(n_unk_token)
+        #
+        #     if unk_idx not in dictionary.ngram_indexes[i]:
+        #         dictionary.ngram_indexes[i].append(unk_idx)
+        #
+        #     for ngram in ngram_tokenizer(continuous_line, i):
+        #         split_frequency["".join(ngram)] += 1
 
         frequencies.update(split_frequency)
         
-        from pprint import pprint
-
-        pprint(frequencies)
+        # from pprint import pprint
+        #
+        # pprint(frequencies)
         # dictionary.add_word("<start>")
 
         for i in range(1, ngrams + 1):
