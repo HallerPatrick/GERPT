@@ -51,7 +51,6 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
             unigram_ppl=args.unigram_ppl,
             weighted_loss=args.weighted_loss,
             weighted_labels=args.weighted_labels,
-            n_pos_embeddings=args.n_pos_embeddings,
         )
 
     return model

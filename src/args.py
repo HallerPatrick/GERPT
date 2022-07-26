@@ -182,4 +182,10 @@ def argparse_generate():
         "--mode",
         type=str
     )
+
+    parser.add_argument(
+        "--num",
+        type=int,
+        default=1
+    )
     return parser.parse_args()

@@ -6,4 +6,4 @@ SERVER_CACHE = "/home/tmp/halerpat"
 
 HF_CACHE_TOKENIZED = SERVER_CACHE
 
-USE_CACHE = False
+USE_CACHE = True

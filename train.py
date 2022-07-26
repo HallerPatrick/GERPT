@@ -46,6 +46,7 @@ if __name__ == "__main__":
     for n in range(1, args.ngram + 1):
         dset_metrics[f"total_{n}_gram_tokens"] = dictionary.total_n_tokens[n]
         dset_metrics[f"total_{n}_gram_unk_tokens"] = dictionary.unk_n_tokens[n]
+    
 
     wandb_logger.log_metrics(dset_metrics)
 
@@ -98,10 +99,11 @@ if __name__ == "__main__":
     )
 
     model = load_model(dictionary, args, gen_args)
-
-    for name, parameter in model.rnn.named_parameters():
-        if parameter.requires_grad:
-            print(name, parameter.numel())
+    
+    if hasattr(model, "rnn"):
+        for name, parameter in model.rnn.named_parameters():
+            if parameter.requires_grad:
+                print(name, parameter.numel())
 
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
     
