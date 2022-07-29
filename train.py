@@ -14,6 +14,8 @@ from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 from src.utils import ModelCheckpointCallback, TimePerEpochCallback, get_encoder_params
 
+from src.models.transformer import NGMETokenizer
+
 if __name__ == "__main__":
 
     # --- Init ---
@@ -118,8 +120,17 @@ if __name__ == "__main__":
         print(f"Convert to single checkpoint: {ckpt_path}.single")
         convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
 
-    # Custom save for flair
-    model.save("checkpoints" / Path(args.save))
+    # Custom save for flair embeddings
+    if args.model == "lstm":
+        model.save("checkpoints" / Path(args.save))
+
+    # Transformer is wrapped in huggingface PreTrainedModel
+    elif args.model == "transformer":
+        trainer.lightning_module.model.save_pretrained("checkpoints" / Path(args.save))
+        # NGMETokenizer(trainer.lightning_module.model.config)
+        t = NGMETokenizer()
+        t.save_pretrained("checkpoints" / Path(args.save))
+
 
     try:
         # Save wandb run id in config for fine tuning run

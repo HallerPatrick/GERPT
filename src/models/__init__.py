@@ -3,7 +3,9 @@ from typing import Dict
 
 from src.dataset import Dictionary
 from src.models.rnn import RNNModel
-from src.models.transformer import TransformerModel
+from src.models.transformer.configuration_transformer import TransformerConfig
+from src.models.transformer.transformer import TransformerLightningModule
+
 from src.utils import calculate_lstm_hidden_size
 
 
@@ -39,18 +41,14 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
             weighted_labels=args.weighted_labels,
         )
     else:
-        model = TransformerModel(
-            dictionary,
-            args.embedding_size,
-            args.nhead,
-            args.hidden_size,
-            args.nlayers,
-            args.ngram,
-            args.unk_threshold,
-            gen_args=gen_args,
-            unigram_ppl=args.unigram_ppl,
-            weighted_loss=args.weighted_loss,
-            weighted_labels=args.weighted_labels,
+        # Adjust args
+        args.ntoken = len(dictionary)
+
+        if args.weighted_loss:
+            args.weight_tensor = dictionary.create_weight_tensor()
+
+        model = TransformerLightningModule(
+            TransformerConfig.from_args(args)
         )
 
     return model

@@ -20,6 +20,10 @@ class CrossEntropyLossSoft(nn.Module):
         
         # With softmax norm
         logprobs = nn.functional.log_softmax(input.view(input.shape[0], -1), dim=1)
+        
+        # Late move to device
+        if self.weight.device != logprobs.device:
+            self.weight = self.weight.to(logprobs.device)
 
         # Calculate logprobs for each class with weights
         if self.weight is not None:

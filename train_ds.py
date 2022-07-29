@@ -1,13 +1,20 @@
 from argparse import Namespace
 from typing import Optional
 
-from flair.embeddings import WordEmbeddings
-from flair.embeddings.document import DocumentRNNEmbeddings
+from transformers import AutoModel, AutoConfig, AutoTokenizer
+
+# from flair.embeddings import WordEmbeddings
+from flair.embeddings.document import DocumentRNNEmbeddings, TransformerDocumentEmbeddings
 
 from src.args import argparse_flair_train, read_config
 from src.models.flair_models import load_corpus, patch_flair
 
 import wandb
+
+import src.models.transformer
+
+# from src.models.transformer.configuration_transformer import TransformerConfig
+# from src.models.transformer.tokenization_transformer import NGMETokenizer
 
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
@@ -16,7 +23,9 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         args = read_config(argparse_flair_train().config)
 
     # Has to be called first, before importing flair modules
-    patch_flair(args.model_name)
+    
+    if args.model_name == "rnn":
+        patch_flair()
 
     from flair.embeddings import FlairEmbeddings, StackedEmbeddings
     from flair.models import SequenceTagger, TextClassifier
@@ -67,6 +76,12 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
             else:
+
+                # Register our transformer in AutoModel registry
+
+                document_embeddings = TransformerDocumentEmbeddings(
+                    "checkpoints/model.pt"
+                )
                 print("Not supported model for text classification")
                 exit()
             task_model = TextClassifier(
@@ -95,7 +110,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         # Update run with results
         if run:
             run.summary[f"{settings.task_name}/f1-score"] = score
-            run.summary.update()
+            run.update()
 
         results[f"{settings.task_name}/f1-score"] = score
     

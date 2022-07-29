@@ -9,6 +9,13 @@ from src.models import RNNModel
 from src.models.ngme import soft_n_hot
 from src.utils import DummyLogger
 
+def calc_entropy(input_tensor):
+    lsm = torch.nn.LogSoftmax()
+    log_probs = lsm(input_tensor)
+    probs = torch.exp(log_probs)
+    p_log_p = log_probs * probs
+    entropy = -p_log_p.mean()
+    return entropy
 
 def analyze(model, seed_text: str, target: str):
 
@@ -67,7 +74,9 @@ def analyze(model, seed_text: str, target: str):
 
                 # Entropy, only based on output for new character
                 out = F.softmax(n_gram_output[-1], dim=0).detach()
-                entropy = Categorical(out).entropy()
+                # TODO: Test this impl
+                entropy = calc_entropy(n_gram_output[-1])
+                # entropy = Categorical(out).entropy()
                 print(f"Entropy: {entropy}")
 
                 # ngram_idx = torch.argmax(out)
@@ -190,7 +199,9 @@ Ginny started requesting their favorite noses."
     model.eval()
 
     if args.mode == "gen":
-        generate(model, args.temperature, seed, chars)
+        for _ in range(args.num):
+            generate(model, args.temperature, seed, chars)
+            print("-"*70)
     else:
         analyze(model, seed, target)
 
