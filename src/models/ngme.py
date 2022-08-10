@@ -19,10 +19,14 @@ def n_hot(t, num_clases):
 
     shape.append(num_clases)
     ret = torch.zeros(shape).to(t.device)
+    # print(ret.size())
 
     # Expect that first dimension is for all n-grams
     for seq in t:
+        # print(t)
+        # print(seq.size())
         ret.scatter_(-1, seq.unsqueeze(-1), 1)
+    # exit()
 
     return ret
 

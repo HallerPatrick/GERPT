@@ -4,10 +4,10 @@ from typing import Optional
 from transformers import AutoModel, AutoConfig, AutoTokenizer
 
 # from flair.embeddings import WordEmbeddings
-from flair.embeddings.document import DocumentRNNEmbeddings, TransformerDocumentEmbeddings
+from flair.embeddings.document import DocumentRNNEmbeddings 
 
 from src.args import argparse_flair_train, read_config
-from src.models.flair_models import load_corpus, patch_flair
+from src.models.flair_models import load_corpus, patch_flair, NGMETransformerWordEmbeddings
 
 import wandb
 
@@ -76,14 +76,11 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
             else:
-
-                # Register our transformer in AutoModel registry
-
-                document_embeddings = TransformerDocumentEmbeddings(
-                    "checkpoints/model.pt"
+                document_embeddings = NGMETransformerWordEmbeddings(
+                    "checkpoints/model.pt",
+                    vocab_file="checkpoints/model.pt/vocab.json",
                 )
-                print("Not supported model for text classification")
-                exit()
+
             task_model = TextClassifier(
                 document_embeddings=document_embeddings,
                 label_dictionary=label_dict,

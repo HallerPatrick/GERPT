@@ -90,9 +90,10 @@ class RNNModel(pl.LightningModule):
         self.hidden = None
         self.epoch = 0
 
-        self.register_buffer(
-            "nram_indexes", torch.tensor(self.dictionary.ngram_indexes[1])
-        )
+        
+        # self.register_buffer(
+        #     "nram_indexes", torch.tensor([indexes for indexes in  self.dictionary.ngram_indexes.values() ])
+        # )
 
         for key, value in gen_args.items():
             setattr(self, key, value)
@@ -139,6 +140,20 @@ class RNNModel(pl.LightningModule):
         loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
+        
+        ppl_sum = 0
+        loss_sum = 0
+
+        for i in range(self.ngrams):
+            output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]))
+            targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]))
+            loss_sum += self.criterion(output, targets)
+            ppl_sum += math.exp(self.criterion(output, targets))
+
+
+        self.log("train/avg_ppl_1", math.exp(loss_sum / self.ngrams), prog_bar=True)
+        self.log("train/avg_ppl_2", ppl_sum / self.ngrams, prog_bar=True)
+        # print(f"PPL SUM: {math.exp(loss_sum / self.ngrams)}")
 
         return loss
 

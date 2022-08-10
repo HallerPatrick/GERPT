@@ -31,7 +31,7 @@ class TransformerConfig(PretrainedConfig):
         self.ntoken = ntoken
         self.embedding_size = embedding_size
         self.nhead = nhead
-        self.nhid = nhid
+        self.hidden_size = nhid
         self.nlayers = nlayers
         self.ngrams = ngrams
         self.unk_t = unk_t

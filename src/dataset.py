@@ -1,29 +1,25 @@
 import hashlib
-import re
 import string
 import sys
-import textwrap
+import os
+
 from collections import Counter, defaultdict
-from functools import reduce
 from itertools import zip_longest
-from operator import add, itemgetter
+from operator import itemgetter
 from pathlib import Path
 from typing import List, Tuple, Optional
 
 import pytorch_lightning as pl
 import torch
-from colorama.ansi import Fore
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
 from datasets.load import load_from_disk
 from nltk import ngrams as ngram_tokenizer
-from rich.progress import track
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
-from src.utils import display_input_n_gram_sequences
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
@@ -98,6 +94,7 @@ class Dictionary:
                 self._marker_tokens.append(word)
 
         if word not in self.word2idx:
+            print(f"Adding new token: {repr(word)}")
             self.idx2word.append(word)
             self.word2idx[word] = len(self.idx2word) - 1
 
@@ -157,8 +154,45 @@ class Dictionary:
             mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
             pickle.dump(mappings, f)
 
-    def tokenize_line(self, line: List) -> dict:
+    def save_vocabulary(
+        self,
+        save_directory: str,
+        vocab_file_name: str,
+        filename_prefix: Optional[str] = None,
+    ) -> str:
+        index = 0
+        if os.path.isdir(save_directory):
+            vocab_file = os.path.join(
+                save_directory,
+                (filename_prefix + "-" if filename_prefix else "") + vocab_file_name,
+            )
+        else:
+            vocab_file = (
+                filename_prefix + "-" if filename_prefix else ""
+            ) + save_directory
+        with open(vocab_file, "w", encoding="utf-8") as writer:
+            for token, token_index in sorted(
+                self.word2idx.items(), key=lambda kv: kv[1]
+            ):
+                if index != token_index:
+                    print(
+                        f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
+                        " Please check that the vocabulary is not corrupted!"
+                    )
+                    index = token_index
+                
+                # TODO:Is this sound?
+                if "\n" in token:
+                    token = token.replace("\n", "\\n")
+
+                writer.write(token + "\n")
+                index += 1
+        return vocab_file
+
+    def tokenize_line(self, line: List[str]) -> dict:
         """
+
+        line: List of chars
 
         h       e     l  l  o
 
@@ -167,6 +201,8 @@ class Dictionary:
         <s><s>h <s>he hel
 
         """
+
+        # print(line)
 
         ngram_sequences = []
         ngram_target_sequences = []
@@ -181,7 +217,7 @@ class Dictionary:
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
-            
+
             ids = []
             length = 0
             # print(f"Processed line: {words}")
@@ -251,44 +287,24 @@ class Dictionary:
         if not self.frequencies:
             return
 
-        # t = [0 for _ in range(len(self))]
-
         t = torch.ones(len(self))
+
+        for token, freq in self.frequencies.items():
+
+            if token not in self.word2idx:
+                continue
+
+            idx = self.word2idx[token]
+
+            t[idx] = freq
+
+        normed_weights = [1 - (x / (max(t) + 1)) for x in t]
 
         for marker in self.get_marker_tokens():
             idx = self.word2idx[marker]
-            t[idx] = 0
-        return t
+            normed_weights[idx] = 0
 
-        # for token, freq in self.frequencies.items():
-        #
-        #     if token not in self.word2idx:
-        #         continue
-        #
-        #     idx = self.word2idx[token]
-        #
-        #     t[idx] = freq
-        #
-        # max_freq = max(t)
-        # 
-        #
-        #
-        #
-        # for i, f in enumerate(t):
-        #
-        #     if f < 0:
-        #         token = self.idx2word[i]
-        #
-        #         if "UNK" in token:
-        #             n_gram = int(re.findall(r"\d+", token)[0])
-        #             t[i] = int((max_freq / 2) * n_gram)
-        #         else:
-        #             assert False
-        #
-        # # normed_weights = [1 - (x / sum(t)) for x in t]
-        #
-        # normed_weights = [1 - (x / (max(t) + 1)) for x in t]
-        # return torch.tensor(normed_weights)
+        return torch.tensor(normed_weights)
 
 
 def get_dictionary_cache() -> Path:
@@ -425,7 +441,7 @@ def load_dictionary_from_hf(
 
         unk_idx = dictionary.add_word("<start>")
         unk_idx = dictionary.add_word("<pad>")
-    
+
         for i in range(1, ngrams + 1):
 
             unk_idx = dictionary.add_word(f"<{i}-UNK>")
@@ -437,48 +453,8 @@ def load_dictionary_from_hf(
 
             for ngram in ngram_tokenizer(continuous_line, i):
                 split_frequency["".join(ngram)] += 1
-            
-        # To avoid UNKs from only looking line by line, we merge all lines for populating dict
-        # continuous_line = []
-        # for line in track(
-        #     lines,
-        #     description=f"Setup dictionary from {Fore.MAGENTA}{train_split}{Fore.RESET} split",
-        # ):
-        #
-        #     line = line + "\n"
-        #     if not line:
-        #         continue
-        #
-        #     # TODO: Explain this
-        #     
-        #     # continuous_line.extend(list(line))
-        #
-        #
-        #     continuous_line.extend(list(line) + [" "])
-        #     continuous_line.extend(
-        #         ["<start>" for _ in range(1, ngrams)] + list(line) + ["<pad>"]
-        #     )
-        #     continuous_line.extend([line[-1]] + [" "])
-        #
-        #
-        # for i in range(1, ngrams + 1):
-        #     # Add UNK token for ngram
-        #     n_unk_token = f"<{i}-UNK>"
-        #
-        #     unk_idx = dictionary.add_word(n_unk_token)
-        #
-        #     if unk_idx not in dictionary.ngram_indexes[i]:
-        #         dictionary.ngram_indexes[i].append(unk_idx)
-        #
-        #     for ngram in ngram_tokenizer(continuous_line, i):
-        #         split_frequency["".join(ngram)] += 1
 
         frequencies.update(split_frequency)
-        
-        # from pprint import pprint
-        #
-        # pprint(frequencies)
-        # dictionary.add_word("<start>")
 
         for i in range(1, ngrams + 1):
 
@@ -493,16 +469,22 @@ def load_dictionary_from_hf(
         if max_dict_size > 0:
             for token, _ in frequencies.most_common(max_dict_size):
                 token_len = len(remove_marker_tokens(token, dictionary))
+
+                if token_len == 0:
+                    continue
+
                 idx = dictionary.add_word(token)
-                print(f"Token: {token}, IDX: {idx}")
                 if idx not in dictionary.ngram_indexes[token_len]:
                     dictionary.ngram_indexes[token_len].append(idx)
         else:
             for token, freq in frequencies.items():
                 if freq > unk_threshold or freq == -1:
                     token_len = len(remove_marker_tokens(token, dictionary))
+
+                    if token_len == 0:
+                        continue
+
                     idx = dictionary.add_word(token)
-                    print(f"Token: {token}, IDX: {idx}")
                     if idx not in dictionary.ngram_indexes[token_len]:
                         dictionary.ngram_indexes[token_len].append(idx)
 

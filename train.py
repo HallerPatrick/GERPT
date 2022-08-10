@@ -1,11 +1,12 @@
 from pathlib import Path
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
+from pytorch_lightning.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+)
 
 import wandb
 from train_ds import train_ds
@@ -48,7 +49,6 @@ if __name__ == "__main__":
     for n in range(1, args.ngram + 1):
         dset_metrics[f"total_{n}_gram_tokens"] = dictionary.total_n_tokens[n]
         dset_metrics[f"total_{n}_gram_unk_tokens"] = dictionary.unk_n_tokens[n]
-    
 
     wandb_logger.log_metrics(dset_metrics)
 
@@ -86,7 +86,6 @@ if __name__ == "__main__":
         accelerator="auto",
         strategy=strategy,
         plugins=plugins,
-        # precision=16,
         devices=args.gpus,
         callbacks=[
             checkpoint_callback,
@@ -101,22 +100,20 @@ if __name__ == "__main__":
     )
 
     model = load_model(dictionary, args, gen_args)
-    
+
     if hasattr(model, "rnn"):
         for name, parameter in model.rnn.named_parameters():
             if parameter.requires_grad:
                 print(name, parameter.numel())
 
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
-    
+
     # TRAIN!
     trainer.fit(model, data_module)
-    
-    ckpt_path = checkpoint_callback.save_path
-    
-    
+
     # Combine sharded model checkpoints into one for future loading
     if strategy and "deepspeed_stage_" in strategy:
+        ckpt_path = checkpoint_callback.save_path
         print(f"Convert to single checkpoint: {ckpt_path}.single")
         convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
 
@@ -126,11 +123,17 @@ if __name__ == "__main__":
 
     # Transformer is wrapped in huggingface PreTrainedModel
     elif args.model == "transformer":
+        # Save vocab file
+        vocab_file = dictionary.save_vocabulary(
+            "checkpoints", NGMETokenizer.vocab_file_name
+        )
+
+        # Save HF model
         trainer.lightning_module.model.save_pretrained("checkpoints" / Path(args.save))
         # NGMETokenizer(trainer.lightning_module.model.config)
-        t = NGMETokenizer()
-        t.save_pretrained("checkpoints" / Path(args.save))
 
+        # Load HF tokenizer and save it for downstream with flair
+        NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
     try:
         # Save wandb run id in config for fine tuning run
@@ -139,6 +142,7 @@ if __name__ == "__main__":
     except:
         pass
 
+    # Auto downstream training
     if hasattr(args, "fine_tune") and args.fine_tune:
         assert args.fine_tune_configs is not None
         fine_tune_args = read_config(args.fine_tune_configs)

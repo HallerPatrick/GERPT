@@ -30,7 +30,7 @@ class TransformerTransformer(PreTrainedModel):
         self.nlayers = config.nlayers
         self.dropout = config.dropout
 
-        self.hidden_size = config.nhid
+        self.hidden_size = config.hidden_size
         self.nhead = config.nhead
 
         self.model_type = "Transformer"
@@ -72,7 +72,11 @@ class TransformerTransformer(PreTrainedModel):
         nn.init.zeros_(self.decoder.bias)
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, src, has_mask=True):
+    def forward(self, src, has_mask=True, **kwargs):
+        
+        if "attention_mask" in kwargs:
+            src = src.squeeze(0).unsqueeze(-1)
+
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != len(src):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(

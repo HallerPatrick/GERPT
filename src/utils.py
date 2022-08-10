@@ -94,13 +94,15 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     h = Symbol("h")
 
     result = solve(
+        (d * e + e) + 
         (
             (c * e * h)
             + (c * h * h)
             + (c * h)
             + (c * h)
             + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
-        )
+        ) + 
+        (d * h + d)
         - total_size,
         h,
     )
