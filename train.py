@@ -35,6 +35,7 @@ if __name__ == "__main__":
         args.fallback,
         args.cpus,
         *args.data.split("/"),
+        # cache_dir="/home/tmp/halerpat/datasets"
     )
 
     wandb.require(experiment="service")

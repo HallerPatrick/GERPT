@@ -106,7 +106,9 @@ class RNNModel(pl.LightningModule):
                 weight=self.dictionary.create_weight_tensor()
             )
         else:
-            self.criterion = CrossEntropyLossSoft()
+            self.criterion = CrossEntropyLossSoft(
+                ignore_index=self.dictionary.word2idx["<pad>"],
+            )
 
     @staticmethod
     def initialize(matrix):

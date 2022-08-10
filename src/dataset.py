@@ -372,8 +372,8 @@ def load_tokenized_dataset(
 
     print("Preprocess dataset...")
     train = [x["text"] for x in dataset["train"]]
-    test = [x["text"] for x in dataset["test"]]
-    valid = [x["text"] for x in dataset["validation"]]
+    test = [x["text"] for x in dataset["test"]] if "test" in dataset else []
+    valid = [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
 
     # train = map(lambda x: x["text"], dataset["train"])
     # test = map(lambda x: x["text"], dataset["test"])
@@ -434,7 +434,11 @@ def load_dictionary_from_hf(
     frequencies = Counter()
 
     for train_split in ["train", "test", "validation"]:
-        split = source[train_split]
+        try:
+            split = source[train_split]
+        except KeyError:
+            continue
+
         lines = split["text"]
 
         split_frequency = Counter()
