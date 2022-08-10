@@ -4,10 +4,14 @@ from typing import Optional
 from transformers import AutoModel, AutoConfig, AutoTokenizer
 
 # from flair.embeddings import WordEmbeddings
-from flair.embeddings.document import DocumentRNNEmbeddings 
+from flair.embeddings.document import DocumentRNNEmbeddings
 
 from src.args import argparse_flair_train, read_config
-from src.models.flair_models import load_corpus, patch_flair, NGMETransformerWordEmbeddings
+from src.models.flair_models import (
+    load_corpus,
+    patch_flair,
+    NGMETransformerWordEmbeddings,
+)
 
 import wandb
 
@@ -23,7 +27,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         args = read_config(argparse_flair_train().config)
 
     # Has to be called first, before importing flair modules
-    
+
     if args.model_name == "rnn":
         patch_flair()
 
@@ -58,17 +62,42 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         label_dict = corpus.make_label_dictionary(label_type=settings.task_name)
 
         if settings.task_name in ["ner", "upos"]:
-            embeddings = StackedEmbeddings(
-                embeddings=[FlairEmbeddings(args.saved_model)]
-            )
 
-            task_model = SequenceTagger(
-                hidden_size=256,
-                embeddings=embeddings,
-                tag_dictionary=label_dict,
-                tag_type=settings.task_name,
-                use_crf=True,
-            )
+            if args.model_name == "rnn":
+                embeddings = StackedEmbeddings(
+                    embeddings=[FlairEmbeddings(args.saved_model)]
+                )
+
+                task_model = SequenceTagger(
+                    hidden_size=256,
+                    embeddings=embeddings,
+                    tag_dictionary=label_dict,
+                    tag_type=settings.task_name,
+                    use_crf=True,
+                )
+
+            else:
+                # 4. initialize fine-tuneable transformer embeddings WITH document context
+                embeddings = NGMETransformerWordEmbeddings(
+                    "checkpoints/model.pt",
+                    vocab_file="checkpoints/model.pt/vocab.json",
+                    layers="-1",
+                    subtoken_pooling="first",
+                    fine_tune=True,
+                    use_context=True,
+                )
+
+                # 5. initialize bare-bones sequence tagger (no CRF, no RNN, no reprojection)
+                task_model = SequenceTagger(
+                    hidden_size=256,
+                    embeddings=embeddings,
+                    tag_dictionary=label_dict,
+                    tag_type="ner",
+                    use_crf=False,
+                    use_rnn=False,
+                    reproject_embeddings=False,
+                )
+
         elif settings.task_name in ["sentiment", "class"]:
 
             if args.model_name == "rnn":
@@ -76,6 +105,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
             else:
+                # TODO make sequence tagging work
                 document_embeddings = NGMETransformerWordEmbeddings(
                     "checkpoints/model.pt",
                     vocab_file="checkpoints/model.pt/vocab.json",
@@ -110,7 +140,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             run.update()
 
         results[f"{settings.task_name}/f1-score"] = score
-    
+
     print(results)
 
 

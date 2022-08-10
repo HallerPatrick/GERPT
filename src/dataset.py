@@ -202,15 +202,9 @@ class Dictionary:
 
         """
 
-        # print(line)
-
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
-
-        # for i, c in enumerate(line):
-        #     if c == "\n":
-        #         line[i] = " "
 
         for n in range(1, self.ngram + 1):
 

@@ -74,9 +74,8 @@ class TransformerTransformer(PreTrainedModel):
 
     def forward(self, src, has_mask=True, **kwargs):
         
-        if "attention_mask" in kwargs:
-            src = src.squeeze(0).unsqueeze(-1)
-
+        # (ngram, seq, batch)
+        
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != len(src):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
@@ -90,6 +89,26 @@ class TransformerTransformer(PreTrainedModel):
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
         return F.log_softmax(output, dim=-1)
+
+    def forward_hidden(self, src, has_mask=True, **kwargs):
+        # if "attention_mask" in kwargs:
+        #     src = src.squeeze(0).unsqueeze(-1)
+        
+        if has_mask:
+            if self.src_mask is None or self.src_mask.size(0) != len(src):
+                mask = self._generate_square_subsequent_mask(src.size(1)).to(
+                    self.device
+                )
+                self.src_mask = mask
+        else:
+            self.src_mask = None
+        src = self.encoder(src) * math.sqrt(self.embedding_size)
+        src = self.pos_encoder(src)
+        output = self.transformer_encoder(src, self.src_mask)
+
+        return output
+
+
 
 
 # Temporarily leave PositionalEncoding module here. Will be moved somewhere else.

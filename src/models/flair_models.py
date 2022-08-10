@@ -14,7 +14,7 @@ import torch
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
     
 
-    def __init__(self, model: str = "bert-base-uncased", is_document_embedding: bool = False, allow_long_sentences: bool = True, **kwargs):
+    def __init__(self, model: str = "bert-base-uncased", is_document_embedding: bool = True, allow_long_sentences: bool = True, **kwargs):
         super().__init__(model, is_document_embedding, allow_long_sentences, **kwargs)
     
     def _get_begin_offset_of_tokenizer(self) -> int:
@@ -48,7 +48,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
     def _add_embeddings_to_sentences(self, sentences: List[Sentence]):
 
-        print(sentences)
         tokenized_sentences = self._gather_tokenized_strings(sentences)
 
         # encode inputs
@@ -56,25 +55,29 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             tokenized_sentences,
             stride=self.stride,
             return_overflowing_tokens=self.allow_long_sentences,
+            return_token_type_ids=False,
             truncation=self.truncate,
             padding=True,
             return_tensors="pt",
+            add_special_tokens=False,
+            # max_length=1000
         )
 
         input_ids, model_kwargs = self._build_transformer_model_inputs(batch_encoding, tokenized_sentences, sentences)
 
         gradient_context = torch.enable_grad() if (self.fine_tune and self.training) else torch.no_grad()
-    
-        print(input_ids)
+            
+        # (batch, ngram, seq)
+        input_ids = input_ids.permute((1, 2, 0))
         with gradient_context:
-            hidden_states = self.model(input_ids, **model_kwargs)
+            hidden_states = self.model.forward_hidden(input_ids, **model_kwargs)
+            # hidden_states = self.model(input_ids, **model_kwargs)
 
-            print(hidden_states)
-            hidden_states = hidden_states[-1]
-            print(hidden_states.size())
 
             # make the tuple a tensor; makes working with it easier.
-            hidden_states = torch.stack(hidden_states)
+            # (layers, batch, seq, hidden)
+            # hidden_states = torch.stack(hidden_states)
+            hidden_states = hidden_states.unsqueeze(0)
 
             # only use layers that will be outputted
             hidden_states = hidden_states[self.layer_indexes, :, :]
@@ -99,7 +102,8 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             #     sentence_hidden_state[:, : subtoken_length + 1, :]
             #     for (subtoken_length, sentence_hidden_state) in zip(subtoken_lengths, sentence_hidden_states)
             # ]
-
+                
+            
             if self.document_embedding:
                 self._extract_document_embeddings(sentence_hidden_states, sentences)
 
@@ -145,7 +149,7 @@ def load_corpus(
 ) -> Corpus:
 
     from flair.datasets import CONLL_03, UD_ENGLISH, IMDB, CONLL_03_GERMAN
-    from flair.datasets.document_classification import SENTEVAL_SST_BINARY
+    from flair.datasets.document_classification import SENTEVAL_SST_BINARY, SENTEVAL_CR
 
     corpus_mapper = {
         "conll_03": {"corpus": CONLL_03, "args": [base_path]},
@@ -153,6 +157,7 @@ def load_corpus(
         "ud_english": {"corpus": UD_ENGLISH, "args": []},
         "imdb": {"corpus": IMDB, "args": []},
         "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},
+        "senteval": {"corpus": SENTEVAL_CR, "args": []}
     }
 
     return corpus_mapper[corpus_name]["corpus"](*corpus_mapper[corpus_name]["args"])
