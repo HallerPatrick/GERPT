@@ -79,8 +79,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             else:
                 # 4. initialize fine-tuneable transformer embeddings WITH document context
                 embeddings = NGMETransformerWordEmbeddings(
-                    "checkpoints/model.pt",
-                    vocab_file="checkpoints/model.pt/vocab.json",
+                    args.saved_model,
+                    vocab_file=args.saved_model + "/vocab.json",
                     layers="-1",
                     subtoken_pooling="first",
                     fine_tune=True,
@@ -107,8 +107,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             else:
                 # TODO make sequence tagging work
                 document_embeddings = NGMETransformerWordEmbeddings(
-                    "checkpoints/model.pt",
-                    vocab_file="checkpoints/model.pt/vocab.json",
+                    args.saved_model,
+                    vocab_file=args.saved_model + "/vocab.json"
                 )
 
             task_model = TextClassifier(

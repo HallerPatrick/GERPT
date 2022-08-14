@@ -35,7 +35,7 @@ class NGMETokenizer(PreTrainedTokenizer):
 
     vocab_file_name = "vocab.json"
 
-    def __init__(self, vocab_file: str, unk_token="<1-UNK>", pad_token="<pad>", **kwargs):
+    def __init__(self, vocab_file: Optional[str] = None, unk_token="<1-UNK>", pad_token="<pad>", **kwargs):
 
         unk_token = AddedToken(unk_token) if isinstance(unk_token, str) else unk_token
         pad_token = AddedToken(pad_token) if isinstance(pad_token, str) else pad_token
@@ -54,8 +54,13 @@ class NGMETokenizer(PreTrainedTokenizer):
         except KeyError:
             self.ngrams = 1
         # self.fallback = config.fallback
+        
+        if vocab_file:
+            self.vocab = load_vocab(vocab_file)
+        else:
+            assert "name_or_path" in kwargs
+            self.vocab = load_vocab(kwargs["name_or_path"] + "/" + self.vocab_file_name)
 
-        self.vocab = load_vocab(vocab_file)
 
         self.decoder = {v: k for k, v in self.vocab.items()}
 

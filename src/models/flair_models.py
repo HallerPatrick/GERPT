@@ -16,7 +16,22 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
     def __init__(self, model: str = "bert-base-uncased", is_document_embedding: bool = True, allow_long_sentences: bool = True, **kwargs):
         super().__init__(model, is_document_embedding, allow_long_sentences, **kwargs)
-    
+        
+    @classmethod
+    def create_from_state(cls, **state):
+
+        del state["is_token_embedding"]
+
+        if "vocab_file" not in state:
+            state["vocab_file"] = state["model"] + "/vocab.txt"
+
+        print(state)
+
+        return cls(**state)
+
+
+
+
     def _get_begin_offset_of_tokenizer(self) -> int:
         return 0
 
