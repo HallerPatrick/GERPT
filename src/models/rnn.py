@@ -147,8 +147,8 @@ class RNNModel(pl.LightningModule):
         loss_sum = 0
 
         for i in range(self.ngrams):
-            output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]))
-            targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]))
+            output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]).to(self.device))
+            targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]).to(self.device))
             loss_sum += self.criterion(output, targets)
             ppl_sum += math.exp(self.criterion(output, targets))
 
