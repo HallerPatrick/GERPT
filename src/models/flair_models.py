@@ -9,14 +9,16 @@ from flair.data import Corpus, Sentence, Token
 import torch
 
 
-
-
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
-    
-
-    def __init__(self, model: str = "bert-base-uncased", is_document_embedding: bool = True, allow_long_sentences: bool = True, **kwargs):
+    def __init__(
+        self,
+        model: str = "bert-base-uncased",
+        is_document_embedding: bool = True,
+        allow_long_sentences: bool = True,
+        **kwargs,
+    ):
         super().__init__(model, is_document_embedding, allow_long_sentences, **kwargs)
-        
+
     @classmethod
     def create_from_state(cls, **state):
 
@@ -29,20 +31,12 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
         return cls(**state)
 
-    
-    def _tokenizer_from_bytes(self, zip_data: BytesIO) -> PreTrainedTokenizer:
-        try:
-            return super()._tokenizer_from_bytes(zip_data)
-        except OSError:
-            print(zip_data)
-
-
     def _get_begin_offset_of_tokenizer(self) -> int:
         return 0
 
     def _has_initial_cls_token(self) -> bool:
         return False
-    
+
     def _get_processed_token_text(self, token: Token) -> str:
         pieces = self.tokenizer.tokenize(token.text)
         token_text = ""
@@ -64,27 +58,26 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         word_iterator = iter(sentence)
         token = next(word_iterator)
         token_text = self._get_processed_token_text(token)
-        # -> Hello 
+        # -> Hello
         token_subtoken_lengths = []
         reconstructed_token = ""
         subtoken_count = 0
         # iterate over subtokens and reconstruct tokens
 
         whitespace_count = 0
-        
+
         for subtoken_id, subtoken in enumerate(subtokens[0]):
 
             # subtoken == char
-        
+
             # remove special markup
             subtoken = self._remove_special_markup(subtoken)
-
 
             # # TODO check if this is necessary is this method is called before prepare_for_model
             # # check if reconstructed token is special begin token ([CLS] or similar)
             if subtoken in self.special_tokens and subtoken_id == 0:
                 continue
-            
+
             # Ignore whitespaces in subtoken (char level tokenizer)
             if subtoken == " ":
                 whitespace_count += 1
@@ -110,17 +103,19 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                     token_text = self._get_processed_token_text(token)
                 else:
                     break
-        
+
         # if tokens are unaccounted for
         while len(token_subtoken_lengths) < len(sentence) and len(token.text) == 1:
             token_subtoken_lengths.append(0)
             if len(token_subtoken_lengths) == len(sentence):
                 break
             token = next(word_iterator)
-        
+
         # check if all tokens were matched to subtokens
         if token != sentence[-1]:
-            print(f"Tokenization MISMATCH in sentence '{sentence.to_tokenized_string()}'")
+            print(
+                f"Tokenization MISMATCH in sentence '{sentence.to_tokenized_string()}'"
+            )
             print(f"Last matched: '{token}'")
             print(f"Last sentence: '{sentence[-1]}'")
             print(f"subtokenized: '{subtokens}'")
@@ -143,16 +138,22 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             if len(subtokenized_sentence) == 0:
                 if self.token_embedding:
                     for token in sentence:
-                        token.set_embedding(self.name, torch.zeros(self.embedding_length))
+                        token.set_embedding(
+                            self.name, torch.zeros(self.embedding_length)
+                        )
                 if self.document_embedding:
-                    sentence.set_embedding(self.name, torch.zeros(self.embedding_length))
+                    sentence.set_embedding(
+                        self.name, torch.zeros(self.embedding_length)
+                    )
                 continue
 
             if self.token_embedding:
                 all_token_subtoken_lengths.append(
-                        self._reconstruct_tokens_from_subtokens(sentence, subtokenized_sentence)
+                    self._reconstruct_tokens_from_subtokens(
+                        sentence, subtokenized_sentence
+                    )
                 )
-                
+
             subtoken_lengths.append(len(subtokenized_sentence))
 
             # remember tokenized sentences and their subtokenization
@@ -161,7 +162,11 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
     def _add_embeddings_to_sentences(self, sentences: List[Sentence]):
 
-        tokenized_sentences, all_token_subtoken_lengths, subtoken_lengths = self._gather_tokenized_strings(sentences)
+        (
+            tokenized_sentences,
+            all_token_subtoken_lengths,
+            subtoken_lengths,
+        ) = self._gather_tokenized_strings(sentences)
 
         # encode inputs
         batch_encoding = self.tokenizer(
@@ -175,24 +180,31 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             add_special_tokens=False,
         )
 
-        input_ids, model_kwargs = self._build_transformer_model_inputs(batch_encoding, tokenized_sentences, sentences)
+        input_ids, model_kwargs = self._build_transformer_model_inputs(
+            batch_encoding, tokenized_sentences, sentences
+        )
 
-        gradient_context = torch.enable_grad() if (self.fine_tune and self.training) else torch.no_grad()
-        
+        gradient_context = (
+            torch.enable_grad()
+            if (self.fine_tune and self.training)
+            else torch.no_grad()
+        )
+
         # N-Gram Encoder expects ngram in first dim and batch last
         # (batch, ngram, seq) -> (ngram, seq, batch)
         input_ids = input_ids.permute((1, 2, 0))
-         
+
         with gradient_context:
 
             hidden_states = self.model.forward_hidden(input_ids, **model_kwargs)
-            # Out: (seq, batch, hid)
 
+            # Out: (seq, batch, hid) -> (batch, seq, hid)
             hidden_states = hidden_states.permute((1, 0, 2))
+
             # make the tuple a tensor; makes working with it easier.
             # (layers, batch, seq, hidden)
             # hidden_states = torch.stack(hidden_states)
-            
+
             hidden_states = hidden_states.unsqueeze(0)
 
             # only use layers that will be outputted
@@ -216,15 +228,18 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             # remove padding tokens
             sentence_hidden_states = [
                 sentence_hidden_state[:, : subtoken_length + 1, :]
-                for (subtoken_length, sentence_hidden_state) in zip(subtoken_lengths, sentence_hidden_states)
+                for (subtoken_length, sentence_hidden_state) in zip(
+                    subtoken_lengths, sentence_hidden_states
+                )
             ]
 
             if self.document_embedding:
                 self._extract_document_embeddings(sentence_hidden_states, sentences)
-            
-            
+
             if self.token_embedding:
-                self._extract_token_embeddings(sentence_hidden_states, sentences, all_token_subtoken_lengths)
+                self._extract_token_embeddings(
+                    sentence_hidden_states, sentences, all_token_subtoken_lengths
+                )
 
 
 def patch_flair():
@@ -273,7 +288,7 @@ def load_corpus(
         "ud_english": {"corpus": UD_ENGLISH, "args": []},
         "imdb": {"corpus": IMDB, "args": []},
         "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},
-        "senteval": {"corpus": SENTEVAL_CR, "args": []}
+        "senteval": {"corpus": SENTEVAL_CR, "args": []},
     }
 
     return corpus_mapper[corpus_name]["corpus"](*corpus_mapper[corpus_name]["args"])

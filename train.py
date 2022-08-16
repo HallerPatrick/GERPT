@@ -1,21 +1,21 @@
 from pathlib import Path
+
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.utilities.deepspeed import (
-    convert_zero_checkpoint_to_fp32_state_dict,
-)
+from pytorch_lightning.utilities.deepspeed import \
+    convert_zero_checkpoint_to_fp32_state_dict
 
 import wandb
-from train_ds import train_ds
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
-from src.utils import ModelCheckpointCallback, TimePerEpochCallback, get_encoder_params
-
 from src.models.transformer import NGMETokenizer
+from src.utils import (ModelCheckpointCallback, TimePerEpochCallback,
+                       get_encoder_params)
+from train_ds import train_ds
 
 if __name__ == "__main__":
 
