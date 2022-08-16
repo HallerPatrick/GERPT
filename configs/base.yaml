@@ -1,28 +1,26 @@
 # Hyperparameter configs
 
 # Training
-model: lstm
-# model: transformer
-data: "text/cash"
-# data: "text/wikitext-2"
+model: transformer
+data: "wikitext/wikitext-2-raw-v1"
 save: model.pt
 cpus: 1
 gpus: 1
-epochs: 10
+epochs: 1
 wdecay: 1.2e-6
 lr: 0.1
 
 # Dictioarny
-ngram: 3
+ngram: 2
 unk_threshold: 0
 max_dict_size: 0
 fallback: True
 unigram_ppl: False
-weighted_loss: False
+weighted_loss: True
 weighted_labels: True
 
 # Model
-# expected_size: 374000
+expected_size: 0 # 100000000
 embedding_size: 256
 hidden_size: 256
 batch_size: 1
@@ -35,5 +33,5 @@ unigram_ppl: false
 seed: 1111
 log_interval: 200
 
-# Pass wandb run id to run config for fine-tuning with flair
-wandb_flair_yaml: configs/flair_base.yaml
+downstream: False
+
