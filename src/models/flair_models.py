@@ -29,7 +29,12 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
         return cls(**state)
 
-
+    
+    def _tokenizer_from_bytes(self, zip_data: BytesIO) -> PreTrainedTokenizer:
+        try:
+            return super()._tokenizer_from_bytes(zip_data)
+        except OSError:
+            print(zip_data)
 
 
     def _get_begin_offset_of_tokenizer(self) -> int:
@@ -79,17 +84,18 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             # # check if reconstructed token is special begin token ([CLS] or similar)
             if subtoken in self.special_tokens and subtoken_id == 0:
                 continue
-
+            
+            # Ignore whitespaces in subtoken (char level tokenizer)
             if subtoken == " ":
                 whitespace_count += 1
                 continue
-            #
+
             subtoken_count += 1
-            #
-            # # append subtoken to reconstruct token
+
+            # append subtoken to reconstruct token
             reconstructed_token = reconstructed_token + subtoken
-            #
-            # # check if reconstructed token is the same as current token
+
+            # check if reconstructed token is the same as current token
             if reconstructed_token.lower() == token_text:
 
                 # if so, add subtoken count
@@ -172,11 +178,11 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         input_ids, model_kwargs = self._build_transformer_model_inputs(batch_encoding, tokenized_sentences, sentences)
 
         gradient_context = torch.enable_grad() if (self.fine_tune and self.training) else torch.no_grad()
-            
-        # (batch, ngram, seq)
+        
+        # N-Gram Encoder expects ngram in first dim and batch last
+        # (batch, ngram, seq) -> (ngram, seq, batch)
         input_ids = input_ids.permute((1, 2, 0))
-        # (ngram, seq, batch)
-
+         
         with gradient_context:
 
             hidden_states = self.model.forward_hidden(input_ids, **model_kwargs)
@@ -206,11 +212,12 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                 )
             else:
                 sentence_hidden_states = list(hidden_states.permute((1, 0, 2, 3)))
+
             # remove padding tokens
-            # sentence_hidden_states = [
-            #     sentence_hidden_state[:, : subtoken_length + 1, :]
-            #     for (subtoken_length, sentence_hidden_state) in zip(subtoken_lengths, sentence_hidden_states)
-            # ]
+            sentence_hidden_states = [
+                sentence_hidden_state[:, : subtoken_length + 1, :]
+                for (subtoken_length, sentence_hidden_state) in zip(subtoken_lengths, sentence_hidden_states)
+            ]
 
             if self.document_embedding:
                 self._extract_document_embeddings(sentence_hidden_states, sentences)

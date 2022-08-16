@@ -19,6 +19,8 @@ from src.models.transformer import NGMETokenizer
 
 if __name__ == "__main__":
 
+    torch.manual_seed(1234)
+
     # --- Init ---
     args = parse_args()
 
