@@ -12,10 +12,8 @@ from transformers import PreTrainedModel
 
 from src.models.transformer.configuration_transformer import TransformerConfig
 
-from src.data import tokenize_batch
-from src.dataset import Dictionary
 from src.loss import CrossEntropyLossSoft
-from src.models.ngme import NGramsEmbedding, soft_n_hot
+from src.models.ngme import NGramsEmbedding
 
 class TransformerTransformer(PreTrainedModel):
 

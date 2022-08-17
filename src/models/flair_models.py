@@ -27,8 +27,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         if "vocab_file" not in state:
             state["vocab_file"] = state["model"] + "/vocab.txt"
 
-        print(state)
-
         return cls(**state)
 
     def _get_begin_offset_of_tokenizer(self) -> int:
@@ -65,7 +63,8 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         # iterate over subtokens and reconstruct tokens
 
         whitespace_count = 0
-
+        
+        # Iter through unigram seq,
         for subtoken_id, subtoken in enumerate(subtokens[0]):
 
             # subtoken == char
@@ -153,8 +152,9 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                         sentence, subtokenized_sentence
                     )
                 )
-
-            subtoken_lengths.append(len(subtokenized_sentence))
+            
+            # All ngrams seq have same length, just take unigram one
+            subtoken_lengths.append(len(subtokenized_sentence[0]))
 
             # remember tokenized sentences and their subtokenization
             tokenized_sentences.append(tokenized_string)

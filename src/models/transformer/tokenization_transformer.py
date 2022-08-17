@@ -63,6 +63,7 @@ class NGMETokenizer(PreTrainedTokenizer):
 
 
         self.decoder = {v: k for k, v in self.vocab.items()}
+    
 
     @property
     def vocab_size(self):

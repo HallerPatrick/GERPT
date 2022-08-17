@@ -146,7 +146,7 @@ if __name__ == "__main__":
         pass
 
     # Auto downstream training
-    if hasattr(args, "fine_tune") and args.fine_tune:
+    if hasattr(args, "downstream") and args.downstream:
         assert args.fine_tune_configs is not None
         fine_tune_args = read_config(args.fine_tune_configs)
         train_ds(fine_tune_args, wandb.run.path)
