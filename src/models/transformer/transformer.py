@@ -29,6 +29,14 @@ class TransformerLightningModule(pl.LightningModule):
         loss = self.model.criterion(output, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
+
+        # Unigram output
+        output = torch.index_select(output, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device))
+        targets = torch.index_select(target, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device))
+        unigram_loss = self.model.criterion.unigram_loss(output, targets)
+
+        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):

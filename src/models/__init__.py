@@ -43,13 +43,11 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
     else:
         # Adjust args
         args.ntoken = len(dictionary)
-    #     print(args.ntoken)
-    #     print(dictionary.word2idx)
-    #     print(dictionary.idx2word)
-    # 
-    #     exit()
+
         if args.weighted_loss:
             args.weight_tensor = dictionary.create_weight_tensor()
+
+        args.ngram_indexes = dictionary.ngram_indexes
 
         model = TransformerLightningModule(
             TransformerConfig.from_args(args)

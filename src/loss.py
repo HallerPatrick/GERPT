@@ -1,4 +1,5 @@
 import torch
+
 from torch import nn
 
 
@@ -8,7 +9,11 @@ class CrossEntropyLossSoft(nn.Module):
         self.ignore_index = ignore_index
         self.weight = weight
 
-    def forward(self, input, target):
+    def unigram_loss(self, input, target):
+        return self(input, target, disable_weight=True)
+
+
+    def forward(self, input, target, disable_weight=False):
         """
         Args:
             input: (batch, *)
@@ -24,13 +29,14 @@ class CrossEntropyLossSoft(nn.Module):
         # With softmax norm
         logprobs = nn.functional.log_softmax(input.view(input.shape[0], -1), dim=1)
         
-
         # Calculate logprobs for each class with weights
         if self.weight is not None:
             # Late move to device
             if self.weight.device != logprobs.device:
                 self.weight = self.weight.to(logprobs.device)
-            logprobs = logprobs * self.weight
+
+            if not disable_weight:
+                logprobs = logprobs * self.weight
 
         # Calculate loss
         batchloss = -torch.sum(target.view(target.shape[0], -1) * logprobs, dim=1)

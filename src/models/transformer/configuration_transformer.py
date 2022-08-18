@@ -24,6 +24,7 @@ class TransformerConfig(PretrainedConfig):
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weight_tensor: Optional[torch.Tensor] = None,
+        ngram_indexes: Optional[dict] = None,
         weighted_labels: bool = False,
         **kwargs,
     ):
@@ -40,6 +41,7 @@ class TransformerConfig(PretrainedConfig):
         self.weighted_loss = weighted_loss
         self.weight_tensor = weight_tensor
         self.weighted_labels = weighted_labels
+        self.ngram_indexes = ngram_indexes
 
         super().__init__(**kwargs)
 
@@ -56,5 +58,6 @@ class TransformerConfig(PretrainedConfig):
             unigram_ppl=args.unigram_ppl,
             weighted_loss=args.weighted_loss,
             weighted_labels=args.weighted_labels,
+            ngram_indexes=args.ngram_indexes 
         )
 

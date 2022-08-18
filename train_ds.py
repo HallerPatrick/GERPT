@@ -15,11 +15,6 @@ from src.models.flair_models import (
 
 import wandb
 
-import src.models.transformer
-
-# from src.models.transformer.configuration_transformer import TransformerConfig
-# from src.models.transformer.tokenization_transformer import NGMETokenizer
-
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
 
@@ -81,10 +76,10 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 embeddings = NGMETransformerWordEmbeddings(
                     args.saved_model,
                     vocab_file=args.saved_model + "/vocab.json",
-                    layers="-1",
+                    layers="all",
                     subtoken_pooling="first",
-                    fine_tune=True,
-                    use_context=True,
+                    fine_tune=False,
+                    use_context=False,
                 )
 
                 # 5. initialize bare-bones sequence tagger (no CRF, no RNN, no reprojection)
@@ -93,14 +88,12 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=embeddings,
                     tag_dictionary=label_dict,
                     tag_type="ner",
-                    use_crf=False,
-                    use_rnn=False,
-                    reproject_embeddings=False,
+                    use_crf=True,
                 )
 
         elif settings.task_name in ["sentiment", "class"]:
 
-            if args.model_name == "rnn":
+            if args.model_name in ["rnn", "lstm"]:
                 document_embeddings = DocumentRNNEmbeddings(
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )

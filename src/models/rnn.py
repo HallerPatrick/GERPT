@@ -142,20 +142,15 @@ class RNNModel(pl.LightningModule):
         loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
+
         
-        ppl_sum = 0
-        loss_sum = 0
+        # Unigram output
+        output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device))
+        targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device))
+        unigram_loss = self.criterion.unigram_loss(output, targets)
 
-        for i in range(self.ngrams):
-            output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]).to(self.device))
-            targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[i+1]).to(self.device))
-            loss_sum += self.criterion(output, targets)
-            ppl_sum += math.exp(self.criterion(output, targets))
-
-
-        self.log("train/avg_ppl_1", math.exp(loss_sum / self.ngrams), prog_bar=True)
-        self.log("train/avg_ppl_2", ppl_sum / self.ngrams, prog_bar=True)
-        # print(f"PPL SUM: {math.exp(loss_sum / self.ngrams)}")
+        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
