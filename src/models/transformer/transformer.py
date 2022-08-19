@@ -130,7 +130,7 @@ class TransformerLightningModule(pl.LightningModule):
                 word = self.dictionary.idx2word[ngram_idx]
 
                 # Append to generated sequence
-                generated_output = generated_output + word
+                generated_output = generated_output + word + "·"
 
                 # Use last 200 chars as sequence for new input
                 inp = (
