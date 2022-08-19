@@ -23,14 +23,16 @@ class TransformerConfig(PretrainedConfig):
         dropout=0.5,
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
-        weight_tensor: Optional[torch.Tensor] = None,
+        weight_tensor: Optional[list] = None,
         ngram_indexes: Optional[dict] = None,
         weighted_labels: bool = False,
         generate: bool = False,
         temperature: float = 1.0,
         chars: int = 1000,
+        pad_token_id: int = -1,
         **kwargs,
     ):
+        self.pad_token_id = pad_token_id
         self.ntoken = ntoken
         self.embedding_size = embedding_size
         self.nhead = nhead
@@ -47,6 +49,7 @@ class TransformerConfig(PretrainedConfig):
         self.generate = generate
         self.temperature = temperature
         self.chars = chars
+
 
         super().__init__(**kwargs)
 

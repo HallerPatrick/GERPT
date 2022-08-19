@@ -277,7 +277,7 @@ class Dictionary:
             st[0][-i] = self.word2idx["<pad>"]
         return st
 
-    def create_weight_tensor(self) -> Optional[torch.Tensor]:
+    def create_weight_tensor(self) -> Optional[list]:
         if not self.frequencies:
             return
 
@@ -298,7 +298,7 @@ class Dictionary:
             idx = self.word2idx[marker]
             normed_weights[idx] = 0
 
-        return torch.tensor(normed_weights)
+        return normed_weights
 
 
 def get_dictionary_cache() -> Path:

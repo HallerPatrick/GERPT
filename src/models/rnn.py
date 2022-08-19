@@ -103,7 +103,7 @@ class RNNModel(pl.LightningModule):
         if self.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
                 ignore_index=self.dictionary.word2idx["<pad>"],
-                weight=self.dictionary.create_weight_tensor()
+                weight=torch.tensor(self.dictionary.create_weight_tensor())
             )
         else:
             self.criterion = CrossEntropyLossSoft(

@@ -48,6 +48,7 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
             args.weight_tensor = dictionary.create_weight_tensor()
 
         args.ngram_indexes = dictionary.ngram_indexes
+        args.pad_token_id = dictionary.word2idx["<pad>"]
 
         gen_args = Namespace(**gen_args)
 
