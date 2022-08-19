@@ -283,16 +283,17 @@ class Dictionary:
 
         t = torch.ones(len(self))
 
-        for token, freq in self.frequencies.items():
+        # for token, freq in self.frequencies.items():
+        #
+        #     if token not in self.word2idx:
+        #         continue
+        #
+        #     idx = self.word2idx[token]
+        #
+        #     t[idx] = freq
 
-            if token not in self.word2idx:
-                continue
-
-            idx = self.word2idx[token]
-
-            t[idx] = freq
-
-        normed_weights = [1 - (x / (max(t) + 1)) for x in t]
+        # normed_weights = [(1 - (x / (max(t) + 1))).item() for x in t]
+        normed_weights = [x.item() for x in t]
 
         for marker in self.get_marker_tokens():
             idx = self.word2idx[marker]

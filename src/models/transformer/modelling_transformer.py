@@ -44,14 +44,18 @@ class TransformerTransformer(PreTrainedModel):
 
         self.unigram_ppl = config.unigram_ppl
         self.weighted_labels = config.weighted_labels
+        
+        print(config)
         if config.weighted_loss:
+            # print(config.pad_token_id)
+            # exit()
             self.criterion = CrossEntropyLossSoft(
-                ignore_index=config.pad_token_id,
-                weight=torch.tensor(config.weight_tensor).to(device)
+                # ignore_index=config.pad_token_id,
+                weight=torch.tensor(config.weight_tensor).to(self.device)
             )
         else:
             self.criterion = CrossEntropyLossSoft(
-                ignore_index=config.pad_token_id,
+                # ignore_index=config.pad_token_id,
             )
 
         self.init_weights()

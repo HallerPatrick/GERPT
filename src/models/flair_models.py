@@ -195,9 +195,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         # (batch, ngram, seq) -> (ngram, seq, batch)
         input_ids = input_ids.permute((1, 2, 0))
 
-        print(input_ids.size())
-        exit()
-
         with gradient_context:
 
             hidden_states = self.model.forward_hidden(input_ids, **model_kwargs)

@@ -49,6 +49,7 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
 
         args.ngram_indexes = dictionary.ngram_indexes
         args.pad_token_id = dictionary.word2idx["<pad>"]
+        print(args.pad_token_id)
 
         gen_args = Namespace(**gen_args)
 
