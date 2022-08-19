@@ -49,8 +49,11 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
 
         args.ngram_indexes = dictionary.ngram_indexes
 
+        gen_args = Namespace(**gen_args)
+
         model = TransformerLightningModule(
-            TransformerConfig.from_args(args)
+            TransformerConfig.from_args(args, gen_args),
+            dictionary=dictionary
         )
 
     return model

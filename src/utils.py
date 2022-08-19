@@ -63,6 +63,20 @@ def display_prediction(prediction, dictionary):
         i, pred = p
         print("{:9}: {:.15f},".format(repr(dictionary.idx2word[i]), pred))
 
+def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int) -> int:
+    """
+
+    Args
+    ----
+    d: dict size
+    e: embedding size
+    h: heads
+    l: layers
+    hid: hidden size
+
+    """
+    pass
+
 
 def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, h):
     """
@@ -159,3 +173,18 @@ class DummyLogger:
             return None
 
         return method
+
+from prettytable import PrettyTable
+
+def count_parameters(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: 
+            continue
+        param = parameter.numel()
+        table.add_row([name, param])
+        total_params+=param
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    return total_params

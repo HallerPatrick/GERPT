@@ -180,6 +180,7 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             add_special_tokens=False,
         )
 
+
         input_ids, model_kwargs = self._build_transformer_model_inputs(
             batch_encoding, tokenized_sentences, sentences
         )
@@ -193,6 +194,9 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         # N-Gram Encoder expects ngram in first dim and batch last
         # (batch, ngram, seq) -> (ngram, seq, batch)
         input_ids = input_ids.permute((1, 2, 0))
+
+        print(input_ids.size())
+        exit()
 
         with gradient_context:
 

@@ -26,9 +26,11 @@ class TransformerConfig(PretrainedConfig):
         weight_tensor: Optional[torch.Tensor] = None,
         ngram_indexes: Optional[dict] = None,
         weighted_labels: bool = False,
+        generate: bool = False,
+        temperature: float = 1.0,
+        chars: int = 1000,
         **kwargs,
     ):
-        
         self.ntoken = ntoken
         self.embedding_size = embedding_size
         self.nhead = nhead
@@ -42,11 +44,14 @@ class TransformerConfig(PretrainedConfig):
         self.weight_tensor = weight_tensor
         self.weighted_labels = weighted_labels
         self.ngram_indexes = ngram_indexes
+        self.generate = generate
+        self.temperature = temperature
+        self.chars = chars
 
         super().__init__(**kwargs)
 
     @classmethod
-    def from_args(cls, args,):
+    def from_args(cls, args, gen_args):
         return cls(
             ntoken=args.ntoken,
             embedding_size=args.embedding_size,
@@ -58,6 +63,9 @@ class TransformerConfig(PretrainedConfig):
             unigram_ppl=args.unigram_ppl,
             weighted_loss=args.weighted_loss,
             weighted_labels=args.weighted_labels,
-            ngram_indexes=args.ngram_indexes 
+            ngram_indexes=args.ngram_indexes,
+            generate=gen_args.generate,
+            temperature=gen_args.temperature,
+            chars=gen_args.chars
         )
 

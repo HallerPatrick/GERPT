@@ -86,17 +86,6 @@ class NGMETokenizer(PreTrainedTokenizer):
 
                 tokens.append("".join(word))
         
-                # try:
-                #     ids.append(self.vocab["".join(word)])
-                # except KeyError:
-                #
-                #     # Fall back on n-1 gram if possible
-                #     # if self.fallback and tuple(word)[1:] in self.vocab:
-                #     #     ids.append(self.vocab[word])
-                #     # else:
-                #     ids.append(self.vocab[f"<{n}-UNK>"])
-                # length += 1
-
             ngram_sequences.append(tokens)
         return ngram_sequences
 
