@@ -17,6 +17,9 @@ from sympy import *
 
 class FLOPSCallback(Callback):
 
+    def __init__(self, model) -> None:
+        super().__init__()
+
     
     def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, unused: int = 0) -> None:
         if torch.cuda.is_available():
