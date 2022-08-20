@@ -20,7 +20,8 @@ class FLOPSCallback(Callback):
     
     def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, unused: int = 0) -> None:
         if torch.cuda.is_available():
-            if batch_idx % 2 == 0:
+            if batch_idx == 1:
+                print(batch_idx)
                 self.flop_profiler = FlopsProfiler(trainer.model)
                 self.flop_profiler.start_profile()
         return super().on_train_batch_start(trainer, pl_module, batch, batch_idx, unused)
@@ -28,7 +29,8 @@ class FLOPSCallback(Callback):
     def on_train_batch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs, batch: Any, batch_idx: int, unused: int = 0) -> None:
 
         if torch.cuda.is_available():
-            if batch_idx % 2 == 0:
+            if batch_idx == 1:
+                print(batch_idx)
                 duration_per_batch = float(self.flop_profiler.get_total_duration())
                 total_flops = float(self.flop_profiler.get_total_flops())
 

@@ -78,7 +78,6 @@ if __name__ == "__main__":
 
     # Peformance
     log_time_per_epoch_callback = TimePerEpochCallback()
-    flops_callback = FLOPSCallback()
 
     # Make it 🌟 pretty
     rick_prog_bar_callback = RichProgressBar()
@@ -100,7 +99,6 @@ if __name__ == "__main__":
         plugins=plugins,
         devices=args.gpus,
         callbacks=[
-            flops_callback,
             checkpoint_callback,
             early_stop_callback,
             rick_prog_bar_callback,
