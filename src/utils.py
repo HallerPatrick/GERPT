@@ -2,15 +2,50 @@ from datetime import timedelta
 from math import sqrt
 from typing import Any, Callable, Optional
 import timeit
+
+import torch
+import torch.nn.functional as F
+import pytorch_lightning as pl
+
+from deepspeed.profiling.flops_profiler.profiler import FlopsProfiler
+from pytorch_lightning.callbacks.base import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-import torch.nn.functional as F
-
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks.base import Callback
 
 from sympy.solvers import solve
 from sympy import *
+
+class FLOPSCallback(Callback):
+
+    
+    def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int, unused: int = 0) -> None:
+        if torch.cuda.is_available():
+            if batch_idx % 2 == 0:
+                self.flop_profiler = FlopsProfiler(trainer.model)
+                self.flop_profiler.start_profile()
+        return super().on_train_batch_start(trainer, pl_module, batch, batch_idx, unused)
+    
+    def on_train_batch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs, batch: Any, batch_idx: int, unused: int = 0) -> None:
+
+        if torch.cuda.is_available():
+            if batch_idx % 2 == 0:
+                duration_per_batch = float(self.flop_profiler.get_total_duration())
+                total_flops = float(self.flop_profiler.get_total_flops())
+
+                flops_per_pass = total_flops / duration_per_batch
+                
+                trainer.logger.log_metrics(
+                    {"train/gflop_per_sec": flops_per_pass}
+                )
+
+
+                # flops = self.flop_profiler.get_total_flops(as_string=True)
+                # params = self.flop_profiler.get_total_params(as_string=True)
+                self.flop_profiler.print_model_profile(profile_step=batch_idx)
+                self.flop_profiler.end_profile()
+
+
+        return super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx, unused)
 
 
 class TimePerEpochCallback(Callback):

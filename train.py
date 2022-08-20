@@ -15,7 +15,7 @@ from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
-from src.utils import (ModelCheckpointCallback, TimePerEpochCallback, count_parameters,
+from src.utils import (FLOPSCallback, ModelCheckpointCallback, TimePerEpochCallback, count_parameters,
                        get_encoder_params)
 from train_ds import train_ds
 
@@ -76,10 +76,12 @@ if __name__ == "__main__":
         monitor="train/loss", patience=3, verbose=True, mode="min"
     )
 
+    # Peformance
+    log_time_per_epoch_callback = TimePerEpochCallback()
+    flops_callback = FLOPSCallback()
+
     # Make it 🌟 pretty
     rick_prog_bar_callback = RichProgressBar()
-
-    log_time_per_epoch_callback = TimePerEpochCallback()
 
     # --- PL Plugins ---
     plugins = []
@@ -98,6 +100,7 @@ if __name__ == "__main__":
         plugins=plugins,
         devices=args.gpus,
         callbacks=[
+            flops_callback,
             checkpoint_callback,
             early_stop_callback,
             rick_prog_bar_callback,
