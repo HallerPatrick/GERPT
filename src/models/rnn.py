@@ -28,6 +28,7 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
+
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
 

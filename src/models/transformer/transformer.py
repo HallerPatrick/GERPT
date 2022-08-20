@@ -8,23 +8,27 @@ import torch
 import wandb
 from transformers import PretrainedConfig, PreTrainedModel, PreTrainedTokenizer
 from src.dataset import Dictionary
+from src.models.base import BasePLModel
 
 from src.models.ngme import soft_n_hot
 from src.models.transformer import TransformerConfig, TransformerTransformer
 
-class TransformerLightningModule(pl.LightningModule):
+class TransformerLightningModule(BasePLModel):
     def __init__(
         self,
         config: TransformerConfig,
         dictionary: Optional[Dictionary] = None
     ):
-        super(TransformerLightningModule, self).__init__()
-
+        
+        super(BasePLModel, self).__init__()
         self.model = TransformerTransformer(config)
+
         self.config = config
 
         self.epoch = 0
         self.dictionary = dictionary
+
+        self.register_flop_profiler(self.model)
 
     def training_step(self, batch, batch_idx):
         output = self.model.forward(batch["source"])

@@ -1,6 +1,7 @@
 from argparse import Namespace
 from typing import Dict
 
+
 from src.dataset import Dictionary
 from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
@@ -54,8 +55,7 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
         gen_args = Namespace(**gen_args)
 
         model = TransformerLightningModule(
-            TransformerConfig.from_args(args, gen_args),
-            dictionary=dictionary
+            TransformerConfig.from_args(args, gen_args), dictionary=dictionary
         )
 
     return model
