@@ -2,11 +2,15 @@
 
 # Training
 model: transformer
-data: "wikitext/wikitext-2-raw-v1"
+# model: lstm
+# data: "wikitext/wikitext-2-raw-v1"
+data: "text/cash"
+saved_data: "data/tokenized_data"
+saved_dict: "data/dict_data"
 save: model.pt
 cpus: 1
 gpus: 1
-epochs: 1
+epochs: 2
 wdecay: 1.2e-6
 lr: 0.1
 

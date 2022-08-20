@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import torch
+from datasets import load_dataset as hf_load_dataset
+from datasets.load import load_from_disk
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
@@ -13,7 +15,7 @@ from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
-from src.utils import (ModelCheckpointCallback, TimePerEpochCallback,
+from src.utils import (ModelCheckpointCallback, TimePerEpochCallback, count_parameters,
                        get_encoder_params)
 from train_ds import train_ds
 
@@ -28,17 +30,22 @@ if __name__ == "__main__":
 
     print_args(args)
 
-    # --- Dataloading & Tokenization ---
-    tokenized_dataset, dictionary = load_tokenized_dataset(
-        args.bptt,
-        args.ngram,
-        args.max_dict_size,
-        args.unk_threshold,
-        args.fallback,
-        args.cpus,
-        *args.data.split("/"),
-        # cache_dir="/home/tmp/halerpat/datasets"
-    )
+    if args.saved_dict and args.saved_data:
+        print("Load preprocessed dataset from disk...")
+        tokenized_dataset = load_from_disk(args.saved_data)
+        dictionary = torch.load(args.saved_dict)
+    else:
+        # --- Dataloading & Tokenization ---
+        tokenized_dataset, dictionary = load_tokenized_dataset(
+            args.bptt,
+            args.ngram,
+            args.max_dict_size,
+            args.unk_threshold,
+            args.fallback,
+            args.cpus,
+            *args.data.split("/"),
+            # cache_dir="/home/tmp/halerpat/datasets"
+        )
 
     wandb.require(experiment="service")
     configs = {**vars(args), "dict_size": len(dictionary)}
@@ -108,6 +115,8 @@ if __name__ == "__main__":
         for name, parameter in model.rnn.named_parameters():
             if parameter.requires_grad:
                 print(name, parameter.numel())
+    else: 
+        print(count_parameters(model))
 
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 

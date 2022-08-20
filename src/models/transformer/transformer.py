@@ -74,24 +74,13 @@ class TransformerLightningModule(pl.LightningModule):
         self.epoch += 1
 
         if self.config.generate and self.dictionary:
-            print(Panel(self.generate_text(), title="[green]Generated text"))
+            _, output = self.generate_text()
+            print(Panel(output, title="[green]Generated text"))
             self.train()
 
     def generate_text(self) -> str:
 
         assert self.dictionary is not None
-
-        if self.model.ngrams > 2:
-            unk_idxs = set(
-                [
-                    self.dictionary.word2idx[f"<{i}-UNK>"]
-                    for i in range(3, self.config.ngrams + 1)
-                ]
-            )
-            token_idxs = set(self.dictionary.word2idx.values())
-            token_idxs = torch.tensor(
-                list(token_idxs.difference(unk_idxs)), dtype=torch.int64
-            )
 
         ntokens = len(self.dictionary)
 
@@ -99,6 +88,7 @@ class TransformerLightningModule(pl.LightningModule):
             ntokens, (self.config.ngrams, 1, 1), dtype=torch.long, device=self.device
         )
         generated_output = self.dictionary.idx2word[inp[0][0].item()]
+        printed_output = generated_output
 
         with torch.no_grad():
             self.eval()
@@ -116,10 +106,6 @@ class TransformerLightningModule(pl.LightningModule):
                 else:
                     # output = F.log_softmax(output, dim=0)
 
-                    # Remove all UNK tokens for ngram > 2
-                    if self.model.ngrams > 2:
-                        output = torch.index_select(output, 0, token_idxs).cpu()
-
                     word_weights = (
                         output[-1].squeeze().div(self.config.temperature).exp().cpu()
                     )
@@ -130,7 +116,8 @@ class TransformerLightningModule(pl.LightningModule):
                 word = self.dictionary.idx2word[ngram_idx]
 
                 # Append to generated sequence
-                generated_output = generated_output + word + "·"
+                printed_output = printed_output + word + "·"
+                generated_output = generated_output + word
 
                 # Use last 200 chars as sequence for new input
                 inp = (
@@ -147,8 +134,8 @@ class TransformerLightningModule(pl.LightningModule):
         self.logger.log_text(
             "samples",
             columns=["epoch", "temperatue", "text"],
-            data=[[self.epoch, self.config.temperature, generated_output]],
+            data=[[self.epoch, self.config.temperature, printed_output]],
         )
-        wandb.log({"train/text": generated_output})
+        wandb.log({"train/text": printed_output})
 
-        return generated_output
+        return generated_output, printed_output

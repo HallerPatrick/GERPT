@@ -488,8 +488,8 @@ def load_dictionary_from_hf(
                         dictionary.ngram_indexes[token_len].append(idx)
 
     print(f"Saving dictionary at {hash_file}...")
-    torch.save(dictionary, hash_file)
     dictionary.frequencies = frequencies
+    torch.save(dictionary, hash_file)
 
     return dictionary
 
