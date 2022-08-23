@@ -138,15 +138,15 @@ if __name__ == "__main__":
     elif args.model == "transformer":
         # Save vocab file
         vocab_file = dictionary.save_vocabulary(
-            "checkpoints", NGMETokenizer.vocab_file_name
+            "checkpoints", NGMETokenizer.vocab_file_name, args.ngram
         )
 
         # Save HF model
-        trainer.lightning_module.model.save_pretrained("checkpoints" / Path(args.save))
+        trainer.lightning_module.model.save_pretrained("checkpoints" / Path(args.save), ngram=args.ngram)
         # NGMETokenizer(trainer.lightning_module.model.config)
 
         # Load HF tokenizer and save it for downstream with flair
-        NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
+        # NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
     try:
         # Save wandb run id in config for fine tuning run

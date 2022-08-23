@@ -19,7 +19,12 @@ def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
     vocab = collections.OrderedDict()
     with open(vocab_file, "r", encoding="utf-8") as reader:
-        tokens = reader.readlines()
+        tokens = iter(reader.readlines())
+
+    try:
+        ngrams = int(next(tokens).strip())
+    except:
+        print("Could not determine ngram of tokenizer in vocab file")
     
     for index, token in enumerate(tokens):
         token = token.rstrip("\n")
@@ -29,11 +34,11 @@ def load_vocab(vocab_file):
 
         vocab[token] = index
     
-    return vocab
+    return ngrams, vocab
 
 class NGMETokenizer(PreTrainedTokenizer):
 
-    vocab_file_name = "vocab.json"
+    vocab_file_name = "vocab.txt"
 
     def __init__(self, vocab_file: Optional[str] = None, unk_token="<1-UNK>", pad_token="<pad>", **kwargs):
 
@@ -47,16 +52,8 @@ class NGMETokenizer(PreTrainedTokenizer):
             **kwargs
         )
         
-        # Not sure if this always works
-        try:
-            config = AutoConfig.from_pretrained(kwargs["name_or_path"])
-            self.ngrams = config.ngrams
-        except KeyError:
-            self.ngrams = 1
-        # self.fallback = config.fallback
-        
         if vocab_file:
-            self.vocab = load_vocab(vocab_file)
+            self.ngrams, self.vocab = load_vocab(vocab_file)
         else:
             assert "name_or_path" in kwargs
             self.vocab = load_vocab(kwargs["name_or_path"] + "/" + self.vocab_file_name)
@@ -352,7 +349,7 @@ class NGMETokenizer(PreTrainedTokenizer):
 
         return encoded_inputs
 
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(self, save_directory: str, ngram: int, filename_prefix: Optional[str] = None) -> Tuple[str]:
         index = 0
         if os.path.isdir(save_directory):
             vocab_file = os.path.join(
@@ -361,6 +358,7 @@ class NGMETokenizer(PreTrainedTokenizer):
         else:
             vocab_file = (filename_prefix + "-" if filename_prefix else "") + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
+            writer.write(str(ngram) + "\n")
             for token, token_index in sorted(self.vocab.items(), key=lambda kv: kv[1]):
                 if index != token_index:
                     print(

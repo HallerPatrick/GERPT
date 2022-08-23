@@ -46,8 +46,6 @@ class TransformerTransformer(PreTrainedModel):
         self.weighted_labels = config.weighted_labels
         
         if config.weighted_loss:
-            # print(config.pad_token_id)
-            # exit()
             self.criterion = CrossEntropyLossSoft(
                 # ignore_index=config.pad_token_id,
                 weight=torch.tensor(config.weight_tensor).to(self.device)

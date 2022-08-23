@@ -24,6 +24,8 @@ def human_readable_flops(num):
 class BasePLModel(pl.LightningModule):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.update_rate = 500
+        self.flop_profiler = None
 
     def register_flop_profiler(self, model):
 
@@ -33,14 +35,14 @@ class BasePLModel(pl.LightningModule):
     def on_train_batch_start(self, batch: Any, batch_idx: int, unused: int = 0) -> Optional[int]:
 
 
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and self.flop_profiler:
             if batch_idx % 2 ==  0:
                 self.flop_profiler.start_profile()
         return super().on_train_batch_start(batch, batch_idx, unused)
 
     def on_train_batch_end(self, outputs, batch: Any, batch_idx: int, unused: int = 0) -> None:
 
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and self.flop_profiler:
             if batch_idx % 2 ==  0:
 
                 batch_size = batch["source"].size()

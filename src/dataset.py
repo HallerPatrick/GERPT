@@ -158,6 +158,7 @@ class Dictionary:
         self,
         save_directory: str,
         vocab_file_name: str,
+        ngram: int,
         filename_prefix: Optional[str] = None,
     ) -> str:
         index = 0
@@ -171,6 +172,7 @@ class Dictionary:
                 filename_prefix + "-" if filename_prefix else ""
             ) + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
+            writer.write(str(ngram) + "\n")
             for token, token_index in sorted(
                 self.word2idx.items(), key=lambda kv: kv[1]
             ):
