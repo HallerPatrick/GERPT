@@ -45,7 +45,6 @@ class TransformerTransformer(PreTrainedModel):
         self.unigram_ppl = config.unigram_ppl
         self.weighted_labels = config.weighted_labels
         
-        print(config)
         if config.weighted_loss:
             # print(config.pad_token_id)
             # exit()
@@ -120,12 +119,8 @@ class TransformerTransformer(PreTrainedModel):
         src = self.pos_encoder(src)
         # out: [seq, batch, emb]
         
-        breakpoint()
         output = self.transformer_encoder(src, self.src_mask)
         
-        breakpoint()
-
-
         return output
 
 
