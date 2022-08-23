@@ -43,6 +43,11 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         token_text = token_text.lower()
         return token_text
 
+        
+    @property
+    def embedding_length(self) -> int:
+        return self.model.embedding_size
+
     def _reconstruct_tokens_from_subtokens(self, sentence, subtokens):
 
         """
@@ -201,6 +206,8 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
             # Out: (seq, batch, hid) -> (batch, seq, hid)
             hidden_states = hidden_states.permute((1, 0, 2))
+
+            # print(hidden_states.size())
 
             # make the tuple a tensor; makes working with it easier.
             # (layers, batch, seq, hidden)
