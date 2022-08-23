@@ -33,7 +33,6 @@ class FLOPSCallback(Callback):
 
         if torch.cuda.is_available():
             if batch_idx == 1:
-                print(batch_idx)
                 duration_per_batch = float(self.flop_profiler.get_total_duration())
                 total_flops = float(self.flop_profiler.get_total_flops())
 

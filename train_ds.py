@@ -64,7 +64,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 )
 
                 task_model = SequenceTagger(
-                    hidden_size=256,
+                    hidden_size=settings.hidden_size,
                     embeddings=embeddings,
                     tag_dictionary=label_dict,
                     tag_type=settings.task_name,
@@ -84,7 +84,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
 
                 # 5. initialize bare-bones sequence tagger (no CRF, no RNN, no reprojection)
                 task_model = SequenceTagger(
-                    hidden_size=256,
+                    hidden_size=settings.hidden_size,
                     embeddings=embeddings,
                     tag_dictionary=label_dict,
                     tag_type="ner",

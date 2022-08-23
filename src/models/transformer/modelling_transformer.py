@@ -81,7 +81,7 @@ class TransformerTransformer(PreTrainedModel):
         # (ngram, seq, batch)
         
         if has_mask:
-            if self.src_mask is None or self.src_mask.size(0) != len(src):
+            if self.src_mask is None or self.src_mask.size(0) != src.size(1):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
                     self.device
                 )
@@ -99,16 +99,32 @@ class TransformerTransformer(PreTrainedModel):
         #     src = src.squeeze(0).unsqueeze(-1)
         
         if has_mask:
-            if self.src_mask is None or self.src_mask.size(0) != len(src):
+            if self.src_mask is None or self.src_mask.size(0) != src.size(1):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
                     self.device
                 )
                 self.src_mask = mask
         else:
             self.src_mask = None
-        src = self.encoder(src) * math.sqrt(self.embedding_size)
+
+        
+        # in: [ngram, seq, batch]
+
+
+        src = self.encoder(src)
+        # out: [seq, batch, emb]
+
+        src = src * math.sqrt(self.embedding_size)
+        # out: [seq, batch, emb]
+
         src = self.pos_encoder(src)
+        # out: [seq, batch, emb]
+        
+        breakpoint()
         output = self.transformer_encoder(src, self.src_mask)
+        
+        breakpoint()
+
 
         return output
 

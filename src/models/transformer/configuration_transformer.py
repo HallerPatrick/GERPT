@@ -54,7 +54,6 @@ class TransformerConfig(PretrainedConfig):
 
     @classmethod
     def from_args(cls, args, gen_args):
-        print(args.weight_tensor)
         return cls(
             ntoken=args.ntoken,
             embedding_size=args.embedding_size,
