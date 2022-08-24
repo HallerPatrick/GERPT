@@ -1,13 +1,12 @@
 import hashlib
+import os
 import string
 import sys
-import os
-
 from collections import Counter, defaultdict
 from itertools import zip_longest
 from operator import itemgetter
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -19,7 +18,6 @@ from datasets.load import load_from_disk
 from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
-
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
@@ -182,7 +180,7 @@ class Dictionary:
                         " Please check that the vocabulary is not corrupted!"
                     )
                     index = token_index
-                
+
                 # TODO:Is this sound?
                 if "\n" in token:
                     token = token.replace("\n", "\\n")
@@ -370,7 +368,9 @@ def load_tokenized_dataset(
     print("Preprocess dataset...")
     train = [x["text"] for x in dataset["train"]]
     test = [x["text"] for x in dataset["test"]] if "test" in dataset else []
-    valid = [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
+    valid = (
+        [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
+    )
 
     # train = map(lambda x: x["text"], dataset["train"])
     # test = map(lambda x: x["text"], dataset["test"])

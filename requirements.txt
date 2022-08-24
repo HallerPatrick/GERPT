@@ -1,6 +1,6 @@
 torch
 deepspeed
-pytorch-lightning
+pytorch-lightning>=1.7.0
 rich
 flair>=0.11.1,<=0.11.2
 nltk
@@ -11,6 +11,3 @@ prettytable
 matplotlib
 numpy
 pandas
-
-black
-isort

@@ -1,6 +1,5 @@
-
-
 import torch
+
 from src.args import parse_args
 from src.dataset import load_tokenized_dataset
 
@@ -22,6 +21,7 @@ def main():
 
     tokenized_dataset.save_to_disk(args.saved_data)
     torch.save(dictionary, args.saved_dict)
+
 
 if __name__ == "__main__":
     main()

@@ -28,7 +28,6 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
-
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
@@ -44,10 +43,12 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.1,
-        gen_args: dict = {},
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
+        generate: bool = False,
+        temperature: float = 0.7,
+        chars_to_gen: int = 1000,
     ):
         super(RNNModel, self).__init__()
 
@@ -91,20 +92,20 @@ class RNNModel(pl.LightningModule):
         self.hidden = None
         self.epoch = 0
 
-        
         # self.register_buffer(
         #     "nram_indexes", torch.tensor([indexes for indexes in  self.dictionary.ngram_indexes.values() ])
         # )
 
-        for key, value in gen_args.items():
-            setattr(self, key, value)
+        self.generate = generate
+        self.temperature = temperature
+        self.chars_to_gen = chars_to_gen
 
     def setup(self, stage: Optional[str] = None) -> None:
 
         if self.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
                 ignore_index=self.dictionary.word2idx["<pad>"],
-                weight=torch.tensor(self.dictionary.create_weight_tensor())
+                weight=torch.tensor(self.dictionary.create_weight_tensor()),
             )
         else:
             self.criterion = CrossEntropyLossSoft(
@@ -144,10 +145,13 @@ class RNNModel(pl.LightningModule):
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
-        
         # Unigram output
-        output = torch.index_select(decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device))
-        targets = torch.index_select(target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device))
+        output = torch.index_select(
+            decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
+        )
+        targets = torch.index_select(
+            target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
+        )
         unigram_loss = self.criterion.unigram_loss(output, targets)
 
         self.log("train/unigram_loss", unigram_loss, prog_bar=True)

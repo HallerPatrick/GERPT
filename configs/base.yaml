@@ -15,7 +15,7 @@ wdecay: 1.2e-6
 lr: 0.1
 
 # Dictioarny
-ngram: 2
+ngram: 1
 unk_threshold: 0
 max_dict_size: 0
 fallback: True
@@ -38,4 +38,9 @@ seed: 1111
 log_interval: 200
 
 downstream: False
+
+# Gerate text
+generate: True
+chars: 1000
+temperature: 0.7
 

@@ -1,8 +1,5 @@
 from typing import Optional
 
-
-import torch
-
 from transformers import PretrainedConfig
 
 
@@ -53,7 +50,7 @@ class TransformerConfig(PretrainedConfig):
         super().__init__(**kwargs)
 
     @classmethod
-    def from_args(cls, args, gen_args):
+    def from_args(cls, args):
         return cls(
             ntoken=args.ntoken,
             embedding_size=args.embedding_size,
@@ -67,9 +64,8 @@ class TransformerConfig(PretrainedConfig):
             weight_tensor=args.weight_tensor,
             weighted_labels=args.weighted_labels,
             ngram_indexes=args.ngram_indexes,
-            generate=gen_args.generate,
-            temperature=gen_args.temperature,
-            chars=gen_args.chars,
-            pad_token_id=args.pad_token_id
+            generate=args.generate,
+            temperature=args.temperature,
+            chars=args.chars,
+            pad_token_id=args.pad_token_id,
         )
-

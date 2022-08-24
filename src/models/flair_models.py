@@ -1,12 +1,12 @@
 """Monkey patch flair model that loads our language models."""
 
 from pathlib import Path
-from typing import Optional, Union, List
-from flair.embeddings.token import TransformerWordEmbeddings
+from typing import List, Optional, Union
 
+import torch
 import wrapt
 from flair.data import Corpus, Sentence, Token
-import torch
+from flair.embeddings.token import TransformerWordEmbeddings
 
 
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
@@ -43,7 +43,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         token_text = token_text.lower()
         return token_text
 
-        
     @property
     def embedding_length(self) -> int:
         return self.model.embedding_size
@@ -68,7 +67,7 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         # iterate over subtokens and reconstruct tokens
 
         whitespace_count = 0
-        
+
         # Iter through unigram seq,
         for subtoken_id, subtoken in enumerate(subtokens[0]):
 
@@ -157,7 +156,7 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                         sentence, subtokenized_sentence
                     )
                 )
-            
+
             # All ngrams seq have same length, just take unigram one
             subtoken_lengths.append(len(subtokenized_sentence[0]))
 
@@ -184,7 +183,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
             return_tensors="pt",
             add_special_tokens=False,
         )
-
 
         input_ids, model_kwargs = self._build_transformer_model_inputs(
             batch_encoding, tokenized_sentences, sentences
@@ -287,8 +285,9 @@ def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None
 ) -> Corpus:
 
-    from flair.datasets import CONLL_03, UD_ENGLISH, IMDB, CONLL_03_GERMAN
-    from flair.datasets.document_classification import SENTEVAL_SST_BINARY, SENTEVAL_CR
+    from flair.datasets import CONLL_03, CONLL_03_GERMAN, IMDB, UD_ENGLISH
+    from flair.datasets.document_classification import (SENTEVAL_CR,
+                                                        SENTEVAL_SST_BINARY)
 
     corpus_mapper = {
         "conll_03": {"corpus": CONLL_03, "args": [base_path]},

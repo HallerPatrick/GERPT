@@ -1,19 +1,14 @@
 from argparse import Namespace
 from typing import Optional
 
-from transformers import AutoModel, AutoConfig, AutoTokenizer
-
 # from flair.embeddings import WordEmbeddings
 from flair.embeddings.document import DocumentRNNEmbeddings
-
-from src.args import argparse_flair_train, read_config
-from src.models.flair_models import (
-    load_corpus,
-    patch_flair,
-    NGMETransformerWordEmbeddings,
-)
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 import wandb
+from src.args import argparse_flair_train, read_config
+from src.models.flair_models import (NGMETransformerWordEmbeddings,
+                                     load_corpus, patch_flair)
 
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
@@ -100,8 +95,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             else:
                 # TODO make sequence tagging work
                 document_embeddings = NGMETransformerWordEmbeddings(
-                    args.saved_model,
-                    vocab_file=args.saved_model + "/vocab.json"
+                    args.saved_model, vocab_file=args.saved_model + "/vocab.json"
                 )
 
             task_model = TextClassifier(
@@ -123,7 +117,9 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             mini_batch_size=settings.mini_batch_size,
             max_epochs=settings.max_epochs,
             # Bug with saving vocab file in saved model
-            use_final_model_for_eval=True if args.model_name == "transformer" else False
+            use_final_model_for_eval=True
+            if args.model_name == "transformer"
+            else False,
         )
 
         if isinstance(score, dict):

@@ -1,16 +1,14 @@
 from argparse import Namespace
 from typing import Dict
 
-
 from src.dataset import Dictionary
 from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
 from src.models.transformer.transformer import TransformerLightningModule
-
 from src.utils import calculate_lstm_hidden_size
 
 
-def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
+def load_model(dictionary: Dictionary, args: Namespace):
 
     if hasattr(args, "expected_size"):
         if args.expected_size > 0:
@@ -36,7 +34,6 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
             args.unk_threshold,
             None,
             args.embedding_size,
-            gen_args=gen_args,
             unigram_ppl=args.unigram_ppl,
             weighted_loss=args.weighted_loss,
             weighted_labels=args.weighted_labels,
@@ -51,10 +48,8 @@ def load_model(dictionary: Dictionary, args: Namespace, gen_args: Dict):
         args.ngram_indexes = dictionary.ngram_indexes
         args.pad_token_id = dictionary.word2idx["<pad>"]
 
-        gen_args = Namespace(**gen_args)
-
         model = TransformerLightningModule(
-            TransformerConfig.from_args(args, gen_args), dictionary=dictionary
+            TransformerConfig.from_args(args), dictionary=dictionary
         )
 
     return model

@@ -1,19 +1,16 @@
 import math
 
 import pytorch_lightning as pl
-
 import torch
 import torch.nn.functional as F
-
 from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-
 from transformers import PreTrainedModel
-
-from src.models.transformer.configuration_transformer import TransformerConfig
 
 from src.loss import CrossEntropyLossSoft
 from src.models.ngme import NGramsEmbedding
+from src.models.transformer.configuration_transformer import TransformerConfig
+
 
 class TransformerTransformer(PreTrainedModel):
 
@@ -44,7 +41,7 @@ class TransformerTransformer(PreTrainedModel):
 
         self.unigram_ppl = config.unigram_ppl
         self.weighted_labels = config.weighted_labels
-        
+
         if config.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
                 # ignore_index=config.pad_token_id,
@@ -74,9 +71,9 @@ class TransformerTransformer(PreTrainedModel):
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
     def forward(self, src, has_mask=True, **kwargs):
-        
+
         # (ngram, seq, batch)
-        
+
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != src.size(1):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
@@ -94,7 +91,7 @@ class TransformerTransformer(PreTrainedModel):
     def forward_hidden(self, src, has_mask=True, **kwargs):
         # if "attention_mask" in kwargs:
         #     src = src.squeeze(0).unsqueeze(-1)
-        
+
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != src.size(1):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
@@ -104,9 +101,7 @@ class TransformerTransformer(PreTrainedModel):
         else:
             self.src_mask = None
 
-        
         # in: [ngram, seq, batch]
-
 
         src = self.encoder(src)
         # out: [seq, batch, emb]
@@ -116,12 +111,10 @@ class TransformerTransformer(PreTrainedModel):
 
         src = self.pos_encoder(src)
         # out: [seq, batch, emb]
-        
+
         output = self.transformer_encoder(src, self.src_mask)
-        
+
         return output
-
-
 
 
 # Temporarily leave PositionalEncoding module here. Will be moved somewhere else.

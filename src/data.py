@@ -27,7 +27,7 @@ local_dataset_mapper = {
         "train": "home/tmp/halerpat/data/train.txt",
         "test": "home/tmp/halerpat/data/test.txt",
         "validation": "home/tmp/halerpat/data/valid.txt",
-    }
+    },
 }
 
 
@@ -172,4 +172,3 @@ def tokenize(dictionary, lines: List[str], ngram, label, otf=False, fallback=Fal
 def grouped(iterable, n):
     # s -> (s0,s1,s2,...sn-1), (sn,sn+1,sn+2,...s2n-1), (s2n,s2n+1,s2n+2,...s3n-1), ...
     return zip(*[iter(iterable)] * n)
-

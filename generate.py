@@ -1,4 +1,5 @@
 import json
+
 import torch
 import torch.nn.functional as F
 from torch.distributions import Categorical
@@ -9,6 +10,7 @@ from src.models import RNNModel
 from src.models.ngme import soft_n_hot
 from src.utils import DummyLogger
 
+
 def calc_entropy(input_tensor):
     lsm = torch.nn.LogSoftmax()
     log_probs = lsm(input_tensor)
@@ -16,6 +18,7 @@ def calc_entropy(input_tensor):
     p_log_p = log_probs * probs
     entropy = -p_log_p.mean()
     return entropy
+
 
 def analyze(model, seed_text: str, target: str):
 
@@ -57,9 +60,9 @@ def analyze(model, seed_text: str, target: str):
             t_results = {"char": c}
             # Get all class of each n-gram
             for n in range(1, model.ngrams + 1):
-                    
+
                 token = "".join(list(current_text + c)[-n:])
-                
+
                 # Loss for each n-gram can be calculated by just using the subset of n-gram indexes
                 # of the output and target
                 n_gram_output = torch.index_select(
@@ -98,7 +101,6 @@ def analyze(model, seed_text: str, target: str):
                     print(target_idx)
                     print(c)
                     print(idx_to_pred)
-
 
                 t_results[n] = {
                     "loss": n_gram_loss.item(),
@@ -165,9 +167,7 @@ def generate(model, temp: float, seed: str, chars: int):
 
             # Use last 200 chars as sequence for new input
             inp = (
-                model.dictionary.tokenize_line(list(generated_output))[
-                    "source"
-                ]
+                model.dictionary.tokenize_line(list(generated_output))["source"]
                 .unsqueeze(dim=2)
                 .to(model.device)
             )
@@ -201,7 +201,7 @@ Ginny started requesting their favorite noses."
     if args.mode == "gen":
         for _ in range(args.num):
             generate(model, args.temperature, seed, chars)
-            print("-"*70)
+            print("-" * 70)
     else:
         analyze(model, seed, target)
 

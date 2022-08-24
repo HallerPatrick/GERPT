@@ -1,12 +1,11 @@
 from pathlib import Path
 
 import torch
-from datasets import load_dataset as hf_load_dataset
 from datasets.load import load_from_disk
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.utilities.deepspeed import \
     convert_zero_checkpoint_to_fp32_state_dict
 
@@ -15,20 +14,21 @@ from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
-from src.utils import (FLOPSCallback, ModelCheckpointCallback, TimePerEpochCallback, count_parameters,
+from src.utils import (ModelCheckpointCallback, TimePerEpochCallback,
+                       collect_token_metrics, count_parameters,
                        get_encoder_params)
 from train_ds import train_ds
 
 if __name__ == "__main__":
 
-    torch.manual_seed(1234)
-
     # --- Init ---
     args = parse_args()
 
-    gen_args = {"generate": True, "chars": 1000, "temperature": 0.7}
-
+    # Show all configurations
     print_args(args)
+    
+    # Set seed
+    torch.manual_seed(args.seed)
 
     if args.saved_dict and args.saved_data:
         print("Load preprocessed dataset from disk...")
@@ -47,21 +47,20 @@ if __name__ == "__main__":
             # cache_dir="/home/tmp/halerpat/datasets"
         )
 
+    # To avoid locks during distributed training
     wandb.require(experiment="service")
-    configs = {**vars(args), "dict_size": len(dictionary)}
-    wandb_logger = WandbLogger(project="gerpt", offline=True, config=configs)
 
-    dset_metrics = {}
-
-    dset_metrics[f"total_tokens"] = sum(dictionary.total_n_tokens.values()) + sum(
-        dictionary.unk_n_tokens.values()
+    # Init logger with all configs logged
+    wandb_logger = WandbLogger(
+        project="gerpt",
+        offline=True,
+        config={**vars(args), "dict_size": len(dictionary)},
     )
-    for n in range(1, args.ngram + 1):
-        dset_metrics[f"total_{n}_gram_tokens"] = dictionary.total_n_tokens[n]
-        dset_metrics[f"total_{n}_gram_unk_tokens"] = dictionary.unk_n_tokens[n]
 
-    wandb_logger.log_metrics(dset_metrics)
+    # Log some information about UNK occurence
+    wandb_logger.log_metrics(collect_token_metrics(dictionary, args.ngram))
 
+    # Init PL data module
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
     # --- PL Callbacks ---
@@ -84,11 +83,11 @@ if __name__ == "__main__":
 
     # --- PL Plugins ---
     plugins = []
-    if torch.cuda.is_available():
-        pass
 
-    strategy = "deepspeed_stage_2"
-    strategy = None
+    if torch.cuda.is_available():
+        strategy = "deepspeed_stage_2"
+    else:
+        strategy = None
 
     # --- Training ---
     trainer = Trainer(
@@ -107,16 +106,16 @@ if __name__ == "__main__":
         # Disable validation during training
         limit_val_batches=0.0,
         # profiler="simple",
-        # fast_dev_run=True
+        fast_dev_run=True,
     )
 
-    model = load_model(dictionary, args, gen_args)
+    model = load_model(dictionary, args)
 
     if hasattr(model, "rnn"):
         for name, parameter in model.rnn.named_parameters():
             if parameter.requires_grad:
                 print(name, parameter.numel())
-    else: 
+    else:
         print(count_parameters(model))
 
     wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
@@ -136,17 +135,16 @@ if __name__ == "__main__":
 
     # Transformer is wrapped in huggingface PreTrainedModel
     elif args.model == "transformer":
+
         # Save vocab file
         vocab_file = dictionary.save_vocabulary(
             "checkpoints", NGMETokenizer.vocab_file_name, args.ngram
         )
 
         # Save HF model
-        trainer.lightning_module.model.save_pretrained("checkpoints" / Path(args.save), ngram=args.ngram)
-        # NGMETokenizer(trainer.lightning_module.model.config)
-
-        # Load HF tokenizer and save it for downstream with flair
-        # NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
+        trainer.lightning_module.model.save_pretrained(
+            "checkpoints" / Path(args.save), ngram=args.ngram
+        )
 
     try:
         # Save wandb run id in config for fine tuning run

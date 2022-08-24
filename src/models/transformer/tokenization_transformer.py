@@ -1,19 +1,18 @@
-import os
 import collections
 import json
-from typing import Dict, Optional, Tuple, Union, List
+import os
+from typing import Dict, List, Optional, Tuple, Union
 
 from nltk import ngrams as ngram_tokenizer
 from tokenizers import AddedToken
-
-from transformers import PreTrainedTokenizer
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, PreTrainedTokenizer
 from transformers.models.auto.configuration_auto import AutoConfig
 from transformers.tokenization_utils_base import BatchEncoding, EncodedInput
 from transformers.utils.generic import PaddingStrategy, TensorType
 
 from src.dataset import Dictionary
 from src.utils import display_input_n_gram_sequences
+
 
 def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
@@ -25,42 +24,43 @@ def load_vocab(vocab_file):
         ngrams = int(next(tokens).strip())
     except:
         print("Could not determine ngram of tokenizer in vocab file")
-    
+
     for index, token in enumerate(tokens):
         token = token.rstrip("\n")
-        
+
         if "\\n" in token:
             token = token.replace("\\n", "\n")
 
         vocab[token] = index
-    
+
     return ngrams, vocab
+
 
 class NGMETokenizer(PreTrainedTokenizer):
 
     vocab_file_name = "vocab.txt"
+    eod = None
 
-    def __init__(self, vocab_file: Optional[str] = None, unk_token="<1-UNK>", pad_token="<pad>", **kwargs):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        unk_token="<1-UNK>",
+        pad_token="<pad>",
+        **kwargs,
+    ):
 
         unk_token = AddedToken(unk_token) if isinstance(unk_token, str) else unk_token
         pad_token = AddedToken(pad_token) if isinstance(pad_token, str) else pad_token
 
+        super().__init__(pad_token=pad_token, unk_token=unk_token, **kwargs)
 
-        super().__init__(
-            pad_token=pad_token,
-            unk_token=unk_token,
-            **kwargs
-        )
-        
         if vocab_file:
             self.ngrams, self.vocab = load_vocab(vocab_file)
         else:
             assert "name_or_path" in kwargs
             self.vocab = load_vocab(kwargs["name_or_path"] + "/" + self.vocab_file_name)
 
-
         self.decoder = {v: k for k, v in self.vocab.items()}
-    
 
     @property
     def vocab_size(self):
@@ -82,7 +82,7 @@ class NGMETokenizer(PreTrainedTokenizer):
                     word = [w for w in list(word) if w != "<start>"]
 
                 tokens.append("".join(word))
-        
+
             ngram_sequences.append(tokens)
         return ngram_sequences
 
@@ -95,19 +95,20 @@ class NGMETokenizer(PreTrainedTokenizer):
         """Converts an index (integer) in a token (str) using the vocab."""
         return self.decoder.get(index)
 
-    def convert_tokens_to_ids(self, tokens: Union[str, List[str]]) -> Union[int, List[int]]:
+    def convert_tokens_to_ids(
+        self, tokens: Union[str, List[str]]
+    ) -> Union[int, List[int]]:
 
         if tokens in [self.pad_token, self.unk_token]:
             return self._convert_token_to_id(tokens)
-        
-    
+
         n_gram_ids = []
         for n, n_gram_seq in enumerate(tokens):
             ids = []
 
             for token in n_gram_seq:
                 ids.append(self._convert_token_to_id(token, f"<{n+1}-UNK>"))
-            
+
             n_gram_ids.append(ids)
 
         return n_gram_ids
@@ -185,8 +186,13 @@ class NGMETokenizer(PreTrainedTokenizer):
         """
         # If we have a list of dicts, let's convert it in a dict of lists
         # We do this to allow using this method as a collate_fn function in PyTorch Dataloader
-        if isinstance(encoded_inputs, (list, tuple)) and isinstance(encoded_inputs[0], (dict, BatchEncoding)):
-            encoded_inputs = {key: [example[key] for example in encoded_inputs] for key in encoded_inputs[0].keys()}
+        if isinstance(encoded_inputs, (list, tuple)) and isinstance(
+            encoded_inputs[0], (dict, BatchEncoding)
+        ):
+            encoded_inputs = {
+                key: [example[key] for example in encoded_inputs]
+                for key in encoded_inputs[0].keys()
+            }
 
         # The model's main input name, usually `input_ids`, has be passed for padding
         if self.model_input_names[0] not in encoded_inputs:
@@ -273,8 +279,15 @@ class NGMETokenizer(PreTrainedTokenizer):
 
         return BatchEncoding(batch_outputs, tensor_type=return_tensors)
 
-    def _pad(self, encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding], max_length: Optional[int] = None, padding_strategy: PaddingStrategy = ..., pad_to_multiple_of: Optional[int] = None, return_attention_mask: Optional[bool] = None) -> dict:
-           
+    def _pad(
+        self,
+        encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
+        max_length: Optional[int] = None,
+        padding_strategy: PaddingStrategy = ...,
+        pad_to_multiple_of: Optional[int] = None,
+        return_attention_mask: Optional[bool] = None,
+    ) -> dict:
+
         """
         Pad encoded inputs (on left/right and up to predefined length or max length in the batch)
 
@@ -301,18 +314,24 @@ class NGMETokenizer(PreTrainedTokenizer):
         # Load from model defaults
         if return_attention_mask is None:
             return_attention_mask = "attention_mask" in self.model_input_names
-        
+
         required_input = encoded_inputs[self.model_input_names[0]]
         required_input_first = encoded_inputs[self.model_input_names[0]][0]
 
-        
         if padding_strategy == PaddingStrategy.LONGEST:
             max_length = len(required_input_first)
 
-        if max_length is not None and pad_to_multiple_of is not None and (max_length % pad_to_multiple_of != 0):
+        if (
+            max_length is not None
+            and pad_to_multiple_of is not None
+            and (max_length % pad_to_multiple_of != 0)
+        ):
             max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
 
-        needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and len(required_input_first) != max_length
+        needs_to_be_padded = (
+            padding_strategy != PaddingStrategy.DO_NOT_PAD
+            and len(required_input_first) != max_length
+        )
 
         # Initialize attention mask if not present.
         if return_attention_mask and "attention_mask" not in encoded_inputs:
@@ -324,39 +343,58 @@ class NGMETokenizer(PreTrainedTokenizer):
             if self.padding_side == "right":
                 if return_attention_mask:
 
-                    encoded_inputs["attention_mask"] = encoded_inputs["attention_mask"] + [0] * difference
+                    encoded_inputs["attention_mask"] = (
+                        encoded_inputs["attention_mask"] + [0] * difference
+                    )
                 if "token_type_ids" in encoded_inputs:
                     encoded_inputs["token_type_ids"] = (
-                        encoded_inputs["token_type_ids"] + [self.pad_token_type_id] * difference
+                        encoded_inputs["token_type_ids"]
+                        + [self.pad_token_type_id] * difference
                     )
                 if "special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["special_tokens_mask"] = encoded_inputs["special_tokens_mask"] + [1] * difference
+                    encoded_inputs["special_tokens_mask"] = (
+                        encoded_inputs["special_tokens_mask"] + [1] * difference
+                    )
                 for n, n_seq in enumerate(encoded_inputs[self.model_input_names[0]]):
-                    encoded_inputs[self.model_input_names[0]][n] = n_seq + [self.pad_token_id] * difference
+                    encoded_inputs[self.model_input_names[0]][n] = (
+                        n_seq + [self.pad_token_id] * difference
+                    )
             elif self.padding_side == "left":
                 if return_attention_mask:
-                    encoded_inputs["attention_mask"] = [0] * difference + encoded_inputs["attention_mask"]
+                    encoded_inputs["attention_mask"] = [
+                        0
+                    ] * difference + encoded_inputs["attention_mask"]
                 if "token_type_ids" in encoded_inputs:
-                    encoded_inputs["token_type_ids"] = [self.pad_token_type_id] * difference + encoded_inputs[
-                        "token_type_ids"
-                    ]
+                    encoded_inputs["token_type_ids"] = [
+                        self.pad_token_type_id
+                    ] * difference + encoded_inputs["token_type_ids"]
                 if "special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["special_tokens_mask"] = [1] * difference + encoded_inputs["special_tokens_mask"]
+                    encoded_inputs["special_tokens_mask"] = [
+                        1
+                    ] * difference + encoded_inputs["special_tokens_mask"]
                 for n, n_seq in enumerate(encoded_inputs[self.model_input_names[0]]):
-                    encoded_inputs[self.model_input_names[0]][n] = [self.pad_token_id] * difference + n_seq
+                    encoded_inputs[self.model_input_names[0]][n] = [
+                        self.pad_token_id
+                    ] * difference + n_seq
             else:
                 raise ValueError("Invalid padding strategy:" + str(self.padding_side))
 
         return encoded_inputs
 
-    def save_vocabulary(self, save_directory: str, ngram: int, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(
+        self, save_directory: str, ngram: int, filename_prefix: Optional[str] = None
+    ) -> Tuple[str]:
         index = 0
         if os.path.isdir(save_directory):
             vocab_file = os.path.join(
-                save_directory, (filename_prefix + "-" if filename_prefix else "") + self.vocab_file_name
+                save_directory,
+                (filename_prefix + "-" if filename_prefix else "")
+                + self.vocab_file_name,
             )
         else:
-            vocab_file = (filename_prefix + "-" if filename_prefix else "") + save_directory
+            vocab_file = (
+                filename_prefix + "-" if filename_prefix else ""
+            ) + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
             writer.write(str(ngram) + "\n")
             for token, token_index in sorted(self.vocab.items(), key=lambda kv: kv[1]):
@@ -371,4 +409,4 @@ class NGMETokenizer(PreTrainedTokenizer):
                     token = token.replace("\n", "\\n")
                 writer.write(token + "\n")
                 index += 1
-        return ( vocab_file, )
+        return (vocab_file,)

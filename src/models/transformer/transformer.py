@@ -1,25 +1,22 @@
 import math
 from typing import Optional
 
-import pytorch_lightning as pl
+import torch
 from rich import print
 from rich.panel import Panel
-import torch
-import wandb
-from transformers import PretrainedConfig, PreTrainedModel, PreTrainedTokenizer
-from src.dataset import Dictionary
 
+import wandb
+from src.dataset import Dictionary
 from src.models.base import BasePLModel
 from src.models.ngme import soft_n_hot
 from src.models.transformer import TransformerConfig, TransformerTransformer
 
+
 class TransformerLightningModule(BasePLModel):
     def __init__(
-        self,
-        config: TransformerConfig,
-        dictionary: Optional[Dictionary] = None
+        self, config: TransformerConfig, dictionary: Optional[Dictionary] = None
     ):
-        
+
         super(TransformerLightningModule, self).__init__()
         self.model = TransformerTransformer(config)
 
@@ -28,21 +25,26 @@ class TransformerLightningModule(BasePLModel):
         self.epoch = 0
         self.dictionary = dictionary
 
-        self.register_flop_profiler(self.model)
-    
+        # self.register_flop_profiler(self.model)
 
     def training_step(self, batch, batch_idx):
         output = self.model.forward(batch["source"])
         output = output.view(-1, self.model.ntoken)
-        target = soft_n_hot(batch["target"], self.model.ntoken, self.model.weighted_labels)
+        target = soft_n_hot(
+            batch["target"], self.model.ntoken, self.model.weighted_labels
+        )
         target = target.view(-1, self.model.ntoken)
         loss = self.model.criterion(output, target)
         self.log("train/loss", loss)
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
         # Unigram output
-        output = torch.index_select(output, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device))
-        targets = torch.index_select(target, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device))
+        output = torch.index_select(
+            output, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device)
+        )
+        targets = torch.index_select(
+            target, 1, torch.tensor(self.model.config.ngram_indexes[1]).to(self.device)
+        )
         unigram_loss = self.model.criterion.unigram_loss(output, targets)
 
         self.log("train/unigram_loss", unigram_loss, prog_bar=True)
@@ -52,7 +54,9 @@ class TransformerLightningModule(BasePLModel):
     def validation_step(self, batch, batch_idx):
         output = self.model.forward(batch["source"])
         output = output.view(-1, self.model.ntoken)
-        target = soft_n_hot(batch["target"], self.model.ntoken, self.model.weighted_labels)
+        target = soft_n_hot(
+            batch["target"], self.model.ntoken, self.model.weighted_labels
+        )
         target = target.view(-1, self.model.ntoken)
         loss = self.model.criterion(output, target)
         self.log("val/loss", loss)
@@ -61,7 +65,9 @@ class TransformerLightningModule(BasePLModel):
     def test_step(self, batch, batch_idx):
         output = self.model.forward(batch["source"])
         output = output.view(-1, self.model.ntoken)
-        target = soft_n_hot(batch["target"], self.model.ntoken, self.model.weighted_labels)
+        target = soft_n_hot(
+            batch["target"], self.model.ntoken, self.model.weighted_labels
+        )
         target = target.view(-1, self.model.ntoken)
         loss = self.model.criterion(output, target)
         self.log("test/loss", loss)
@@ -71,8 +77,6 @@ class TransformerLightningModule(BasePLModel):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
         return optimizer  # ], [lr_scheduler]
-
-
 
     def training_epoch_end(self, outputs) -> None:
 

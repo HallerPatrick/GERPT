@@ -1,6 +1,5 @@
 import argparse
 import json
-
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -162,6 +161,7 @@ def argparse_flair_train():
 
     return parser.parse_args()
 
+
 def argparse_generate():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -178,14 +178,7 @@ def argparse_generate():
         type=str,
     )
 
-    parser.add_argument(
-        "--mode",
-        type=str
-    )
+    parser.add_argument("--mode", type=str)
 
-    parser.add_argument(
-        "--num",
-        type=int,
-        default=1
-    )
+    parser.add_argument("--num", type=int, default=1)
     return parser.parse_args()
