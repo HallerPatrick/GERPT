@@ -8,19 +8,19 @@ from matplotlib.ticker import StrMethodFormatter, NullFormatter
 with open("results.json") as f:
     results = json.load(f)
 
-ngrams = 3
+ngrams = 2
 
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
 fig.subplots_adjust(hspace=0.5)
 
-settings = [(ax1, "entropy", "b"), (ax2, "loss", "g"), (ax3, "rank", "r")]
+settings = [(ax1, "entropy", "b", "Entropy"), (ax2, "loss", "g", "Loss"), (ax3, "rank", "r", "Rank (logscale)")]
 
 ngram_settings = [("-", "o"), ("--", "x"), (":", ".")]
 
-for ax, metric, color in settings:
+for ax, metric, color, label in settings:
     
     # Log scale for rank and also use non-scientific notation
-    if metric == "rank":
+    if metric in ["rank"]:
         ax.set_yscale("log", base=2)
         # ax.ticklabel_format(useOffset=False) #, style='plain')
         ax.yaxis.set_major_formatter(StrMethodFormatter("{x:.0f}"))
@@ -29,6 +29,9 @@ for ax, metric, color in settings:
     ax.grid(True)
 
     for ngram in range(1, ngrams + 1):
+
+        if ngram == 1:
+            continue
 
         x_axis = []
         y_axis = []
@@ -44,8 +47,8 @@ for ax, metric, color in settings:
 
         xs = list(range(0, len(x_axis)))
         ax.set_xticks(xs, x_axis, weight="bold")
-        ax.set_ylabel(metric)
-
+        ax.set_ylabel(label)
+  
         (plot,) = ax.plot(
             xs,
             y_axis,
