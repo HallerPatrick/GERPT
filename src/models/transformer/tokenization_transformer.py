@@ -382,7 +382,7 @@ class NGMETokenizer(PreTrainedTokenizer):
         return encoded_inputs
 
     def save_vocabulary(
-        self, save_directory: str, ngram: int, filename_prefix: Optional[str] = None
+        self, save_directory: str, filename_prefix: Optional[str] = None
     ) -> Tuple[str]:
         index = 0
         if os.path.isdir(save_directory):
@@ -396,7 +396,7 @@ class NGMETokenizer(PreTrainedTokenizer):
                 filename_prefix + "-" if filename_prefix else ""
             ) + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
-            writer.write(str(ngram) + "\n")
+            writer.write(str(self.ngrams) + "\n")
             for token, token_index in sorted(self.vocab.items(), key=lambda kv: kv[1]):
                 if index != token_index:
                     print(
