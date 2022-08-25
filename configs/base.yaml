@@ -2,9 +2,13 @@
 
 # Training
 model: transformer
-# model: lstm
+
+# Load from hugginface
 # data: "wikitext/wikitext-2-raw-v1"
-data: "text/cash"
+
+# Load from disk in the ./data/ folder
+data: "text/cash" # -> ./data/cash
+
 saved_data: "data/tokenized_data"
 saved_dict: "data/dict_data"
 save: model.pt

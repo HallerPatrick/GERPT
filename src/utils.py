@@ -7,8 +7,6 @@ import torch.nn.functional as F
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from sympy import *
-from sympy.solvers import solve
 
 from src.dataset import Dictionary
 
@@ -79,6 +77,10 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int)
     hid: hidden size
 
     """
+    # Lazy load wildcard, takes some time
+    from sympy import *
+    from sympy.solvers import solve
+
     # TODO
     pass
 
@@ -95,6 +97,10 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     h: hidden size
 
     """
+    
+    # Lazy load wildcard, takes some time
+    from sympy import *
+    from sympy.solvers import solve
 
     encoder_size = d * e + e
     lstm_size = (

@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from itertools import zip_longest
 from operator import itemgetter
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
@@ -154,11 +154,15 @@ class Dictionary:
 
     def save_vocabulary(
         self,
-        save_directory: str,
+        save_directory: Union[str, Path],
         vocab_file_name: str,
         ngram: int,
         filename_prefix: Optional[str] = None,
     ) -> str:
+
+        if isinstance(save_directory, Path):
+            save_directory = str(save_directory)
+
         index = 0
         if os.path.isdir(save_directory):
             vocab_file = os.path.join(

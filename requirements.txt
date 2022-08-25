@@ -11,3 +11,4 @@ prettytable
 matplotlib
 numpy
 pandas
+sympy

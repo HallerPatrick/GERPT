@@ -124,7 +124,7 @@ if __name__ == "__main__":
     trainer.fit(model, data_module)
 
     # Combine sharded model checkpoints into one for future loading
-    if strategy and "deepspeed_stage_" in strategy:
+    if strategy and "deepspeed_stage_" in strategy and hasattr(checkpoint_callback, "save_path"):
         ckpt_path = checkpoint_callback.save_path
         print(f"Convert to single checkpoint: {ckpt_path}.single")
         convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
         # Save vocab file
         vocab_file = dictionary.save_vocabulary(
-            "checkpoints", NGMETokenizer.vocab_file_name, args.ngram
+            "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
         )
 
         # Save HF model

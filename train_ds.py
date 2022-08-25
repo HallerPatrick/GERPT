@@ -70,7 +70,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 # 4. initialize fine-tuneable transformer embeddings WITH document context
                 embeddings = NGMETransformerWordEmbeddings(
                     args.saved_model,
-                    vocab_file=args.saved_model + "/vocab.json",
+                    vocab_file=args.saved_model + "/vocab.txt",
                     layers="all",
                     subtoken_pooling="first",
                     fine_tune=False,
@@ -95,7 +95,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             else:
                 # TODO make sequence tagging work
                 document_embeddings = NGMETransformerWordEmbeddings(
-                    args.saved_model, vocab_file=args.saved_model + "/vocab.json"
+                    args.saved_model, vocab_file=args.saved_model + "/vocab.txt"
                 )
 
             task_model = TextClassifier(

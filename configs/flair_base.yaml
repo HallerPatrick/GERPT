@@ -2,7 +2,7 @@ downstream_tasks:
 - task:
     base_path: data
     dataset: conll_03
-    hidden_size: 256
+    hidden_size: 512
     lr: 0.1
     max_epochs: 1
     mini_batch_size: 32

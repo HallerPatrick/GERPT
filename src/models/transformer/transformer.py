@@ -145,6 +145,5 @@ class TransformerLightningModule(BasePLModel):
             columns=["epoch", "temperatue", "text"],
             data=[[self.epoch, self.config.temperature, printed_output]],
         )
-        wandb.log({"train/text": printed_output})
 
         return generated_output, printed_output
