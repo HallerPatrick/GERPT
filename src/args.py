@@ -159,6 +159,11 @@ def argparse_flair_train():
         help="Configration file (YAML) for all arguments",
     )
 
+    parser.add_argument(
+        "--saved_model",
+        type=str,
+    )
+
     return parser.parse_args()
 
 

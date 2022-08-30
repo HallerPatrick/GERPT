@@ -8,8 +8,18 @@ class CrossEntropyLossSoft(nn.Module):
         self.ignore_index = ignore_index
         self.weight = weight
 
-    def unigram_loss(self, input, target):
-        return self(input, target, disable_weight=True)
+    def unigram_loss(self, inp: torch.Tensor, target: torch.Tensor):
+        """
+        Calculate loss over the unigram subset
+
+        Args:
+            inp:
+            target:
+
+        Returns: loss (log softmax)
+
+        """
+        return self(inp, target, disable_weight=True)
 
     def forward(self, input, target, disable_weight=False):
         """

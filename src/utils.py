@@ -8,18 +8,22 @@ from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
+# Lazy load wildcard, takes some time
+from sympy import *
+from sympy.solvers import solve
+
 from src.dataset import Dictionary
 
 
 class TimePerEpochCallback(Callback):
     def on_train_epoch_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         self.start = timeit.default_timer()
         return super().on_train_epoch_start(trainer, pl_module)
 
     def on_train_epoch_end(
-        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+            self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> None:
         end = timeit.default_timer()
         trainer.logger.log_metrics(
@@ -48,7 +52,7 @@ def display_text(dictionary, t):
 
 def display_input_n_gram_sequences(input, dictionary):
     for i in range(input.size()[0]):
-        print(f"{i+1}-gram")
+        print(f"{i + 1}-gram")
         display_text(dictionary, input[i])
 
 
@@ -65,7 +69,7 @@ def display_prediction(prediction, dictionary):
         print("{:9}: {:.15f},".format(repr(dictionary.idx2word[i]), pred))
 
 
-def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int) -> int:
+def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int, total_size: int) -> int:
     """
 
     Args
@@ -77,12 +81,46 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int)
     hid: hidden size
 
     """
-    # Lazy load wildcard, takes some time
-    from sympy import *
-    from sympy.solvers import solve
 
-    # TODO
-    pass
+    encoder_size = d * e + e
+
+    # attention head
+    self_attn_in = e * (3 * e) + (3 * e)
+    self_attn_out = e * e + e
+
+    l_layer1 = e * hid + hid
+    l_layer2 = e * hid + e
+
+    norm1_2 = 2 * (2 * e)
+
+    transformer_encoder_size = (
+        self_attn_in
+        + self_attn_out
+        + l_layer1
+        + l_layer2
+        + norm1_2
+    ) * l
+
+    decoder_size = d * hid + d
+
+    print(decoder_size)
+
+    # total_size = encoder_size + transformer_encoder_size + decoder_size
+
+    hid = Symbol("hid")
+
+    result = solve(
+        encoder_size
+        + transformer_encoder_size
+        + decoder_size
+        - total_size,
+        hid,
+        )
+
+    if isinstance(result, list):
+        return result[0].evalf()
+
+    return result.evalf()
 
 
 def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, h):
@@ -97,18 +135,14 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     h: hidden size
 
     """
-    
-    # Lazy load wildcard, takes some time
-    from sympy import *
-    from sympy.solvers import solve
 
     encoder_size = d * e + e
     lstm_size = (
-        (c * e * h)
-        + (c * h * h)
-        + (c * h)
-        + (c * h)
-        + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
+            (c * e * h)
+            + (c * h * h)
+            + (c * h)
+            + (c * h)
+            + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
     )
     decoder_size = d * h + d
     print(f"Encoder Size: {encoder_size}")
@@ -121,11 +155,11 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     result = solve(
         (d * e + e)
         + (
-            (c * e * h)
-            + (c * h * h)
-            + (c * h)
-            + (c * h)
-            + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
+                (c * e * h)
+                + (c * h * h)
+                + (c * h)
+                + (c * h)
+                + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
         )
         + (d * h + d)
         - total_size,

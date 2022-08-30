@@ -140,6 +140,9 @@ if __name__ == "__main__":
         vocab_file = dictionary.save_vocabulary(
             "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
         )
+        
+        # Save HF tokenizer
+        NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
         # Save HF model
         trainer.lightning_module.model.save_pretrained(
@@ -151,7 +154,7 @@ if __name__ == "__main__":
         if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
             write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
     except:
-        pass
+        print("Could not write wandb RUN ID to flair config file")
 
     # Auto downstream training
     if hasattr(args, "downstream") and args.downstream:

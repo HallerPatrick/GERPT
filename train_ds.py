@@ -1,9 +1,9 @@
 from argparse import Namespace
 from typing import Optional
 
-# from flair.embeddings import WordEmbeddings
+from flair import set_seed
 from flair.embeddings.document import DocumentRNNEmbeddings
-from transformers import AutoConfig, AutoModel, AutoTokenizer
+from torch import manual_seed
 
 import wandb
 from src.args import argparse_flair_train, read_config
@@ -16,8 +16,11 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
     if not args:
         args = read_config(argparse_flair_train().config)
 
-    # Has to be called first, before importing flair modules
+    # Seed everything
+    set_seed(int(args.seed))
+    manual_seed(int(args.seed))
 
+    # Has to be called first, before importing flair modules
     if args.model_name == "rnn":
         patch_flair()
 
@@ -63,7 +66,6 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=embeddings,
                     tag_dictionary=label_dict,
                     tag_type=settings.task_name,
-                    use_crf=True,
                 )
 
             else:
@@ -82,8 +84,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     hidden_size=settings.hidden_size,
                     embeddings=embeddings,
                     tag_dictionary=label_dict,
-                    tag_type="ner",
-                    use_crf=True,
+                    tag_type=settings.task_name,
                 )
 
         elif settings.task_name in ["sentiment", "class"]:
@@ -93,7 +94,6 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
             else:
-                # TODO make sequence tagging work
                 document_embeddings = NGMETransformerWordEmbeddings(
                     args.saved_model, vocab_file=args.saved_model + "/vocab.txt"
                 )
@@ -125,13 +125,15 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if isinstance(score, dict):
             score = score["test_score"]
 
-        # Update run with results
-        if run:
-            run.summary[f"{settings.task_name}/f1-score"] = score
-            run.update()
-
         results[f"{settings.task_name}/f1-score"] = score
 
+    if run:
+        print("Upload scores to W&B run...", end="")
+        for _task, score in results.items():
+            run.summary[f"{settings.task_name}/f1-score"] = score
+
+        run.update()
+        print("Done")
     print(results)
 
 

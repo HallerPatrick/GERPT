@@ -272,7 +272,6 @@ def patch_flair():
             is_forward_lm=state["is_forward_lm"],
             document_delimiter=state["document_delimiter"],
             dropout=state["dropout"],
-            gen_args={},
         )
         model.load_state_dict(state["state_dict"])
         model.eval()
