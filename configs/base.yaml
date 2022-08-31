@@ -1,16 +1,18 @@
 # Hyperparameter configs
 
 # Training
-model: transformer
+model: rnn
 
 # Load from hugginface
-# data: "wikitext/wikitext-2-raw-v1"
+data: "wikitext/wikitext-2-raw-v1"
 
 # Load from disk in the ./data/ folder
-data: "text/cash" # -> ./data/cash
+# data: "text/cash" # -> ./data/cash
 
 saved_data: "data/tokenized_data"
 saved_dict: "data/dict_data"
+
+# LSTM model will save a custom "flair_<save-file>" file for downstream
 save: model.pt
 cpus: 1
 gpus: 1
@@ -18,8 +20,8 @@ epochs: 2
 wdecay: 1.2e-6
 lr: 0.1
 
-# Dictioarny
-ngram: 1
+# Dictionary
+ngram: 2
 unk_threshold: 0
 max_dict_size: 0
 fallback: True
@@ -37,13 +39,14 @@ nlayers: 1
 nhead: 2
 dropout: 0.2
 
-unigram_ppl: false
 seed: 1111
 log_interval: 200
 
-downstream: False
+downstream: True
+wandb_flair_yaml: configs/flair_base.yaml
+fine_tune_configs: configs/flair_base.yaml
 
-# Gerate text
+# Generate text
 generate: True
 chars: 1000
 temperature: 0.7

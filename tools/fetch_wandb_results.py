@@ -3,7 +3,7 @@ import wandb
 
 api = wandb.Api()
 
-entity, project = "hallerpatrick", "gerpt"  # set to your entity and project 
+entity, project = "hallerpatrick", "gerpt"
 runs = api.runs(entity + "/" + project) 
 
 summary_list, config_list, name_list, hypo_types, ngram_list = [], [], [], [], []

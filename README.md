@@ -15,6 +15,8 @@ pip install -r requirements.txt
 To run the training on GPUs please install `pytorch` with CUDA support.
 
 
+The following tasks can all be run with: `tools/run_all.sh`
+
 ## Pre-Training
 
 ### Pre-Process
@@ -52,7 +54,6 @@ For downstream evaluation we use the `flair` library. In another yaml configurat
 ```
 python train_ds.py --config configs/flair_base.yaml
 ```
-
 
 ## Troubleshooting
 

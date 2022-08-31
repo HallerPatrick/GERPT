@@ -21,6 +21,10 @@ def calc_entropy(input_tensor):
 
 
 def analyze(model, seed_text: str, target: str):
+    """
+    Running a forced teacher generation task and measuring the loss, rank of predicted tokens
+    and entropy. The data is used to plot a timeline of all metrics over the predicted sequence.
+    """
 
     current_text = seed_text
 
@@ -125,6 +129,7 @@ def analyze(model, seed_text: str, target: str):
 
 
 def generate(model, temp: float, seed: str, chars: int):
+    """Generation tasks for a given seed text"""
 
     generated_output = seed
 
@@ -193,6 +198,7 @@ Ginny started requesting their favorite noses."
     if args.type == "rnn":
         model = RNNModel.load_from_checkpoint(args.model)
     else:
+        print("Transformer not yet supported")
         exit(-1)
 
     model.temperature = args.temperature

@@ -1,3 +1,5 @@
+"""The main entry script for the pre-training tasks for LSTMs and Transformer"""
+
 from pathlib import Path
 
 import torch
@@ -26,7 +28,7 @@ if __name__ == "__main__":
 
     # Show all configurations
     print_args(args)
-    
+
     # Set seed
     torch.manual_seed(args.seed)
 
@@ -106,15 +108,14 @@ if __name__ == "__main__":
         # Disable validation during training
         limit_val_batches=0.0,
         # profiler="simple",
-        fast_dev_run=True,
+        fast_dev_run=False,
     )
 
     model = load_model(dictionary, args)
 
+    # Print Parameters
     if hasattr(model, "rnn"):
-        for name, parameter in model.rnn.named_parameters():
-            if parameter.requires_grad:
-                print(name, parameter.numel())
+        print(count_parameters(model.rnn))
     else:
         print(count_parameters(model))
 
@@ -140,7 +141,7 @@ if __name__ == "__main__":
         vocab_file = dictionary.save_vocabulary(
             "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
         )
-        
+
         # Save HF tokenizer
         NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 

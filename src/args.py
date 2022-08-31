@@ -28,7 +28,11 @@ def parse_args():
 
 
 def print_args(args):
+    """Pretty print all arguments/hyperparameter
 
+    Args:
+        args: Namespace object
+    """
     table = Table(title="Configurations")
     table.add_column(" ", no_wrap=True)
     table.add_column("Parameter", style="cyan", no_wrap=True)
@@ -51,8 +55,15 @@ def read_config(path):
 
 
 def write_to_yaml(path_name: str, param: str, value: str):
+    """
+    Read in yaml file and write in new key-value
 
-    path: Path = Path(path_name)
+    Args:
+        path_name: path to yaml file
+        param: key
+        value: value
+    """
+    path = Path(path_name)
 
     conf = {}
 
@@ -65,10 +76,14 @@ def write_to_yaml(path_name: str, param: str, value: str):
         yaml.dump(conf, f)
 
 
-def argparser_train():
+def argparser_train() -> argparse.Namespace:
+    """Argparser for the pre-training task
 
+    Returns:
+        Namespace
+    """
     parser = argparse.ArgumentParser(
-        description="PyTorch Wikitext-2 RNN/LSTM/GRU/Transformer Language Model"
+        description=""
     )
     parser.add_argument(
         "--config",
@@ -150,7 +165,12 @@ def argparser_train():
     return parser.parse_args()
 
 
-def argparse_flair_train():
+def argparse_flair_train() -> argparse.Namespace:
+    """Argparser for the downstream training task(s)
+
+    Returns:
+        Namespace
+    """
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
         "--config",
@@ -168,6 +188,7 @@ def argparse_flair_train():
 
 
 def argparse_generate():
+    """Argparser for standalone generator"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model",
@@ -181,6 +202,7 @@ def argparse_generate():
     parser.add_argument(
         "--type",
         type=str,
+        help="Either transformer or rnn"
     )
 
     parser.add_argument("--mode", type=str)

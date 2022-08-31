@@ -12,6 +12,12 @@ from src.models.flair_models import (NGMETransformerWordEmbeddings,
 
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
+    """Downstream training procedure.
+
+    Args:
+        args(Namespace): Either directly read from config and command line or passed from pre-training
+        wandb_run_id(Optional[str]): If passed from pre-training take existing wandb run id for logging
+    """
 
     if not args:
         args = read_config(argparse_flair_train().config)
@@ -28,11 +34,15 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
     from flair.models import SequenceTagger, TextClassifier
     from flair.trainers import ModelTrainer
 
+    # Try to log to existing wandb run
     if wandb_run_id:
         args.wandb_run_id = wandb_run_id
-
         api = wandb.Api()
-        run = api.run(args.wandb_run_id)
+        try:
+            run = api.run(args.wandb_run_id)
+        except:
+            print("Could not log to wandb run")
+            run = None
     else:
         run = None
 
@@ -60,16 +70,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 embeddings = StackedEmbeddings(
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
-
-                task_model = SequenceTagger(
-                    hidden_size=settings.hidden_size,
-                    embeddings=embeddings,
-                    tag_dictionary=label_dict,
-                    tag_type=settings.task_name,
-                )
-
             else:
-                # 4. initialize fine-tuneable transformer embeddings WITH document context
                 embeddings = NGMETransformerWordEmbeddings(
                     args.saved_model,
                     vocab_file=args.saved_model + "/vocab.txt",
@@ -79,13 +80,12 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     use_context=False,
                 )
 
-                # 5. initialize bare-bones sequence tagger (no CRF, no RNN, no reprojection)
-                task_model = SequenceTagger(
-                    hidden_size=settings.hidden_size,
-                    embeddings=embeddings,
-                    tag_dictionary=label_dict,
-                    tag_type=settings.task_name,
-                )
+            task_model = SequenceTagger(
+                hidden_size=settings.hidden_size,
+                embeddings=embeddings,
+                tag_dictionary=label_dict,
+                tag_type=settings.task_name,
+            )
 
         elif settings.task_name in ["sentiment", "class"]:
 
@@ -130,7 +130,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
     if run:
         print("Upload scores to W&B run...", end="")
         for _task, score in results.items():
-            run.summary[f"{settings.task_name}/f1-score"] = score
+            run.summary[_task] = score
 
         run.update()
         print("Done")
