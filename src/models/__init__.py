@@ -25,7 +25,7 @@ def load_model(dictionary: Dictionary, args: Namespace):
             print(f"New Hidden Size: {new_hidden_size}")
             args.hidden_size = new_hidden_size
 
-    if args.model == "lstm":
+    if args.model in ["lstm", "rnn"]:
         model = RNNModel(
             dictionary,
             args.nlayers,
