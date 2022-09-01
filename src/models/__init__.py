@@ -37,6 +37,9 @@ def load_model(dictionary: Dictionary, args: Namespace):
             unigram_ppl=args.unigram_ppl,
             weighted_loss=args.weighted_loss,
             weighted_labels=args.weighted_labels,
+            generate=args.generate,
+            temperature=args.temperature,
+            chars_to_gen=args.chars
         )
     else:
         # Adjust args

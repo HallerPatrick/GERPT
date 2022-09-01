@@ -236,7 +236,7 @@ class RNNModel(pl.LightningModule):
 
         with torch.no_grad():
             self.eval()
-            for i in range(self.chars):
+            for i in range(self.chars_to_gen):
 
                 # Reset hidden
                 hidden = self.init_hidden(1)
