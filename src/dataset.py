@@ -76,7 +76,7 @@ class Dictionary:
     ):
         self.word2idx = {}
         self.idx2word = []
-        self._marker_tokens = []
+        self._marker_tokens = {}
         self.ngram_indexes = defaultdict(list)
         self.ngram = ngram
         self.max_dict_size = max_dict_size
@@ -85,6 +85,12 @@ class Dictionary:
         self.frequencies: Optional[Counter] = None
         self.total_n_tokens = defaultdict(zero)
         self.unk_n_tokens = defaultdict(zero)
+
+        self.ngram2word2idx = {}
+        self.ngram2idx2word = {}
+
+
+        self.current_max_idx = 0
 
     def add_word(self, word):
         if word.startswith("<") and word.endswith(">"):
@@ -98,6 +104,19 @@ class Dictionary:
 
         return self.word2idx[word]
 
+    def add_ngram(self, word, ngram: int):
+
+        if ngram not in self.ngram2idx2word:
+            self.ngram2idx2word[ngram] = {self.current_max_idx: word}
+            self.ngram2word2idx[ngram] = {word: self.current_max_idx}
+        else:
+            self.ngram2idx2word[ngram][self.current_max_idx] = word
+            self.ngram2word2idx[ngram][word] = self.current_max_idx
+
+        self.current_max_idx += 1
+
+        return self.ngram2word2idx[ngram][word]
+
     def add_item(self, word):
         return self.add_word(word)
 
@@ -105,7 +124,7 @@ class Dictionary:
         return self._marker_tokens
 
     def __len__(self):
-        return len(self.idx2word)
+        return self.current_max_idx
 
     def get_idx_for_item(self, item: str) -> int:
         """
@@ -143,7 +162,13 @@ class Dictionary:
         return items
 
     def get_item_for_index(self, idx):
-        return self.idx2word[idx]
+        for idxs in self.ngram2idx2word.values(): 
+            if idx in idxs:
+                return idxs[idx]
+        print(idx)
+        print(self.ngram2idx2word)
+        exit()
+        return None
 
     def save(self, savefile):
         import pickle
@@ -219,23 +244,9 @@ class Dictionary:
             ids = []
             length = 0
             # print(f"Processed line: {words}")
-            for i, word in enumerate(ngram_tokenizer(words, n)):
+            for c in words:
 
-                if "<start>" in word:
-                    word = [w for w in list(word) if w != "<start>"]
-
-                try:
-                    ids.append(self.word2idx["".join(word)])
-                    self.total_n_tokens[n] += 1
-                except KeyError:
-
-                    # Fall back on n-1 gram if possible
-                    if self.fallback and tuple(word)[1:] in self.word2idx:
-                        self.total_n_tokens[n] += 1
-                        ids.append(self.word2idx[word])
-                    else:
-                        self.unk_n_tokens[n] += 1
-                        ids.append(self.word2idx[f"<{n}-UNK>"])
+                ids.append(self.ngram2word2idx[n][c])
                 length += 1
 
             seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
@@ -250,10 +261,8 @@ class Dictionary:
             # display_input_n_gram_sequences(s, self)
             ngram_target_sequences.append(s)
 
-        sequence = torch.cat([t[:min_length] for t in ngram_sequences])
-        # display_input_n_gram_sequences(sequence, self)
-        target = torch.cat([t[:min_length] for t in ngram_target_sequences])
-        # display_input_n_gram_sequences(target, self)
+        sequence = torch.cat([torch.tensor(t[0][:min_length]).unsqueeze(0) for t in ngram_sequences])
+        target = torch.cat([torch.tensor(t[0][:min_length]).unsqueeze(0) for t in ngram_target_sequences])
 
         return {"text": line, "source": sequence, "target": target}
 
@@ -276,33 +285,22 @@ class Dictionary:
         """
         st = torch.roll(t, -shifts, 1)
 
-        st[0][-1] = self.word2idx["<pad>"]
+        st[0][-1] = self.ngram2word2idx[1]["<pad>"]
         for i in range(1, shifts + 1):
-            st[0][-i] = self.word2idx["<pad>"]
+            st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
     def create_weight_tensor(self) -> Optional[list]:
-        if not self.frequencies:
-            return
+        # if not self.frequencies:
+        #     return
 
         t = torch.ones(len(self))
 
-        # for token, freq in self.frequencies.items():
-        #
-        #     if token not in self.word2idx:
-        #         continue
-        #
-        #     idx = self.word2idx[token]
-        #
-        #     t[idx] = freq
-
-        # normed_weights = [(1 - (x / (max(t) + 1))).item() for x in t]
-        normed_weights = [x.item() for x in t]
-
+        normed_weights = t
+    
         for marker in self.get_marker_tokens():
-            idx = self.word2idx[marker]
-            normed_weights[idx] = 0
-
+            normed_weights[marker] = 0
+        
         return normed_weights
 
 
@@ -357,6 +355,8 @@ def load_tokenized_dataset(
     dictionary = load_dictionary_from_hf(
         dataset, ngram, max_dict_size, unk_threshold, fallback
     )
+
+    print(dictionary.ngram2word2idx)
 
     # Check if we have a cached tokenized version of the dataset already in the huggingface cache
 
@@ -432,9 +432,11 @@ def load_dictionary_from_hf(
         return torch.load(hash_file)
 
     dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback)
-    frequencies = Counter()
+
+    all_chars = []
 
     for train_split in ["train", "test", "validation"]:
+
         try:
             split = source[train_split]
         except KeyError:
@@ -442,59 +444,23 @@ def load_dictionary_from_hf(
 
         lines = split["text"]
 
-        split_frequency = Counter()
+        uniq_chars = set("\n".join(lines))
 
-        unk_idx = dictionary.add_word("<start>")
-        unk_idx = dictionary.add_word("<pad>")
+        all_chars.extend(list(uniq_chars))
 
-        for i in range(1, ngrams + 1):
+    all_chars = set(all_chars)
+        
+    for n_gram in range(1, ngrams + 1):
+        start_idx = dictionary.add_ngram("<start>", n_gram)
+        pad_idx = dictionary.add_ngram("<pad>", n_gram)
 
-            unk_idx = dictionary.add_word(f"<{i}-UNK>")
+        if n_gram not in dictionary._marker_tokens:
+            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
 
-            if unk_idx not in dictionary.ngram_indexes[i]:
-                dictionary.ngram_indexes[i].append(unk_idx)
-
-            continuous_line = "\n".join(lines)
-
-            for ngram in ngram_tokenizer(continuous_line, i):
-                split_frequency["".join(ngram)] += 1
-
-        frequencies.update(split_frequency)
-
-        for i in range(1, ngrams + 1):
-
-            if i == 1:
-                continue
-
-            dictionary.add_word(" " * i)
-
-            for c in string.printable:
-                dictionary.add_word("<start>" * i + c)
-
-        if max_dict_size > 0:
-            for token, _ in frequencies.most_common(max_dict_size):
-                token_len = len(remove_marker_tokens(token, dictionary))
-
-                if token_len == 0:
-                    continue
-
-                idx = dictionary.add_word(token)
-                if idx not in dictionary.ngram_indexes[token_len]:
-                    dictionary.ngram_indexes[token_len].append(idx)
-        else:
-            for token, freq in frequencies.items():
-                if freq > unk_threshold or freq == -1:
-                    token_len = len(remove_marker_tokens(token, dictionary))
-
-                    if token_len == 0:
-                        continue
-
-                    idx = dictionary.add_word(token)
-                    if idx not in dictionary.ngram_indexes[token_len]:
-                        dictionary.ngram_indexes[token_len].append(idx)
+        for char in all_chars:
+            dictionary.add_ngram(char, n_gram)
 
     print(f"Saving dictionary at {hash_file}...")
-    dictionary.frequencies = frequencies
     torch.save(dictionary, hash_file)
 
     return dictionary

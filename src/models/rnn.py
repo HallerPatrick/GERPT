@@ -104,7 +104,7 @@ class RNNModel(pl.LightningModule):
 
         if self.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
-                ignore_index=self.dictionary.word2idx["<pad>"],
+                # ignore_index=self.dictionary.word2idx["<pad>"],
                 weight=torch.tensor(self.dictionary.create_weight_tensor()),
             )
         else:
@@ -124,13 +124,6 @@ class RNNModel(pl.LightningModule):
         return optimizer  # ], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
-        # print(batch["source"][:,:,0].size())
-        # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["source"][:,:,1], self.dictionary)
-        # print("---")
-        # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["target"][:,:,1], self.dictionary)
-        # exit()
         batch_size = batch["source"].size()[-1]
 
         if not self.hidden:
@@ -146,16 +139,16 @@ class RNNModel(pl.LightningModule):
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
         # Unigram output
-        output = torch.index_select(
-            decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        )
-        targets = torch.index_select(
-            target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        )
-        unigram_loss = self.criterion.unigram_loss(output, targets)
+        # output = torch.index_select(
+        #     decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
+        # )
+        # targets = torch.index_select(
+        #     target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
+        # )
+        # unigram_loss = self.criterion.unigram_loss(output, targets)
 
-        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
-        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
+        # self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+        # self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
@@ -212,27 +205,15 @@ class RNNModel(pl.LightningModule):
             self.train()
         # Reset hidden after each epoch
         self.hidden = None
-
+ 
     def generate_text(self) -> str:
-
-        # if self.ngrams > 2:
-        #     unk_idxs = set(
-        #         [
-        #             self.dictionary.word2idx[f"<{i}-UNK>"]
-        #             for i in range(3, self.ngrams + 1)
-        #         ]
-        #     )
-        #     token_idxs = set(self.dictionary.word2idx.values())
-        #     token_idxs = torch.tensor(
-        #         list(token_idxs.difference(unk_idxs)), dtype=torch.int64
-        #     ).to(self.device)
 
         inp = torch.randint(
             self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
         )
         idx = inp[0][0].detach()
-        generated_output = self.dictionary.idx2word[idx]
-        sample_text = self.dictionary.idx2word[idx]
+        generated_output = self.dictionary.get_item_for_index(idx.item())
+        sample_text = self.dictionary.get_item_for_index(idx.item())
 
         with torch.no_grad():
             self.eval()
@@ -262,7 +243,10 @@ class RNNModel(pl.LightningModule):
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
 
                 # Get ngram word
-                word = self.dictionary.idx2word[ngram_idx]
+                word = self.dictionary.get_item_for_index(ngram_idx.item())
+                
+                if word == "<pad>":
+                    word = " "
 
                 # Append to generated sequence
                 generated_output = generated_output + word
