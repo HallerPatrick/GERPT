@@ -31,6 +31,7 @@ local_dataset_mapper = {
 }
 
 
+
 def tokenize_batch(
     dictionary, lines: List[str], ngram: int, label=None, otf=False, fallback=False
 ):
@@ -48,8 +49,6 @@ def tokenize_batch(
 
     n_gram_sequences = []
 
-    padding_char_index = dictionary.get_idx_for_item(" ")
-
     len_longest_chunk: int = 0
 
     for n in range(1, ngram + 1):
@@ -65,20 +64,13 @@ def tokenize_batch(
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
-            if not otf:
-                words.append("<eos>")
 
             ids = []
-            for word in ngrams(words, n):
-                word = "".join(word)
+            for c in words:
                 try:
-                    ids.append(dictionary.word2idx[word])
+                    ids.append(dictionary.ngram2word2idx[n][c])
                 except KeyError:
-                    # Fall back on n-1 gram if possible
-                    if fallback and word[1:] in dictionary.word2idx:
-                        ids.append(dictionary.word2idx[word])
-                    else:
-                        ids.append(dictionary.word2idx[f"<{n}-UNK>"])
+                    ids.append(dictionary.ngram2idx2word[n]["<UNK>"])
 
             if len(ids) > len_longest_chunk:
                 len_longest_chunk = len(ids)
@@ -88,10 +80,10 @@ def tokenize_batch(
         n_gram_sequences.append(idss_n)
 
     padded_char_sequence = []
-    for ls in n_gram_sequences:
+    for n, ls in enumerate(n_gram_sequences):
         new_lines = []
         for line in ls:
-            line += [padding_char_index] * (len_longest_chunk - len(line))
+            line += [dictionary.ngram2word2idx[n+1][" "]] * (len_longest_chunk - len(line))
             new_lines.append(torch.tensor(line).type(torch.int64))
 
         seq = torch.cat(new_lines).unsqueeze(dim=0)

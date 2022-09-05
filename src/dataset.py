@@ -22,6 +22,7 @@ from torch.utils.data.dataset import Dataset
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
 
+all_tokens = string.printable
 
 def batch_collate(batch):
     # [ngram, seq_len, batch_size]
@@ -245,8 +246,11 @@ class Dictionary:
             length = 0
             # print(f"Processed line: {words}")
             for c in words:
-
-                ids.append(self.ngram2word2idx[n][c])
+                
+                try:
+                    ids.append(self.ngram2word2idx[n][c])
+                except KeyError:
+                    ids.append(self.ngram2idx2word[n]["<UNK>"])
                 length += 1
 
             seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
@@ -449,10 +453,12 @@ def load_dictionary_from_hf(
         all_chars.extend(list(uniq_chars))
 
     all_chars = set(all_chars)
+
         
     for n_gram in range(1, ngrams + 1):
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)
+        unk_idx = dictionary.add_ngram("<UNK>", n_gram)
 
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
