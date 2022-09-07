@@ -351,6 +351,8 @@ def load_tokenized_dataset(
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
+    elif args[0] == "wikipedia":
+        dataset = ld(*local_dataset_mapper[args[0]]["args"])
     else:
         # Load the datasets from huggingface
         dataset = ld(*args, **kwargs)
@@ -409,6 +411,7 @@ def load_tokenized_dataset(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
+        keep_in_memory=True
     )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")
