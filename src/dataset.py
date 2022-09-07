@@ -439,20 +439,20 @@ def load_dictionary_from_hf(
 
     all_chars = []
 
-    for train_split in ["train", "test", "validation"]:
+    # for train_split in ["train", "test", "validation"]:
 
-        try:
-            split = source[train_split]
-        except KeyError:
-            continue
+    #     try:
+    #         split = source[train_split]
+    #     except KeyError:
+    #         continue
 
-        lines = split["text"]
+    #     lines = split["text"]
 
-        uniq_chars = set("\n".join(lines))
+    #     uniq_chars = set("\n".join(lines))
 
-        all_chars.extend(list(uniq_chars))
+    #     all_chars.extend(list(uniq_chars))
 
-    all_chars = set(all_chars)
+    # all_chars = set(all_chars)
 
         
     for n_gram in range(1, ngrams + 1):
@@ -463,7 +463,7 @@ def load_dictionary_from_hf(
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
 
-        for char in all_chars:
+        for char in all_tokens:
             dictionary.add_ngram(char, n_gram)
 
     print(f"Saving dictionary at {hash_file}...")
