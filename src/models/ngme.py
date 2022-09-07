@@ -47,7 +47,8 @@ def soft_n_hot(input, num_classes, weighted=False):
     ret = torch.zeros(shape).to(input.device)
 
     if weighted:
-        soft_labels = soft_weigthed_n_dist(input.size()[0])
+        # soft_labels = soft_weigthed_n_dist(input.size()[0])
+        soft_labels = soft_dist(input.size()[0])
     else:
         soft_labels = soft_dist(input.size()[0])
 

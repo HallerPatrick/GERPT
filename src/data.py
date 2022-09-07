@@ -28,6 +28,9 @@ local_dataset_mapper = {
         "test": "home/tmp/halerpat/data/test.txt",
         "validation": "home/tmp/halerpat/data/valid.txt",
     },
+    "wikipedia": {
+        "args": ["wikipedia", "20220301.en"]
+    }
 }
 
 
@@ -70,7 +73,7 @@ def tokenize_batch(
                 try:
                     ids.append(dictionary.ngram2word2idx[n][c])
                 except KeyError:
-                    ids.append(dictionary.ngram2idx2word[n]["<UNK>"])
+                    ids.append(dictionary.ngram2word2idx[n]["<UNK>"])
 
             if len(ids) > len_longest_chunk:
                 len_longest_chunk = len(ids)
