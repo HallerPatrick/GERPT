@@ -1,7 +1,7 @@
-import hashlib
 import os
 import string
 import sys
+import hashlib
 from collections import Counter, defaultdict
 from itertools import zip_longest
 from operator import itemgetter
@@ -18,6 +18,7 @@ from datasets.load import load_from_disk
 from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .data import local_dataset_mapper
@@ -29,7 +30,6 @@ def batch_collate(batch):
     source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
     target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
     return dict(source=source, target=target)
-
 
 class GenericDataModule(pl.LightningDataModule):
     def __init__(self, dataset, batch_size, cpus=1):
@@ -394,22 +394,40 @@ def load_tokenized_dataset(
     # train = reduce(concat, train)
     # test = reduce(concat, test)
     # valid = reduce(concat, valid)
+    
+    print("Split in bptt")
+    split_seq: List[str] = []
+
+    for i in tqdm(range(0, len(train), bptt)):
+        split_seq.append(train[i:i+bptt])
+
+    if len(split_seq[-1]) != bptt:
+        split_seq[-1] = split_seq[-1].ljust(bptt, " ")
+
 
     # Divide sequence into bptt
     dataset = DatasetDict(
         {
-            "train": HfDataset.from_dict({"text": list(grouper(train, bptt, " "))}),
+            "train": HfDataset.from_dict({"text": split_seq}),
             "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
             "validation": HfDataset.from_dict(
                 {"text": list(grouper(valid, bptt, " "))}
             ),
         }
     )
+    
+    # For remote
+    cache_dirs = {
+        "train": "/home/tmp/halerpat/train.arrow",
+        "test": "/home/tmp/halerpat/test.arrow",
+        "validation": "/home/tmp/halerpat/validation.arrow",
+    }
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
+        cache_file_names=cache_dirs,
         num_proc=num_proc,
         keep_in_memory=True
     )

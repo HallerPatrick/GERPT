@@ -22,6 +22,8 @@ def main():
     tokenized_dataset.save_to_disk(args.saved_data)
     torch.save(dictionary, args.saved_dict)
 
+    print(dictionary.ngram2idx2word)
+
 
 if __name__ == "__main__":
     main()
