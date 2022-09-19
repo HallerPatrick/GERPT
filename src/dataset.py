@@ -244,7 +244,6 @@ class Dictionary:
 
             ids = []
             length = 0
-            # print(f"Processed line: {words}")
             for c in words:
                 
                 try:
@@ -270,7 +269,7 @@ class Dictionary:
 
         return {"text": line, "source": sequence, "target": target}
 
-    def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
+    def shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
         """
         "hello world"
 
@@ -285,13 +284,26 @@ class Dictionary:
         3. "lo " "o w" " wo"       :offset 3
 
 
+
+
+
+        1. "h"     "e"     "l"   "l"   "o"
+        2. <start> "h"     "e"   "l"   "l"   "o"  " "
+        3. <srart> <start> "h"   "e"   "l"   "l"   "o"  " "
+
+        1. "e"     "l"
+        2. "h"     "e"
+        3. <start> "h"
+            
+
         Shifts have to be applied ngram-time for correct target matching
         """
-        st = torch.roll(t, -shifts, 1)
+        st = torch.roll(t, -1, 1)
 
-        st[0][-1] = self.ngram2word2idx[1]["<pad>"]
-        for i in range(1, shifts + 1):
-            st[0][-i] = self.ngram2word2idx[i]["<pad>"]
+
+        st[0][-1] = self.ngram2word2idx[ngram]["<pad>"]
+        # for i in range(1, shifts + 1):
+        #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
     def create_weight_tensor(self) -> Optional[list]:
@@ -347,7 +359,7 @@ def load_tokenized_dataset(
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
     """🤗"""
-
+    
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
@@ -382,19 +394,13 @@ def load_tokenized_dataset(
         [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
     )
 
-    # train = map(lambda x: x["text"], dataset["train"])
-    # test = map(lambda x: x["text"], dataset["test"])
-    # valid = map(lambda x: x["text"], dataset["validation"])
+    sample = .1
+    train = train[0 : int(len(train) * sample)]
 
     train = "\n".join(train)
     test = "\n".join(test)
     valid = "\n".join(valid)
 
-    # # Make continuous sequence
-    # train = reduce(concat, train)
-    # test = reduce(concat, test)
-    # valid = reduce(concat, valid)
-    
     print("Split in bptt")
     split_seq: List[str] = []
 
@@ -427,9 +433,8 @@ def load_tokenized_dataset(
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
-        cache_file_names=cache_dirs,
+        # cache_file_names=cache_dirs,
         num_proc=num_proc,
-        keep_in_memory=True
     )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")
@@ -457,23 +462,6 @@ def load_dictionary_from_hf(
         return torch.load(hash_file)
 
     dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback)
-
-    all_chars = []
-
-    # for train_split in ["train", "test", "validation"]:
-
-    #     try:
-    #         split = source[train_split]
-    #     except KeyError:
-    #         continue
-
-    #     lines = split["text"]
-
-    #     uniq_chars = set("\n".join(lines))
-
-    #     all_chars.extend(list(uniq_chars))
-
-    # all_chars = set(all_chars)
 
         
     for n_gram in range(1, ngrams + 1):

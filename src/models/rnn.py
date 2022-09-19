@@ -14,7 +14,7 @@ import wandb
 from src.data import tokenize_batch
 from src.dataset import Dictionary
 from src.loss import CrossEntropyLossSoft
-from src.utils import display_input_n_gram_sequences, display_prediction
+from src.utils import display_input_n_gram_sequences, display_prediction, display_text
 
 from .ngme import NGramsEmbedding, soft_n_hot
 
@@ -128,7 +128,15 @@ class RNNModel(pl.LightningModule):
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
-
+        
+        # print(batch["source"][0].squeeze())
+        # display_text(batch["source"][0].squeeze(), self.dictionary, 1)
+        # display_text(batch["source"][1].squeeze(), self.dictionary, 2)
+        #     
+        # print("-" * 20)
+        #
+        # display_text(batch["target"][0].squeeze(), self.dictionary, 1)
+        # display_text(batch["target"][1].squeeze(), self.dictionary, 2)
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 

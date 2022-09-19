@@ -44,9 +44,9 @@ def get_encoder_params(model):
             return parameter.numel()
 
 
-def display_text(dictionary, t):
+def display_text(t, dictionary: Dictionary, ngram):
     for a in t:
-        print(repr(dictionary.idx2word[a.item()]), end="")
+        print(repr(dictionary.ngram2idx2word[ngram][a.item()]), end="")
     print()
 
 
