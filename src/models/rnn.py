@@ -147,16 +147,16 @@ class RNNModel(pl.LightningModule):
         self.log("train/ppl", math.exp(loss), prog_bar=True)
 
         # Unigram output
-        # output = torch.index_select(
-        #     decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        # )
-        # targets = torch.index_select(
-        #     target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        # )
-        # unigram_loss = self.criterion.unigram_loss(output, targets)
+        output = torch.index_select(
+            decoded, 1, torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(self.device)
+        )
+        targets = torch.index_select(
+            target, 1, torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(self.device)
+        )
+        unigram_loss = self.criterion.unigram_loss(output, targets)
 
-        # self.log("train/unigram_loss", unigram_loss, prog_bar=True)
-        # self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
+        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
@@ -207,7 +207,7 @@ class RNNModel(pl.LightningModule):
     def training_epoch_end(self, outputs) -> None:
 
         self.epoch += 1
-
+    
         if self.generate:
             print(Panel(self.generate_text(), title="[green]Generated text"))
             self.train()
@@ -217,7 +217,7 @@ class RNNModel(pl.LightningModule):
     def generate_text(self) -> str:
 
         inp = torch.randint(
-            self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
+            self.ntokens, (self.ngrams, 1, 1), dtype=torch.int64, device=self.device
         )
         idx = inp[0][0].detach()
         generated_output = self.dictionary.get_item_for_index(idx.item())
