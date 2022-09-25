@@ -355,6 +355,7 @@ def load_tokenized_dataset(
     unk_threshold: int,
     fallback: bool,
     num_proc: int,
+    is_forward: bool,
     *args,
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
@@ -394,12 +395,17 @@ def load_tokenized_dataset(
         [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
     )
 
-    sample = .1
+    sample = 1
     train = train[0 : int(len(train) * sample)]
 
     train = "\n".join(train)
     test = "\n".join(test)
     valid = "\n".join(valid)
+
+    if not is_forward:
+        train = list(reversed(train))
+        test = list(reversed(test))
+        valid = list(reversed(valid))
 
     print("Split in bptt")
     split_seq: List[str] = []

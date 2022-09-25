@@ -2,23 +2,29 @@
 
 from pathlib import Path
 
+
 import torch
 from datasets.load import load_from_disk
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers.wandb import WandbLogger
-from pytorch_lightning.utilities.deepspeed import \
-    convert_zero_checkpoint_to_fp32_state_dict
+from pytorch_lightning.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+)
 
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
-from src.utils import (ModelCheckpointCallback, TimePerEpochCallback,
-                       collect_token_metrics, count_parameters,
-                       get_encoder_params)
+from src.utils import (
+    ModelCheckpointCallback,
+    TimePerEpochCallback,
+    count_parameters,
+    get_encoder_params,
+)
+
 from train_ds import train_ds
 
 if __name__ == "__main__":
@@ -59,9 +65,6 @@ if __name__ == "__main__":
         config={**vars(args), "dict_size": len(dictionary)},
     )
 
-    # Log some information about UNK occurence
-    wandb_logger.log_metrics(collect_token_metrics(dictionary, args.ngram))
-
     # Init PL data module
     data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
 
@@ -99,6 +102,7 @@ if __name__ == "__main__":
         strategy=strategy,
         plugins=plugins,
         devices=args.gpus,
+        gradient_clip_val=0.25,
         callbacks=[
             checkpoint_callback,
             early_stop_callback,
@@ -119,13 +123,17 @@ if __name__ == "__main__":
     else:
         print(count_parameters(model))
 
-    wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
+    # wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
     # TRAIN!
     trainer.fit(model, data_module)
 
     # Combine sharded model checkpoints into one for future loading
-    if strategy and "deepspeed_stage_" in strategy and hasattr(checkpoint_callback, "save_path"):
+    if (
+        strategy
+        and "deepspeed_stage_" in strategy
+        and hasattr(checkpoint_callback, "save_path")
+    ):
         ckpt_path = checkpoint_callback.save_path
         print(f"Convert to single checkpoint: {ckpt_path}.single")
         convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")

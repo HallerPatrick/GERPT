@@ -39,7 +39,8 @@ def load_model(dictionary: Dictionary, args: Namespace):
             weighted_labels=args.weighted_labels,
             generate=args.generate,
             temperature=args.temperature,
-            chars_to_gen=args.chars
+            chars_to_gen=args.chars,
+            is_forward_lm=args.is_forward
         )
     else:
         # Adjust args

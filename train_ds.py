@@ -2,7 +2,9 @@ from argparse import Namespace
 from typing import Optional
 
 from flair import set_seed
+from flair.embeddings import WordEmbeddings
 from flair.embeddings.document import DocumentRNNEmbeddings
+from flair.embeddings.token import CharacterEmbeddings
 from torch import manual_seed
 
 import wandb
@@ -22,6 +24,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
     if not args:
         args = read_config(argparse_flair_train().config)
 
+    assert args is not None
+
     # Seed everything
     set_seed(int(args.seed))
     manual_seed(int(args.seed))
@@ -35,18 +39,18 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
     from flair.trainers import ModelTrainer
 
     # Try to log to existing wandb run
-    if wandb_run_id:
-        args.wandb_run_id = wandb_run_id
-        api = wandb.Api()
-        try:
-            run = api.run(args.wandb_run_id)
-        except:
-            print("Could not log to wandb run")
-            run = None
+
+    if wandb.run is None:
+        if wandb_run_id:
+            pass
+        elif args.wandb_run_id:
+            wandb.init(id=wandb_run_id)
     else:
         run = None
 
     results = {}
+
+    charts = []
 
     for task_settings in args.downstream_tasks:
 
@@ -56,9 +60,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             print(f"Skipping fine-tune task {settings.task_name}")
             continue
 
-        if run:
-            run.config.update({settings.task_name: vars(settings)})
-            run.update()
+        if wandb.run:
+            wandb.run.config.update({settings.task_name: vars(settings)})
 
         corpus = load_corpus(settings.dataset, settings.base_path)
 
@@ -67,8 +70,21 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if settings.task_name in ["ner", "upos"]:
 
             if args.model_name == "rnn":
+                if args.saved_model_backward:
+                    embds = [
+                        FlairEmbeddings(args.saved_model),
+                        FlairEmbeddings(args.saved_model_backward),
+                        WordEmbeddings("glove"),
+                        CharacterEmbeddings()
+                    ]
+                else:
+                    embds = [
+                        FlairEmbeddings(args.saved_model),
+                        WordEmbeddings("glove")
+                    ]
+                    
                 embeddings = StackedEmbeddings(
-                    embeddings=[FlairEmbeddings(args.saved_model)]
+                    embeddings=embds
                 )
             else:
                 embeddings = NGMETransformerWordEmbeddings(
@@ -121,18 +137,31 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             if args.model_name == "transformer"
             else False,
         )
+        chart = None
 
         if isinstance(score, dict):
-            score = score["test_score"]
+            test_score = score["test_score"]
+            dev_scores = score["dev_score_history"]
+            data = [[epoch+1, score] for epoch, score in enumerate(dev_scores)]
+            table = wandb.Table(data=data, columns=["epoch", "f1-score(dev)"])
+            fields = {"x": "epoch", "value": "f1-score(dev)"}
+            chart = wandb.plot_table(
+                vega_spec_name=f"{settings.task_name}/f1-score",
+                data_table=table,
+                fields=fields
+            )
+            charts.append(chart)
 
-        results[f"{settings.task_name}/f1-score"] = score
+            results[f"{settings.task_name}/f1-score"] = test_score
 
-    if run:
+    if wandb.run:
         print("Upload scores to W&B run...", end="")
-        for _task, score in results.items():
-            run.summary[_task] = score
+        wandb.run.summary.update(results)
+            
+        if len(charts) > 1:
+            for chart in charts:
+                wandb.log({"downstream-training": chart})
 
-        run.update()
         print("Done")
     print(results)
 

@@ -43,7 +43,7 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.1,
-        unigram_ppl: bool = False,
+        unigram_ppl: bool = False, # TODO: Remove
         weighted_loss: bool = False,
         weighted_labels: bool = False,
         generate: bool = False,
@@ -65,7 +65,6 @@ class RNNModel(pl.LightningModule):
         self.hidden_size = hidden_size
         self.embedding_size = embedding_size
         self.dropout = dropout
-        self.unigram_ppl = unigram_ppl
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
 
@@ -120,6 +119,7 @@ class RNNModel(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
         return optimizer  # ], [lr_scheduler]
 
@@ -144,7 +144,10 @@ class RNNModel(pl.LightningModule):
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
         self.log("train/loss", loss)
-        self.log("train/ppl", math.exp(loss), prog_bar=True)
+        try:
+            self.log("train/ppl", math.exp(loss), prog_bar=True)
+        except:
+            pass
 
         # Unigram output
         output = torch.index_select(
@@ -157,6 +160,8 @@ class RNNModel(pl.LightningModule):
 
         self.log("train/unigram_loss", unigram_loss, prog_bar=True)
         self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
+
+        nn.utils.clip_grad_value_(self.parameters(), clip_value=1.0)
 
         return loss
 
@@ -171,13 +176,7 @@ class RNNModel(pl.LightningModule):
 
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
-        if self.unigram_ppl:
-            output = torch.index_select(decoded, 1, self.ngram_indexes)
-
-            targets = torch.index_select(target, 1, self.ngram_indexes)
-            loss = self.criterion(output, targets)
-        else:
-            loss = self.criterion(decoded, target)
+        loss = self.criterion(decoded, target)
 
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
@@ -193,13 +192,7 @@ class RNNModel(pl.LightningModule):
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
 
-        if self.unigram_ppl:
-            output = torch.index_select(decoded, 1, self.ngram_indexes)
-
-            targets = torch.index_select(target, 1, self.ngram_indexes)
-            loss = self.criterion(output, targets)
-        else:
-            loss = self.criterion(decoded, target)
+        loss = self.criterion(decoded, target)
 
         self.log("test/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
