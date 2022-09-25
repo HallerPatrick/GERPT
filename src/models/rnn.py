@@ -42,7 +42,7 @@ class RNNModel(pl.LightningModule):
         embedding_size: int = 100,
         is_forward_lm=True,
         document_delimiter: str = "\n",
-        dropout=0.1,
+        dropout=0.25,
         unigram_ppl: bool = False, # TODO: Remove
         weighted_loss: bool = False,
         weighted_labels: bool = False,
@@ -69,21 +69,16 @@ class RNNModel(pl.LightningModule):
         self.weighted_loss = weighted_loss
 
         self.criterion = None
+        self.bidirectional = True
 
-        if nlayers == 1:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers)
+        if nlayers == 1 and not self.bidirectional:
+            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional)
         else:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, dropout=dropout)
+            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, dropout=dropout, bidirectional=self.bidirectional)
 
         self.drop = nn.Dropout(dropout)
-        self.decoder = nn.Linear(hidden_size, self.ntokens)
-        if nout is not None:
-            self.proj = nn.Linear(hidden_size, nout)
-            self.initialize(self.proj.weight)
-            self.decoder = nn.Linear(nout, self.ntokens)
-        else:
-            self.proj = None
-            self.decoder = nn.Linear(hidden_size, self.ntokens)
+        self.decoder = nn.Linear(hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens)
+
 
         self.save_hyperparameters()
         self.init_weights()
@@ -160,8 +155,6 @@ class RNNModel(pl.LightningModule):
 
         self.log("train/unigram_loss", unigram_loss, prog_bar=True)
         self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
-
-        nn.utils.clip_grad_value_(self.parameters(), clip_value=1.0)
 
         return loss
 
@@ -322,8 +315,8 @@ class RNNModel(pl.LightningModule):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).detach()
         return (
-            weight.new(self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
-            weight.new(self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
+            weight.new(self.nlayers * 2 if self.bidirectional else self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
+            weight.new(self.nlayers * 2 if self.bidirectional else self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
         )
 
     def __getstate__(self):
@@ -342,6 +335,8 @@ class RNNModel(pl.LightningModule):
             "ngrams": self.ngrams,
             "unk_t": self.unk_t,
         }
+
+        print(model_state)
 
         return model_state
 

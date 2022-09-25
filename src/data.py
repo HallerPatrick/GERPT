@@ -96,7 +96,7 @@ def tokenize_batch(
 
         padded_char_sequence.append(seq)
 
-    n_gram_sequences = torch.cat([torch.tensor(t) for t in padded_char_sequence])
+    n_gram_sequences = torch.cat([t.clone().detach() for t in padded_char_sequence])
     return n_gram_sequences
 
 

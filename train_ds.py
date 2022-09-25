@@ -70,10 +70,12 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if settings.task_name in ["ner", "upos"]:
 
             if args.model_name == "rnn":
+
                 if args.saved_model_backward:
+                    print("Using forward and backwards models")
                     embds = [
                         FlairEmbeddings(args.saved_model),
-                        FlairEmbeddings(args.saved_model_backward),
+                        # FlairEmbeddings(args.saved_model_backward),
                         WordEmbeddings("glove"),
                         CharacterEmbeddings()
                     ]
