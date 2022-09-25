@@ -32,7 +32,7 @@ local_dataset_mapper = {
         "args": ["wikipedia", "20220301.en"]
     },
     "obw_news": {
-        "train": "data/obw/train.txt"
+        "train": "data/obw_news/train.txt"
     }
 }
 
