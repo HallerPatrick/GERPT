@@ -10,6 +10,7 @@ from typing import List, Optional, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
+import datasets
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
@@ -19,17 +20,22 @@ from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
+from .dictionary import Dictionary
 from .data import local_dataset_mapper
+from .models.transformer.tokenization_transformer import NGMETokenizerSparse, NGMETokenizer
 
 all_tokens = string.printable
+
 
 def batch_collate(batch):
     # [ngram, seq_len, batch_size]
     source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
     target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
     return dict(source=source, target=target)
+
 
 class GenericDataModule(pl.LightningDataModule):
     def __init__(self, dataset, batch_size, cpus=1):
@@ -66,261 +72,6 @@ class GenericDataModule(pl.LightningDataModule):
         )
 
 
-# Cant pickle lambdas...
-def zero():
-    return 0
-
-
-class Dictionary:
-    def __init__(
-        self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool
-    ):
-        self.word2idx = {}
-        self.idx2word = []
-        self._marker_tokens = {}
-        self.ngram_indexes = defaultdict(list)
-        self.ngram = ngram
-        self.max_dict_size = max_dict_size
-        self.unk_threshold = unk_threshold
-        self.fallback = fallback
-        self.frequencies: Optional[Counter] = None
-        self.total_n_tokens = defaultdict(zero)
-        self.unk_n_tokens = defaultdict(zero)
-
-        self.ngram2word2idx = {}
-        self.ngram2idx2word = {}
-
-
-        self.current_max_idx = 0
-
-    def add_word(self, word):
-        if word.startswith("<") and word.endswith(">"):
-            if word not in self._marker_tokens:
-                self._marker_tokens.append(word)
-
-        if word not in self.word2idx:
-            print(f"Adding new token: {repr(word)}")
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-
-        return self.word2idx[word]
-
-    def add_ngram(self, word, ngram: int):
-
-        if ngram not in self.ngram2idx2word:
-            self.ngram2idx2word[ngram] = {self.current_max_idx: word}
-            self.ngram2word2idx[ngram] = {word: self.current_max_idx}
-        else:
-            self.ngram2idx2word[ngram][self.current_max_idx] = word
-            self.ngram2word2idx[ngram][word] = self.current_max_idx
-
-        self.current_max_idx += 1
-
-        return self.ngram2word2idx[ngram][word]
-
-    def add_item(self, word):
-        return self.add_word(word)
-
-    def get_marker_tokens(self) -> List[str]:
-        return self._marker_tokens
-
-    def __len__(self):
-        return self.current_max_idx
-
-    def get_idx_for_item(self, item: str) -> int:
-        """
-        returns the ID of the string, otherwise 0
-        :param item: string for which ID is requested
-        :return: ID of string, otherwise 0
-        """
-        item = item.encode("utf-8")
-        if item in self.word2idx.keys():
-            return self.word2idx[item]
-        else:
-            return 0
-
-    def get_idx_for_items(self, items: List[str]) -> List[int]:
-        """
-        returns the IDs for each item of the list of string, otherwise 0 if not found
-        :param items: List of string for which IDs are requested
-        :return: List of ID of strings
-        """
-        if not hasattr(self, "item2idx_not_encoded"):
-            d = dict([(key, value) for key, value in self.word2idx.items()])
-            self.item2idx_not_encoded = defaultdict(int, d)
-
-        if not items:
-            return []
-        results = itemgetter(*items)(self.item2idx_not_encoded)
-        if isinstance(results, int):
-            return [results]
-        return list(results)
-
-    def get_items(self) -> List[str]:
-        items = []
-        for item in self.idx2word:
-            items.append(item)
-        return items
-
-    def get_item_for_index(self, idx):
-        for idxs in self.ngram2idx2word.values(): 
-            if idx in idxs:
-                return idxs[idx]
-        print(idx)
-        print(self.ngram2idx2word)
-        exit()
-        return None
-
-    def save(self, savefile):
-        import pickle
-
-        with open(savefile, "wb") as f:
-            mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
-            pickle.dump(mappings, f)
-
-    def save_vocabulary(
-        self,
-        save_directory: Union[str, Path],
-        vocab_file_name: str,
-        ngram: int,
-        filename_prefix: Optional[str] = None,
-    ) -> str:
-
-        if isinstance(save_directory, Path):
-            save_directory = str(save_directory)
-
-        index = 0
-        if os.path.isdir(save_directory):
-            vocab_file = os.path.join(
-                save_directory,
-                (filename_prefix + "-" if filename_prefix else "") + vocab_file_name,
-            )
-        else:
-            vocab_file = (
-                filename_prefix + "-" if filename_prefix else ""
-            ) + save_directory
-        with open(vocab_file, "w", encoding="utf-8") as writer:
-            writer.write(str(ngram) + "\n")
-            for token, token_index in sorted(
-                self.word2idx.items(), key=lambda kv: kv[1]
-            ):
-                if index != token_index:
-                    print(
-                        f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
-                        " Please check that the vocabulary is not corrupted!"
-                    )
-                    index = token_index
-
-                # TODO:Is this sound?
-                if "\n" in token:
-                    token = token.replace("\n", "\\n")
-
-                writer.write(token + "\n")
-                index += 1
-        return vocab_file
-
-    def tokenize_line(self, line: List[str], id_type = torch.int16) -> dict:
-        """
-
-        line: List of chars
-
-        h       e     l  l  o
-
-        <s>h    he    el ll lo
-
-        <s><s>h <s>he hel
-
-        """
-
-        ngram_sequences = []
-        ngram_target_sequences = []
-        min_length = sys.maxsize
-
-        for n in range(1, self.ngram + 1):
-
-            # Adding start offsets for all ngrams
-            words = ["<start>" for _ in range(1, n)]
-            words.extend(list(line))
-
-            ids = []
-            length = 0
-            for c in words:
-                
-                try:
-                    ids.append(self.ngram2word2idx[n][c])
-                except KeyError:
-                    ids.append(self.ngram2word2idx[n]["<UNK>"])
-                length += 1
-
-            seq = torch.tensor(ids).type(id_type).unsqueeze(dim=0)
-            length = seq.size(1)
-
-            if length < min_length:
-                min_length = length
-
-            # display_input_n_gram_sequences(seq, self)
-            ngram_sequences.append(seq)
-            s = self.shift_left(seq, n)
-            # display_input_n_gram_sequences(s, self)
-            ngram_target_sequences.append(s)
-
-        sequence = torch.cat([t[0][:min_length].clone().detach().unsqueeze(0) for t in ngram_sequences])
-        target = torch.cat([t[0][:min_length].clone().detach().unsqueeze(0) for t in ngram_target_sequences])
-
-        return {"source": sequence, "target": target}
-
-    def shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
-        """
-        "hello world"
-
-        1. "h"   "e"   "l"   "l"   "o"
-        2. "he"  "el"  "ll"  "lo"  "o "  " w"
-        3. "hel" "ell" "llo" "lo " "o w" " wo"
-
-
-
-        1. "e"   "l"   "l"   "o"   " "
-        2. "ll"  "lo"  "o "  " w"  :offset 2
-        3. "lo " "o w" " wo"       :offset 3
-
-
-
-
-
-        1. "h"     "e"     "l"   "l"   "o"
-        2. <start> "h"     "e"   "l"   "l"   "o"  " "
-        3. <srart> <start> "h"   "e"   "l"   "l"   "o"  " "
-
-        1. "e"     "l"
-        2. "h"     "e"
-        3. <start> "h"
-            
-
-        Shifts have to be applied ngram-time for correct target matching
-        """
-        st = torch.roll(t, -1, 1)
-
-
-        st[0][-1] = self.ngram2word2idx[ngram]["<pad>"]
-        # for i in range(1, shifts + 1):
-        #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
-        return st
-
-
-    def create_weight_tensor(self) -> Optional[list]:
-        # if not self.frequencies:
-        #     return
-
-        t = torch.ones(len(self))
-
-        normed_weights = t
-    
-        for marker in self.get_marker_tokens():
-            normed_weights[marker] = 0
-        
-        return normed_weights
-
-
 
 def get_dictionary_cache() -> Path:
     path = Path(HF_CACHE_DICTIONARIES)
@@ -350,7 +101,25 @@ def grouper(iterable, n, fillvalue=None):
     return zip_longest(*args, fillvalue=fillvalue)
 
 
+def _group_texts(examples, block_size, dictionary):
+    # Concatenate all texts.
+    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+    total_length = len(concatenated_examples[list(examples.keys())[0]])
+    # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+    # customize this part to your needs.
+    total_length = (total_length // block_size) * block_size
+    # Split by chunks of max_len.
+    result = {
+        k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+        for k, t in concatenated_examples.items()
+    }
+    result["target"] = result["input_ids"].pop()
+    result["target"][-1] = dictionary.ngram2word2idx[1]["<pad>"]
+    return result
+
+
 def load_tokenized_dataset(
+    batch_size: int,
     bptt: int,
     ngram: int,
     max_dict_size: int,
@@ -358,12 +127,20 @@ def load_tokenized_dataset(
     fallback: bool,
     num_proc: int,
     is_forward: bool,
-    cache_result = True,
+    cache_result=True,
     *args,
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
     """🤗"""
-    
+
+    # tokenizer = AutoTokenizer.from_pretrained("google/byt5-small", use_fast=True)
+
+    # tokenizer = NGMETokenizerSparse(ngram)
+    # tokenizer = NGMETokenizer(ngram)
+
+    # def tokenize_function(examples):
+    #     return tokenizer(examples["text"])
+
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
@@ -373,12 +150,29 @@ def load_tokenized_dataset(
         # Load the datasets from huggingface
         dataset = ld(*args, **kwargs)
 
+    # tokenized_dataset = dataset.map(
+    #     tokenize_function,
+    #     batched=True,
+    #     num_proc=num_proc,
+    #     remove_columns=["text"],
+    #     load_from_cache_file=USE_CACHE,
+    # )
+    #
+    # def group_texts(examples):
+    #     return _group_texts(examples, bptt, dictionary)
+    #
+    # lm_dataset = tokenized_dataset.map(
+    #     group_texts,
+    #     batched=True,
+    #     batch_size=batch_size,
+    #     num_proc=num_proc,
+    #     load_from_cache_file=USE_CACHE,
+    # )
+
     # Load according dictionary for dataset
     dictionary = load_dictionary_from_hf(
         dataset, ngram, max_dict_size, unk_threshold, fallback
     )
-
-    print(dictionary.ngram2word2idx)
 
     # Check if we have a cached tokenized version of the dataset already in the huggingface cache
 
@@ -399,13 +193,18 @@ def load_tokenized_dataset(
     )
 
     sample = 1
-    train = train[0 : int(len(train) * sample)]
 
+    if sample != 1.0:
+        print(f"Subsample to {sample}...")
+        train = train[0 : int(len(train) * sample)]
+
+    print("Join all text rows...")
     train = "\n".join(train)
     test = "\n".join(test)
     valid = "\n".join(valid)
 
     if not is_forward:
+        print("Revert text sequence...")
         train = train[::-1]
         test = test[::-1]
         valid = valid[::-1]
@@ -414,13 +213,13 @@ def load_tokenized_dataset(
     split_seq: List[str] = []
 
     for i in tqdm(range(0, len(train), bptt)):
-        split_seq.append(train[i:i+bptt])
+        split_seq.append(train[i : i + bptt])
 
     if len(split_seq[-1]) != bptt:
         split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
-
     # Divide sequence into bptt
+    print("Build dataset...")
     dataset = DatasetDict(
         {
             "train": HfDataset.from_dict({"text": split_seq}),
@@ -430,7 +229,7 @@ def load_tokenized_dataset(
             ),
         }
     )
-    
+
     # For remote
     cache_dirs = {
         "train": "/home/tmp/halerpat/train.arrow",
@@ -446,9 +245,9 @@ def load_tokenized_dataset(
         num_proc=num_proc,
     )
 
-    print(f"Saving tokenized dataset at {hashed_file.resolve()}")
     if USE_CACHE:
         try:
+            print(f"Saving tokenized dataset at {hashed_file.resolve()}")
             tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
         except OSError:
             print("Failed to save... 😢")
@@ -473,7 +272,6 @@ def load_dictionary_from_hf(
 
     dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback)
 
-        
     for n_gram in range(1, ngrams + 1):
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)

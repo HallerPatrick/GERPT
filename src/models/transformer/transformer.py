@@ -6,7 +6,7 @@ from rich import print
 from rich.panel import Panel
 
 import wandb
-from src.dataset import Dictionary
+from src.dictionary import Dictionary
 from src.models.base import BasePLModel
 from src.models.ngme import soft_n_hot
 from src.models.transformer import TransformerConfig, TransformerTransformer

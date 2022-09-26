@@ -12,7 +12,6 @@ from rich.panel import Panel
 
 import wandb
 from src.data import tokenize_batch
-from src.dataset import Dictionary
 from src.loss import CrossEntropyLossSoft
 from src.utils import display_input_n_gram_sequences, display_prediction, display_text
 
@@ -33,7 +32,7 @@ class RNNModel(pl.LightningModule):
 
     def __init__(
         self,
-        dictionary: Dictionary,
+        dictionary,
         nlayers: int,
         ngrams: int,
         hidden_size: int,

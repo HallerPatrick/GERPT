@@ -1,14 +1,13 @@
 from argparse import Namespace
 from typing import Dict
 
-from src.dataset import Dictionary
 from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
 from src.models.transformer.transformer import TransformerLightningModule
 from src.utils import calculate_lstm_hidden_size
 
 
-def load_model(dictionary: Dictionary, args: Namespace):
+def load_model(dictionary, args: Namespace):
 
     if hasattr(args, "expected_size"):
         if args.expected_size > 0:

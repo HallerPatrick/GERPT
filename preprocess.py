@@ -9,6 +9,7 @@ def main():
     args = parse_args()
 
     tokenized_dataset, dictionary = load_tokenized_dataset(
+        args.batch_size,
         args.bptt,
         args.ngram,
         args.max_dict_size,

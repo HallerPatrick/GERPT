@@ -12,8 +12,6 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sympy import *
 from sympy.solvers import solve
 
-from src.dataset import Dictionary
-
 
 class TimePerEpochCallback(Callback):
     def on_train_epoch_start(
@@ -44,7 +42,7 @@ def get_encoder_params(model):
             return parameter.numel()
 
 
-def display_text(t, dictionary: Dictionary, ngram):
+def display_text(t, dictionary, ngram):
     for a in t:
         print(repr(dictionary.ngram2idx2word[ngram][a.item()]), end="")
     print()
@@ -209,7 +207,7 @@ class DummyLogger:
         return method
 
 
-def collect_token_metrics(dictionary: Dictionary, ngram: int):
+def collect_token_metrics(dictionary, ngram: int):
     dset_metrics = {}
 
     dset_metrics[f"total_tokens"] = sum(dictionary.total_n_tokens.values()) + sum(
