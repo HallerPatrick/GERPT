@@ -4,11 +4,6 @@ from src.args import parse_args
 from src.dataset import load_tokenized_dataset
 
 
-def test():
-
-    if 3 == 3:
-        print("Hello")
-
 def main():
 
     args = parse_args()
@@ -21,6 +16,7 @@ def main():
         args.fallback,
         args.cpus,
         args.is_forward,
+        False,
         *args.data.split("/")
         # cache_dir="/home/tmp/halerpat/datasets"
     )
@@ -32,4 +28,4 @@ def main():
 
 
 if __name__ == "__main__":
-    test()
+    main()

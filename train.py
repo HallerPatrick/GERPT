@@ -14,6 +14,7 @@ from pytorch_lightning.utilities.deepspeed import (
 )
 
 import wandb
+from src import USE_CACHE
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, load_tokenized_dataset
 from src.models import load_model
@@ -51,6 +52,8 @@ if __name__ == "__main__":
             args.unk_threshold,
             args.fallback,
             args.cpus,
+            args.is_forward,
+            USE_CACHE,
             *args.data.split("/"),
             # cache_dir="/home/tmp/halerpat/datasets"
         )

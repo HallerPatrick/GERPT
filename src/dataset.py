@@ -219,7 +219,7 @@ class Dictionary:
                 index += 1
         return vocab_file
 
-    def tokenize_line(self, line: List[str]) -> dict:
+    def tokenize_line(self, line: List[str], id_type = torch.int16) -> dict:
         """
 
         line: List of chars
@@ -252,7 +252,7 @@ class Dictionary:
                     ids.append(self.ngram2word2idx[n]["<UNK>"])
                 length += 1
 
-            seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
+            seq = torch.tensor(ids).type(id_type).unsqueeze(dim=0)
             length = seq.size(1)
 
             if length < min_length:
@@ -264,10 +264,10 @@ class Dictionary:
             # display_input_n_gram_sequences(s, self)
             ngram_target_sequences.append(s)
 
-        sequence = torch.cat([torch.tensor(t[0][:min_length]).unsqueeze(0) for t in ngram_sequences])
-        target = torch.cat([torch.tensor(t[0][:min_length]).unsqueeze(0) for t in ngram_target_sequences])
+        sequence = torch.cat([t[0][:min_length].clone().detach().unsqueeze(0) for t in ngram_sequences])
+        target = torch.cat([t[0][:min_length].clone().detach().unsqueeze(0) for t in ngram_target_sequences])
 
-        return {"text": line, "source": sequence, "target": target}
+        return {"source": sequence, "target": target}
 
     def shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
         """
@@ -306,6 +306,7 @@ class Dictionary:
         #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
+
     def create_weight_tensor(self) -> Optional[list]:
         # if not self.frequencies:
         #     return
@@ -318,6 +319,7 @@ class Dictionary:
             normed_weights[marker] = 0
         
         return normed_weights
+
 
 
 def get_dictionary_cache() -> Path:
@@ -356,6 +358,7 @@ def load_tokenized_dataset(
     fallback: bool,
     num_proc: int,
     is_forward: bool,
+    cache_result = True,
     *args,
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
@@ -403,9 +406,9 @@ def load_tokenized_dataset(
     valid = "\n".join(valid)
 
     if not is_forward:
-        train = list(reversed(train))
-        test = list(reversed(test))
-        valid = list(reversed(valid))
+        train = train[::-1]
+        test = test[::-1]
+        valid = valid[::-1]
 
     print("Split in bptt")
     split_seq: List[str] = []
@@ -444,10 +447,11 @@ def load_tokenized_dataset(
     )
 
     print(f"Saving tokenized dataset at {hashed_file.resolve()}")
-    try:
-        tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
-    except OSError:
-        print("Failed to save... 😢")
+    if USE_CACHE:
+        try:
+            tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
+        except OSError:
+            print("Failed to save... 😢")
 
     return tokenized_dataset, dictionary
 

@@ -134,7 +134,7 @@ class RNNModel(pl.LightningModule):
         # display_text(batch["target"][1].squeeze(), self.dictionary, 2)
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
-
+        
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
@@ -249,7 +249,7 @@ class RNNModel(pl.LightningModule):
                 # Use last 200 chars as sequence for new input
 
                 inp = (
-                    self.dictionary.tokenize_line(list(generated_output[-200:]))[
+                    self.dictionary.tokenize_line(list(generated_output[-200:]), id_type=torch.int64)[
                         "source"
                     ]
                     .unsqueeze(dim=2)
