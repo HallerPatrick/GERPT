@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union
 import pytorch_lightning as pl
 import torch
 import datasets
+from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
@@ -20,6 +21,7 @@ from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
+from humanfriendly import format_timespan
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
@@ -184,51 +186,57 @@ def load_tokenized_dataset(
     if hashed_file.exists() and USE_CACHE:
         print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
         return load_from_disk(hashed_file), dictionary
-
-    print("Preprocess dataset...")
-    train = [x["text"] for x in dataset["train"]]
-    test = [x["text"] for x in dataset["test"]] if "test" in dataset else []
-    valid = (
-        [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
-    )
+    
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        print("Preprocess dataset...")
+        train = [x["text"] for x in dataset["train"]]
+        test = [x["text"] for x in dataset["test"]] if "test" in dataset else []
+        valid = (
+            [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
+        )
 
     sample = 1
 
     if sample != 1.0:
-        print(f"Subsample to {sample}...")
-        train = train[0 : int(len(train) * sample)]
+        with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+            print(f"Subsample to {sample}...")
+            train = train[0 : int(len(train) * sample)]
 
-    print("Join all text rows...")
-    train = "\n".join(train)
-    test = "\n".join(test)
-    valid = "\n".join(valid)
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        print("Join all text rows...")
+        train = "\n".join(train)
+        test = "\n".join(test)
+        valid = "\n".join(valid)
 
-    if not is_forward:
-        print("Revert text sequence...")
-        train = train[::-1]
-        test = test[::-1]
-        valid = valid[::-1]
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        if not is_forward:
+            print("Revert text sequence...")
+            train = train[::-1]
+            test = test[::-1]
+            valid = valid[::-1]
 
-    print("Split in bptt")
-    split_seq: List[str] = []
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        print("Split in bptt")
+        split_seq: List[str] = []
 
-    for i in tqdm(range(0, len(train), bptt)):
-        split_seq.append(train[i : i + bptt])
+        for i in tqdm(range(0, len(train), bptt)):
+            split_seq.append(train[i : i + bptt])
 
-    if len(split_seq[-1]) != bptt:
-        split_seq[-1] = split_seq[-1].ljust(bptt, " ")
+        if len(split_seq[-1]) != bptt:
+            split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
-    # Divide sequence into bptt
-    print("Build dataset...")
-    dataset = DatasetDict(
-        {
-            "train": HfDataset.from_dict({"text": split_seq}),
-            "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
-            "validation": HfDataset.from_dict(
-                {"text": list(grouper(valid, bptt, " "))}
-            ),
-        }
-    )
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        # Divide sequence into bptt
+        print("Build dataset...")
+        dataset = DatasetDict(
+            {
+                "train": HfDataset.from_dict({"text": split_seq}),
+                "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
+                "validation": HfDataset.from_dict(
+                    {"text": list(grouper(valid, bptt, " "))}
+                ),
+            }
+        )
 
     # For remote
     cache_dirs = {
