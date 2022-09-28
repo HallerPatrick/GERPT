@@ -1,33 +1,27 @@
-import os
 import string
-import sys
 import hashlib
-from collections import Counter, defaultdict
 from itertools import zip_longest
-from operator import itemgetter
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Tuple
 
 import pytorch_lightning as pl
 import torch
-import datasets
 from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
 from datasets.load import load_from_disk
-from nltk import ngrams as ngram_tokenizer
+# from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 from humanfriendly import format_timespan
-from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .dictionary import Dictionary
 from .data import local_dataset_mapper
-from .models.transformer.tokenization_transformer import NGMETokenizerSparse, NGMETokenizer
 
 all_tokens = string.printable
 
@@ -119,6 +113,8 @@ def _group_texts(examples, block_size, dictionary):
     result["target"][-1] = dictionary.ngram2word2idx[1]["<pad>"]
     return result
 
+def get_text(x):
+    return x["text"]
 
 def load_tokenized_dataset(
     batch_size: int,
@@ -186,14 +182,13 @@ def load_tokenized_dataset(
     if hashed_file.exists() and USE_CACHE:
         print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
         return load_from_disk(hashed_file), dictionary
-    
+        
+
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Preprocess dataset...")
-        train = [x["text"] for x in dataset["train"]]
-        test = [x["text"] for x in dataset["test"]] if "test" in dataset else []
-        valid = (
-            [x["text"] for x in dataset["validation"]] if "validation" in dataset else []
-        )
+        train = process_map(get_text, dataset["train"], max_workers=num_proc)
+        test = process_map(get_text, dataset["test"], max_workers=num_proc)
+        valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
 
     sample = 1
 

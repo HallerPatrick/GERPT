@@ -44,9 +44,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if wandb_run_id:
             pass
         elif args.wandb_run_id:
-            wandb.init(id=wandb_run_id)
-    else:
-        run = None
+            wandb.init(id=wandb_run_id, resume="must", project="gerpt")
 
     results = {}
 
@@ -61,7 +59,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             continue
 
         if wandb.run:
-            wandb.run.config.update({settings.task_name: vars(settings)})
+            wandb.run.config.update({settings.task_name: vars(settings)}, allow_val_change=True)
 
         corpus = load_corpus(settings.dataset, settings.base_path)
 
@@ -75,7 +73,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     print("Using forward and backwards models")
                     embds = [
                         FlairEmbeddings(args.saved_model),
-                        # FlairEmbeddings(args.saved_model_backward),
+                        FlairEmbeddings(args.saved_model_backward),
                         WordEmbeddings("glove"),
                         CharacterEmbeddings()
                     ]
@@ -136,8 +134,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             max_epochs=settings.max_epochs,
             # Bug with saving vocab file in saved model
             use_final_model_for_eval=True
-            if args.model_name == "transformer"
-            else False,
+            # if args.model_name == "transformer"
+            # else False,
         )
         chart = None
 
@@ -160,7 +158,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         print("Upload scores to W&B run...", end="")
         wandb.run.summary.update(results)
             
-        if len(charts) > 1:
+        if len(charts) > 0:
             for chart in charts:
                 wandb.log({"downstream-training": chart})
 
