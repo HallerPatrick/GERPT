@@ -3,6 +3,7 @@ import hashlib
 from itertools import zip_longest
 from pathlib import Path
 from typing import List, Tuple
+from flair.embeddings.token import FlairEmbeddings
 
 import pytorch_lightning as pl
 import torch
@@ -194,7 +195,7 @@ def load_tokenized_dataset(
         
         train = []
         for row in tqdm(dataset["train"]):
-            train.append(row["train"])
+            train.append(row["text"])
         test = process_map(get_text, dataset["test"], max_workers=num_proc)
         valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
 
@@ -286,16 +287,16 @@ def load_dictionary_from_hf(
     for n_gram in range(1, ngrams + 1):
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)
-        unk_idx = dictionary.add_ngram("<UNK>", n_gram)
+        # unk_idx = dictionary.add_ngram("<unk>", n_gram)
 
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
 
 
-    for row in tqdm(source["train"]["text"], desc="Populating dictionary"):
-        for n_gram in range(1, ngrams + 1):
-            for char in row:
-                dictionary.add_ngram(char, n_gram)
+    # for row in tqdm(source["train"]["text"], desc="Populating dictionary"):
+    #     for n_gram in range(1, ngrams + 1):
+    #         for char in row:
+    #             dictionary.add_ngram(char, n_gram)
 
     
     # for n_gram in range(1, ngrams + 1):
@@ -309,6 +310,12 @@ def load_dictionary_from_hf(
     #     for row in source["train"]["text"]:
     #         for char in row:
     #             dictionary.add_ngram(char, n_gram)
+
+    e = FlairEmbeddings("news-forward")
+
+    for token in e.lm.dictionary.item2idx_not_encoded:
+        for n_gram in range(1, ngrams + 1):
+            dictionary.add_ngram(token, n_gram)
 
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)

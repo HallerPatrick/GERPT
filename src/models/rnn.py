@@ -69,7 +69,7 @@ class RNNModel(pl.LightningModule):
         self.weighted_loss = weighted_loss
 
         self.criterion = None
-        self.bidirectional = True
+        self.bidirectional = False
 
         if nlayers == 1 and not self.bidirectional:
             self.rnn = nn.LSTM(
