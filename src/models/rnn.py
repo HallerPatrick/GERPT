@@ -1,12 +1,13 @@
 import math
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 
 import flair
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from rich import print
 from rich.panel import Panel
 
@@ -42,7 +43,7 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.25,
-        unigram_ppl: bool = False, # TODO: Remove
+        unigram_ppl: bool = False,  # TODO: Remove
         weighted_loss: bool = False,
         weighted_labels: bool = False,
         generate: bool = False,
@@ -71,13 +72,22 @@ class RNNModel(pl.LightningModule):
         self.bidirectional = True
 
         if nlayers == 1 and not self.bidirectional:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional)
+            self.rnn = nn.LSTM(
+                embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional
+            )
         else:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, dropout=dropout, bidirectional=self.bidirectional)
+            self.rnn = nn.LSTM(
+                embedding_size,
+                hidden_size,
+                nlayers,
+                dropout=dropout,
+                bidirectional=self.bidirectional,
+            )
 
         self.drop = nn.Dropout(dropout)
-        self.decoder = nn.Linear(hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens)
-
+        self.decoder = nn.Linear(
+            hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
+        )
 
         self.save_hyperparameters()
         self.init_weights()
@@ -92,6 +102,8 @@ class RNNModel(pl.LightningModule):
         self.generate = generate
         self.temperature = temperature
         self.chars_to_gen = chars_to_gen
+
+        self.proj = None
 
     def setup(self, stage: Optional[str] = None) -> None:
 
@@ -112,28 +124,30 @@ class RNNModel(pl.LightningModule):
         matrix.detach().uniform_(-stdv, stdv)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        # optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
-        return optimizer  # ], [lr_scheduler]
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, "min", factor=0.25, verbose=True, min_lr=1.25
+        )
+        return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss", "interval": "step"}]
 
     def training_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
-        
+
         # print(batch["source"][0].squeeze())
         # display_text(batch["source"][0].squeeze(), self.dictionary, 1)
         # display_text(batch["source"][1].squeeze(), self.dictionary, 2)
-        #     
+        #
         # print("-" * 20)
         #
         # display_text(batch["target"][0].squeeze(), self.dictionary, 1)
         # display_text(batch["target"][1].squeeze(), self.dictionary, 2)
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
-        
+
         target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
@@ -145,10 +159,18 @@ class RNNModel(pl.LightningModule):
 
         # Unigram output
         output = torch.index_select(
-            decoded, 1, torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(self.device)
+            decoded,
+            1,
+            torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                self.device
+            ),
         )
         targets = torch.index_select(
-            target, 1, torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(self.device)
+            target,
+            1,
+            torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                self.device
+            ),
         )
         unigram_loss = self.criterion.unigram_loss(output, targets)
 
@@ -192,13 +214,13 @@ class RNNModel(pl.LightningModule):
     def training_epoch_end(self, outputs) -> None:
 
         self.epoch += 1
-    
+
         if self.generate:
             print(Panel(self.generate_text(), title="[green]Generated text"))
             self.train()
         # Reset hidden after each epoch
         self.hidden = None
- 
+
     def generate_text(self) -> str:
 
         inp = torch.randint(
@@ -237,7 +259,7 @@ class RNNModel(pl.LightningModule):
 
                 # Get ngram word
                 word = self.dictionary.get_item_for_index(ngram_idx.item())
-                
+
                 if word == "<pad>":
                     word = " "
 
@@ -248,9 +270,9 @@ class RNNModel(pl.LightningModule):
                 # Use last 200 chars as sequence for new input
 
                 inp = (
-                    self.dictionary.tokenize_line(list(generated_output[-200:]), id_type=torch.int64)[
-                        "source"
-                    ]
+                    self.dictionary.tokenize_line(
+                        list(generated_output[-200:]), id_type=torch.int64
+                    )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
                 )
@@ -314,8 +336,22 @@ class RNNModel(pl.LightningModule):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).detach()
         return (
-            weight.new(self.nlayers * 2 if self.bidirectional else self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
-            weight.new(self.nlayers * 2 if self.bidirectional else self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
+            weight.new(
+                self.nlayers * 2 if self.bidirectional else self.nlayers,
+                bsz,
+                self.hidden_size,
+            )
+            .zero_()
+            .clone()
+            .detach(),
+            weight.new(
+                self.nlayers * 2 if self.bidirectional else self.nlayers,
+                bsz,
+                self.hidden_size,
+            )
+            .zero_()
+            .clone()
+            .detach(),
         )
 
     def __getstate__(self):

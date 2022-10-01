@@ -25,6 +25,9 @@ from .data import local_dataset_mapper
 
 all_tokens = string.printable
 
+def zero():
+    pass
+
 
 def batch_collate(batch):
     # [ngram, seq_len, batch_size]
@@ -168,9 +171,11 @@ def load_tokenized_dataset(
     # )
 
     # Load according dictionary for dataset
-    dictionary = load_dictionary_from_hf(
-        dataset, ngram, max_dict_size, unk_threshold, fallback
-    )
+
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        dictionary = load_dictionary_from_hf(
+            dataset, ngram, max_dict_size, unk_threshold, fallback
+        )
 
     # Check if we have a cached tokenized version of the dataset already in the huggingface cache
 
@@ -283,8 +288,24 @@ def load_dictionary_from_hf(
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
 
-        for char in all_tokens:
-            dictionary.add_ngram(char, n_gram)
+
+    for row in tqdm(source["train"]["text"], desc="Populating dictionary"):
+        for n_gram in range(1, ngrams + 1):
+            for char in row:
+                dictionary.add_ngram(char, n_gram)
+
+    
+    # for n_gram in range(1, ngrams + 1):
+    #     start_idx = dictionary.add_ngram("<start>", n_gram)
+    #     pad_idx = dictionary.add_ngram("<pad>", n_gram)
+    #     unk_idx = dictionary.add_ngram("<UNK>", n_gram)
+    #
+    #     if n_gram not in dictionary._marker_tokens:
+    #         dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
+    #         
+    #     for row in source["train"]["text"]:
+    #         for char in row:
+    #             dictionary.add_ngram(char, n_gram)
 
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)

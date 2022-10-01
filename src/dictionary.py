@@ -56,11 +56,13 @@ class Dictionary:
         if ngram not in self.ngram2idx2word:
             self.ngram2idx2word[ngram] = {self.current_max_idx: word}
             self.ngram2word2idx[ngram] = {word: self.current_max_idx}
+            self.current_max_idx += 1
         else:
-            self.ngram2idx2word[ngram][self.current_max_idx] = word
-            self.ngram2word2idx[ngram][word] = self.current_max_idx
+            if word not in self.ngram2word2idx[ngram]:
+                self.ngram2idx2word[ngram][self.current_max_idx] = word
+                self.ngram2word2idx[ngram][word] = self.current_max_idx
 
-        self.current_max_idx += 1
+                self.current_max_idx += 1
 
         return self.ngram2word2idx[ngram][word]
 

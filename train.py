@@ -7,6 +7,7 @@ import torch
 from datasets.load import load_from_disk
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.utilities.deepspeed import (
@@ -79,15 +80,17 @@ if __name__ == "__main__":
         filename=args.save,
     )
 
-    early_stop_callback = EarlyStopping(
-        monitor="train/loss", patience=3, verbose=True, mode="min"
-    )
+    # early_stop_callback = EarlyStopping(
+    #     monitor="train/loss", patience=3, verbose=True, mode="min"
+    # )
 
     # Peformance
     log_time_per_epoch_callback = TimePerEpochCallback()
 
     # Make it 🌟 pretty
     rick_prog_bar_callback = RichProgressBar()
+
+    learning_rate_callback = LearningRateMonitor()
 
     # --- PL Plugins ---
     plugins = []
@@ -108,9 +111,10 @@ if __name__ == "__main__":
         gradient_clip_val=0.25,
         callbacks=[
             checkpoint_callback,
-            early_stop_callback,
+            # early_stop_callback,
             rick_prog_bar_callback,
             log_time_per_epoch_callback,
+            learning_rate_callback
         ],
         # Disable validation during training
         limit_val_batches=0.0,
