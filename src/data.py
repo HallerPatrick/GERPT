@@ -76,7 +76,7 @@ def tokenize_batch(
                 try:
                     ids.append(dictionary.ngram2word2idx[n][c])
                 except KeyError:
-                    ids.append(dictionary.ngram2word2idx[n]["<UNK>"])
+                    ids.append(dictionary.ngram2word2idx[n]["<unk>"])
 
             if len(ids) > len_longest_chunk:
                 len_longest_chunk = len(ids)
@@ -148,7 +148,7 @@ def tokenize(dictionary, lines: List[str], ngram, label, otf=False, fallback=Fal
                     if fallback and word[1:] in dictionary.word2idx:
                         ids.append(dictionary.word2idx[word])
                     else:
-                        ids.append(dictionary.word2idx[f"<{n}-UNK>"])
+                        ids.append(dictionary.word2idx[f"<{n}-unk>"])
                 length += 1
 
             idss_n.append(torch.tensor(ids).type(torch.int64))

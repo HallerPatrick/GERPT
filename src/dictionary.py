@@ -197,7 +197,7 @@ class Dictionary:
                 try:
                     ids.append(self.ngram2word2idx[n][c])
                 except KeyError:
-                    ids.append(self.ngram2word2idx[n]["<UNK>"])
+                    ids.append(self.ngram2word2idx[n]["<unk>"])
                 length += 1
 
             seq = torch.tensor(ids).type(id_type).unsqueeze(dim=0)
