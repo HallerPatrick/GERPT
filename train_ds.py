@@ -44,7 +44,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if wandb_run_id:
             pass
         elif args.wandb_run_id:
-            wandb.init(id=wandb_run_id, resume="must", project="gerpt")
+            wandb.init(id=args.wandb_run_id, resume="must", project="gerpt")
 
     results = {}
 
@@ -74,8 +74,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embds = [
                         FlairEmbeddings(args.saved_model),
                         FlairEmbeddings(args.saved_model_backward),
-                        WordEmbeddings("glove"),
-                        CharacterEmbeddings()
+                        WordEmbeddings("glove")
                     ]
                 else:
                     embds = [

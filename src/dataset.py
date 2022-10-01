@@ -191,7 +191,10 @@ def load_tokenized_dataset(
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Preprocess dataset...")
-        train = process_map(get_text, dataset["train"], max_workers=num_proc)
+        
+        train = []
+        for row in tqdm(dataset["train"]):
+            train.append(row["train"])
         test = process_map(get_text, dataset["test"], max_workers=num_proc)
         valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
 
