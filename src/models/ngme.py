@@ -1,5 +1,6 @@
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, List
+from math import log
 
 import torch
 import torch.nn.functional as F
@@ -31,6 +32,14 @@ def n_hot(t, num_clases):
 def soft_dist(n):
     return [1 / n] * n
 
+@lru_cache(maxsize=5)
+def n_dist(n: int) -> List[float]:
+    """Dist of ngram weight is logarithmic"""
+    ns = list(range(1, n+1))
+    xs = list(map(lambda x: log(x+1), ns))
+    result = list(map(lambda x: x / sum(xs), xs))
+    return result
+
 
 @lru_cache(maxsize=5)
 def soft_weigthed_n_dist(n):
@@ -47,8 +56,7 @@ def soft_n_hot(input, num_classes, weighted=False):
     ret = torch.zeros(shape).to(input.device)
 
     if weighted:
-        # soft_labels = soft_weigthed_n_dist(input.size()[0])
-        soft_labels = soft_dist(input.size()[0])
+        soft_labels = n_dist(input.size(0))
     else:
         soft_labels = soft_dist(input.size()[0])
 

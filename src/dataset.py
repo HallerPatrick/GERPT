@@ -196,8 +196,16 @@ def load_tokenized_dataset(
         train = []
         for row in tqdm(dataset["train"]):
             train.append(row["text"])
-        test = process_map(get_text, dataset["test"], max_workers=num_proc)
-        valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
+
+        if "test" in dataset:
+            test = process_map(get_text, dataset["test"], max_workers=num_proc)
+        else:
+            test = []
+
+        if "validation" in dataset:
+            valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
+        else:
+            valid = []
 
     sample = 1
 

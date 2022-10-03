@@ -14,6 +14,7 @@ from rich.panel import Panel
 import wandb
 from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
+
 # from src.utils import display_input_n_gram_sequences, display_prediction, display_text
 
 from .ngme import NGramsEmbedding, soft_n_hot
@@ -127,9 +128,18 @@ class RNNModel(pl.LightningModule):
         # optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, "min", factor=0.25, verbose=True, min_lr=1.25
+            optimizer,
+            "min",
+            factor=0.25,
+            verbose=True,
+            min_lr=1.25,
+            threshold=1e-6,
+            patience=100,
+            threshold_mode="abs",
         )
-        return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss", "interval": "step"}]
+        return [optimizer], [
+            {"scheduler": lr_scheduler, "monitor": "train/loss", "interval": "step"}
+        ]
 
     def training_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
