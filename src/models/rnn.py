@@ -14,7 +14,7 @@ from rich.panel import Panel
 import wandb
 from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
-from src.utils import display_input_n_gram_sequences, display_prediction, display_text
+# from src.utils import display_input_n_gram_sequences, display_prediction, display_text
 
 from .ngme import NGramsEmbedding, soft_n_hot
 

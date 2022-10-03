@@ -8,6 +8,8 @@ from collections import defaultdict, Counter
 
 import torch
 
+# from src.utils import display_input_n_gram_sequences, display_text
+
 class Dictionary:
     def __init__(
         self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool
@@ -221,44 +223,37 @@ class Dictionary:
                 for t in ngram_target_sequences
             ]
         )
+        
+        # print(line)
+
 
         return {"source": sequence, "target": target}
 
-    def shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
+    def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
         """
         "hello world"
-
         1. "h"   "e"   "l"   "l"   "o"
         2. "he"  "el"  "ll"  "lo"  "o "  " w"
         3. "hel" "ell" "llo" "lo " "o w" " wo"
-
-
-
         1. "e"   "l"   "l"   "o"   " "
         2. "ll"  "lo"  "o "  " w"  :offset 2
         3. "lo " "o w" " wo"       :offset 3
-
-
-
-
-
-        1. "h"     "e"     "l"   "l"   "o"
-        2. <start> "h"     "e"   "l"   "l"   "o"  " "
-        3. <srart> <start> "h"   "e"   "l"   "l"   "o"  " "
-
-        1. "e"     "l"
-        2. "h"     "e"
-        3. <start> "h"
-
-
         Shifts have to be applied ngram-time for correct target matching
         """
-        st = torch.roll(t, -1, 1)
+        st = torch.roll(t, -shifts, 1)
 
-        st[0][-1] = self.ngram2word2idx[ngram]["<pad>"]
-        # for i in range(1, shifts + 1):
-        #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
+        st[0][-1] = self.ngram2word2idx[1]["<pad>"]
+        for i in range(1, shifts + 1):
+            st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
+
+    # def _shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
+    #     st = torch.roll(t, -1, 1)
+    #
+    #     st[0][-1] = self.ngram2word2idx[ngram]["<pad>"]
+    #     # for i in range(1, shifts + 1):
+    #     #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
+    #     return st
 
     def create_weight_tensor(self) -> Optional[list]:
         # if not self.frequencies:

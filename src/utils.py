@@ -49,10 +49,10 @@ def display_text(t, dictionary, ngram):
     print()
 
 
-def display_input_n_gram_sequences(input, dictionary):
-    for i in range(input.size()[0]):
-        print(f"{i + 1}-gram")
-        display_text(dictionary, input[i])
+# def display_input_n_gram_sequences(input, dictionary):
+#     for i in range(input.size()[0]):
+#         print(f"{i + 1}-gram")
+#         display_text(dictionary, input[i])
 
 
 def display_prediction(prediction, dictionary):
