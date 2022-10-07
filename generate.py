@@ -2,13 +2,11 @@ import json
 
 import torch
 import torch.nn.functional as F
-from torch.distributions import Categorical
 
 from src.args import argparse_generate
 from src.loss import CrossEntropyLossSoft
 from src.models import RNNModel
 from src.models.ngme import soft_n_hot
-from src.utils import DummyLogger
 
 
 def calc_entropy(input_tensor):
@@ -42,7 +40,7 @@ def analyze(model, seed_text: str, target: str):
     with torch.no_grad():
         model.eval()
 
-        # Measure metrics against the target sequence, so one iteration per char of target
+         # Measure metrics against the target sequence, so one iteration per char of target
         for t, c in enumerate(target):
 
             print(f"Current text: {current_text}")

@@ -14,6 +14,7 @@ from rich.panel import Panel
 import wandb
 from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
+from src.utils import display_text
 
 # from src.utils import display_input_n_gram_sequences, display_prediction, display_text
 
@@ -147,12 +148,11 @@ class RNNModel(pl.LightningModule):
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-        # print(batch["source"][0].squeeze())
         # display_text(batch["source"][0].squeeze(), self.dictionary, 1)
         # display_text(batch["source"][1].squeeze(), self.dictionary, 2)
         #
         # print("-" * 20)
-        #
+        # 
         # display_text(batch["target"][0].squeeze(), self.dictionary, 1)
         # display_text(batch["target"][1].squeeze(), self.dictionary, 2)
         decoded, hidden = self.forward(batch["source"], self.hidden)
@@ -257,10 +257,6 @@ class RNNModel(pl.LightningModule):
                     ngram_idx = torch.argmax(output)
                 else:
                     output = F.log_softmax(output, dim=0)
-
-                    # Remove all UNK tokens for ngram > 2
-                    # if self.ngrams > 2:
-                    #     output = torch.index_select(output, 0, token_idxs).detach()
 
                     word_weights = output.squeeze().div(self.temperature).exp().detach()
 

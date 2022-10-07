@@ -1,6 +1,7 @@
 import os
 import sys
 
+import nltk
 from pathlib import Path
 from typing import Optional, List, Union
 from collections import defaultdict, Counter
@@ -12,7 +13,7 @@ import torch
 
 class Dictionary:
     def __init__(
-        self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool
+            self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str
     ):
         self.word2idx = {}
         self.idx2word = []
@@ -29,6 +30,7 @@ class Dictionary:
         self.ngram2idx2word = {}
 
         self.current_max_idx = 0
+        self.ngme = ngme
 
     @property
     def pad_token(self):
@@ -170,6 +172,64 @@ class Dictionary:
         return vocab_file
 
     def tokenize_line(self, line: List[str], id_type=torch.int16) -> dict:
+        if self.ngme == "dense":
+            return self._tokenize_line_dense(line, id_type)
+        elif self.ngme == "sparse":
+            return self._tokenize_line_sparse(line, id_type)
+        else:
+            raise ValueError("UNKOWN NGME APPROACH")
+
+
+    def _tokenize_line_dense(self, line: List[str], id_type):
+        ngram_sequences = []
+        ngram_target_sequences = []
+        min_length = sys.maxsize
+
+        for n in range(1, self.ngram + 1):
+
+            # Adding start offsets for all ngrams
+            words = ["<start>" for _ in range(1, n)]
+            words.extend(list(line))
+
+            ids = []
+            length = 0
+            # print(f"Processed line: {words}")
+            for i, word in enumerate(nltk.ngrams(words, n)):
+
+                if "<start>" in word:
+                    word = [w for w in list(word) if w != "<start>"]
+
+                try:
+                    ids.append(self.ngram2word2idx[n]["".join(word)])
+                except KeyError:
+
+                    # Fall back on n-1 gram if possible
+                    if self.fallback and tuple(word)[1:] in self.word2idx:
+                        ids.append(self.ngram2word2idx[n][word])
+                    else:
+                        ids.append(self.ngram2word2idx[n]["<unk>"])
+                length += 1
+
+            seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
+            length = seq.size(1)
+
+            if length < min_length:
+                min_length = length
+
+            # display_input_n_gram_sequences(seq, self)
+            ngram_sequences.append(seq)
+            s = self.shift_left(seq, n)
+            # display_input_n_gram_sequences(s, self)
+            ngram_target_sequences.append(s)
+
+        sequence = torch.cat([t[:min_length] for t in ngram_sequences])
+        # display_input_n_gram_sequences(sequence, self)
+        target = torch.cat([t[:min_length] for t in ngram_target_sequences])
+        # display_input_n_gram_sequences(target, self)
+
+        return {"text": line, "source": sequence, "target": target}
+
+    def _tokenize_line_sparse(self, line: List[str], id_type):
         """
 
         line: List of chars

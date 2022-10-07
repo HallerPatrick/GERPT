@@ -80,10 +80,6 @@ if __name__ == "__main__":
         filename=args.save,
     )
 
-    # early_stop_callback = EarlyStopping(
-    #     monitor="train/loss", patience=3, verbose=True, mode="min"
-    # )
-
     # Peformance
     log_time_per_epoch_callback = TimePerEpochCallback()
 

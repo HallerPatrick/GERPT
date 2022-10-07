@@ -9,7 +9,7 @@ def main():
     args = parse_args()
 
     tokenized_dataset, dictionary = load_tokenized_dataset(
-        args.batch_size,
+        args.ngme,
         args.bptt,
         args.ngram,
         args.max_dict_size,
@@ -17,9 +17,7 @@ def main():
         args.fallback,
         args.cpus,
         args.is_forward,
-        False,
         *args.data.split("/")
-        # cache_dir="/home/tmp/halerpat/datasets"
     )
 
     tokenized_dataset.save_to_disk(args.saved_data)

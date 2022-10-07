@@ -4,6 +4,7 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import List, Tuple
 from flair.embeddings.token import FlairEmbeddings
+import nltk
 
 import pytorch_lightning as pl
 import torch
@@ -13,6 +14,7 @@ from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
 from datasets.load import load_from_disk
+
 # from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -25,6 +27,7 @@ from .dictionary import Dictionary
 from .data import local_dataset_mapper
 
 all_tokens = string.printable
+
 
 def zero():
     pass
@@ -72,7 +75,6 @@ class GenericDataModule(pl.LightningDataModule):
         )
 
 
-
 def get_dictionary_cache() -> Path:
     path = Path(HF_CACHE_DICTIONARIES)
 
@@ -117,11 +119,13 @@ def _group_texts(examples, block_size, dictionary):
     result["target"][-1] = dictionary.ngram2word2idx[1]["<pad>"]
     return result
 
+
 def get_text(x):
     return x["text"]
 
+
 def load_tokenized_dataset(
-    batch_size: int,
+    ngme: str,
     bptt: int,
     ngram: int,
     max_dict_size: int,
@@ -129,7 +133,6 @@ def load_tokenized_dataset(
     fallback: bool,
     num_proc: int,
     is_forward: bool,
-    cache_result=True,
     *args,
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
@@ -152,47 +155,22 @@ def load_tokenized_dataset(
         # Load the datasets from huggingface
         dataset = ld(*args, **kwargs)
 
-    # tokenized_dataset = dataset.map(
-    #     tokenize_function,
-    #     batched=True,
-    #     num_proc=num_proc,
-    #     remove_columns=["text"],
-    #     load_from_cache_file=USE_CACHE,
-    # )
-    #
-    # def group_texts(examples):
-    #     return _group_texts(examples, bptt, dictionary)
-    #
-    # lm_dataset = tokenized_dataset.map(
-    #     group_texts,
-    #     batched=True,
-    #     batch_size=batch_size,
-    #     num_proc=num_proc,
-    #     load_from_cache_file=USE_CACHE,
-    # )
-
     # Load according dictionary for dataset
-
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        dictionary = load_dictionary_from_hf(
-            dataset, ngram, max_dict_size, unk_threshold, fallback
-        )
 
     # Check if we have a cached tokenized version of the dataset already in the huggingface cache
 
-    hash_value = hashlib.md5(
-        f"{Hasher.hash(dataset)}{Hasher.hash(dictionary)}".encode()
-    ).hexdigest()
-    hashed_file = get_tokenized_cache() / hash_value
-
-    if hashed_file.exists() and USE_CACHE:
-        print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
-        return load_from_disk(hashed_file), dictionary
-        
+    # hash_value = hashlib.md5(
+    #     f"{Hasher.hash(dataset)}{Hasher.hash(dictionary)}".encode()
+    # ).hexdigest()
+    # hashed_file = get_tokenized_cache() / hash_value
+    #
+    # if hashed_file.exists() and USE_CACHE:
+    #     print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
+    #     return load_from_disk(hashed_file), dictionary
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Preprocess dataset...")
-        
+
         train = []
         for row in tqdm(dataset["train"]):
             train.append(row["text"])
@@ -206,6 +184,12 @@ def load_tokenized_dataset(
             valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
         else:
             valid = []
+
+
+    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+        dictionary = load_dictionary_from_hf(
+            ngme, train, ngram, max_dict_size, unk_threshold, fallback, num_proc
+    )
 
     sample = 1
 
@@ -276,7 +260,13 @@ def load_tokenized_dataset(
 
 
 def load_dictionary_from_hf(
-    source: Dataset, ngrams: int, max_dict_size: int, unk_threshold: int, fallback: bool
+    ngme: str,
+    source: List[str],
+    ngrams: int,
+    max_dict_size: int,
+    unk_threshold: int,
+    fallback: bool,
+    num_workers: int
 ) -> Dictionary:
 
     # Hash the combination of dataset and configs
@@ -290,45 +280,54 @@ def load_dictionary_from_hf(
         print(f"Loading cached processed dictionary at {hash_file.resolve()}")
         return torch.load(hash_file)
 
-    dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback)
+    dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback, ngme)
 
     for n_gram in range(1, ngrams + 1):
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)
-        # unk_idx = dictionary.add_ngram("<unk>", n_gram)
+        unk_idx = dictionary.add_ngram("<unk>", n_gram)
 
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
-
-
-    # for row in tqdm(source["train"]["text"], desc="Populating dictionary"):
-    #     for n_gram in range(1, ngrams + 1):
-    #         for char in row:
-    #             dictionary.add_ngram(char, n_gram)
-
     
-    # for n_gram in range(1, ngrams + 1):
-    #     start_idx = dictionary.add_ngram("<start>", n_gram)
-    #     pad_idx = dictionary.add_ngram("<pad>", n_gram)
-    #     unk_idx = dictionary.add_ngram("<UNK>", n_gram)
-    #
-    #     if n_gram not in dictionary._marker_tokens:
-    #         dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
-    #         
-    #     for row in source["train"]["text"]:
-    #         for char in row:
-    #             dictionary.add_ngram(char, n_gram)
+    if ngme == "sparse":
+        populate_sparse_dict(dictionary, ngrams)
+    elif ngme == "dense":
+        populate_dense_dict(dictionary, ngrams, source, num_workers)
+    else:
+        raise ValueError("NGME approach not known")
+    
+    print(f"Saving dictionary at {hash_file}...")
+    torch.save(dictionary, hash_file)
 
+    return dictionary
+
+def populate_sparse_dict(dictionary, ngrams: int):
+    """Build dictionary based on Akbik et. al character LM dict"""
     e = FlairEmbeddings("news-forward")
 
     for token in e.lm.dictionary.item2idx_not_encoded:
         for n_gram in range(1, ngrams + 1):
             dictionary.add_ngram(token, n_gram)
 
-    print(f"Saving dictionary at {hash_file}...")
-    torch.save(dictionary, hash_file)
 
-    return dictionary
+def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int):
+
+    e = FlairEmbeddings("news-forward")
+    
+    # Uni-gram tokens 
+    for token in e.lm.dictionary.item2idx_not_encoded:
+        dictionary.add_ngram(token, 1)
+
+    # Add new n-gram token only if all uni-gram parts exist
+    for n in range(1, ngrams+1):
+        for line in source:
+            for n_gram in nltk.ngrams(line, n):
+                for c in n_gram:
+                    if not c in dictionary.ngram2word2idx[1]:
+                        break
+                else:
+                    dictionary.add_ngram("".join(n_gram), n)
 
 
 def remove_marker_tokens(token, dictionary):
