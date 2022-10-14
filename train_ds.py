@@ -4,7 +4,6 @@ from typing import Optional
 from flair import set_seed
 from flair.embeddings import WordEmbeddings
 from flair.embeddings.document import DocumentRNNEmbeddings
-from flair.embeddings.token import CharacterEmbeddings
 from torch import manual_seed
 
 import wandb
@@ -44,7 +43,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if wandb_run_id:
             pass
         elif args.wandb_run_id:
-            wandb.init(id=args.wandb_run_id, resume="must", project="gerpt")
+            wandb.init(id=args.wandb_run_id, project="gerpt")
 
     results = {}
 
@@ -68,8 +67,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if settings.task_name in ["ner", "upos"]:
 
             if args.model_name == "rnn":
-
-                if args.saved_model_backward:
+                
+                if hasattr(args, "saved_model_backward"):
                     print("Using forward and backwards models")
                     embds = [
                         FlairEmbeddings(args.saved_model),

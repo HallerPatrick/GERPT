@@ -1,9 +1,11 @@
 import string
 import hashlib
-from itertools import zip_longest
+from itertools import zip_longest, repeat
 from pathlib import Path
 from typing import List, Tuple
+from datasets.arrow_dataset import concatenate_datasets
 from flair.embeddings.token import FlairEmbeddings
+from multiprocessing import Pool
 import nltk
 
 import pytorch_lightning as pl
@@ -24,7 +26,7 @@ from humanfriendly import format_timespan
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .dictionary import Dictionary
-from .data import local_dataset_mapper
+from .data import batchify, local_dataset_mapper
 
 all_tokens = string.printable
 
@@ -32,13 +34,11 @@ all_tokens = string.printable
 def zero():
     pass
 
-
 def batch_collate(batch):
     # [ngram, seq_len, batch_size]
     source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
     target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
     return dict(source=source, target=target)
-
 
 class GenericDataModule(pl.LightningDataModule):
     def __init__(self, dataset, batch_size, cpus=1):
@@ -103,23 +103,6 @@ def grouper(iterable, n, fillvalue=None):
     return zip_longest(*args, fillvalue=fillvalue)
 
 
-def _group_texts(examples, block_size, dictionary):
-    # Concatenate all texts.
-    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-    total_length = len(concatenated_examples[list(examples.keys())[0]])
-    # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-    # customize this part to your needs.
-    total_length = (total_length // block_size) * block_size
-    # Split by chunks of max_len.
-    result = {
-        k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-        for k, t in concatenated_examples.items()
-    }
-    result["target"] = result["input_ids"].pop()
-    result["target"][-1] = dictionary.ngram2word2idx[1]["<pad>"]
-    return result
-
-
 def get_text(x):
     return x["text"]
 
@@ -128,6 +111,7 @@ def load_tokenized_dataset(
     ngme: str,
     bptt: int,
     ngram: int,
+    batch_size: int,
     max_dict_size: int,
     unk_threshold: int,
     fallback: bool,
@@ -210,6 +194,12 @@ def load_tokenized_dataset(
             train = train[::-1]
             test = test[::-1]
             valid = valid[::-1]
+        
+    # Split into batch size
+    train = batchify(train, batch_size, bptt)
+    test = batchify(test, batch_size, bptt)
+    valid = batchify(valid, batch_size, bptt)
+
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Split in bptt")
@@ -221,15 +211,29 @@ def load_tokenized_dataset(
         if len(split_seq[-1]) != bptt:
             split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
+
+    train1 = split_seq[0: int(len(split_seq) * 0.5)]
+    train2 = split_seq[int(len(split_seq) * 0.5):int(len(split_seq))]
+
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         # Divide sequence into bptt
         print("Build dataset...")
-        dataset = DatasetDict(
+        dataset1 = DatasetDict(
             {
-                "train": HfDataset.from_dict({"text": split_seq}),
+                "train": HfDataset.from_dict({"text": train1}),
                 "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
                 "validation": HfDataset.from_dict(
                     {"text": list(grouper(valid, bptt, " "))}
+                ),
+            }
+        )
+
+        dataset2 = DatasetDict(
+            {
+                "train": HfDataset.from_dict({"text": train2}),
+                "test": HfDataset.from_dict({"text": list()}),
+                "validation": HfDataset.from_dict(
+                    {"text": list()}
                 ),
             }
         )
@@ -242,12 +246,35 @@ def load_tokenized_dataset(
     }
 
     print("Tokenize dataset...")
-    tokenized_dataset = dataset.map(
+    tokenized_dataset1 = dataset1.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
         # cache_file_names=cache_dirs,
         num_proc=num_proc,
     )
+
+    tokenized_dataset1.cleanup_cache_files()
+
+    tokenized_dataset2 = dataset2.map(
+        lambda x: dictionary.tokenize_line(x["text"]),
+        load_from_cache_file=USE_CACHE,
+        # cache_file_names=cache_dirs,
+        num_proc=num_proc,
+    )
+
+    tokenized_dataset2.cleanup_cache_files()
+
+
+    tokenized_dataset_train = concatenate_datasets([tokenized_dataset1["train"], tokenized_dataset1["train"]])
+    tokenized_dataset_test = concatenate_datasets([tokenized_dataset1["test"], tokenized_dataset1["test"]])
+    tokenized_dataset_valid = concatenate_datasets([tokenized_dataset1["validation"], tokenized_dataset1["validation"]])
+
+    tokenized_dataset = DatasetDict(
+            {
+                "train": tokenized_dataset_train,
+                "test": tokenized_dataset_test,
+                "validation": tokenized_dataset_valid
+    })
 
     if USE_CACHE:
         try:
@@ -255,6 +282,8 @@ def load_tokenized_dataset(
             tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
         except OSError:
             print("Failed to save... 😢")
+
+
 
     return tokenized_dataset, dictionary
 
@@ -286,6 +315,8 @@ def load_dictionary_from_hf(
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)
         unk_idx = dictionary.add_ngram("<unk>", n_gram)
+        dictionary.add_ngram(" "*n_gram, n_gram)
+
 
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
@@ -306,12 +337,30 @@ def populate_sparse_dict(dictionary, ngrams: int):
     """Build dictionary based on Akbik et. al character LM dict"""
     e = FlairEmbeddings("news-forward")
 
+    dictionary.ngme = "sparse"
+
     for token in e.lm.dictionary.item2idx_not_encoded:
         for n_gram in range(1, ngrams + 1):
             dictionary.add_ngram(token, n_gram)
 
 
+def collect_ngrams(line, n, dictionary):
+
+    ngrams = []
+
+    for n_gram in nltk.ngrams(line, n):
+        for c in n_gram:
+            if not c in dictionary.ngram2word2idx[1]:
+                break
+        else:
+            ngrams.append("".join(n_gram))
+
+    return ngrams
+
+
 def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int):
+
+    dictionary.ngme = "dense"
 
     e = FlairEmbeddings("news-forward")
     
@@ -320,15 +369,16 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], 
         dictionary.add_ngram(token, 1)
 
     # Add new n-gram token only if all uni-gram parts exist
-    for n in range(1, ngrams+1):
-        for line in source:
-            for n_gram in nltk.ngrams(line, n):
-                for c in n_gram:
-                    if not c in dictionary.ngram2word2idx[1]:
-                        break
-                else:
-                    dictionary.add_ngram("".join(n_gram), n)
-
+    for n in range(2, ngrams+1):
+        with Pool(processes=num_workers) as pool:
+            
+            print(f"Collect {n}-grams..")
+            ngram_lists = tqdm(pool.starmap(collect_ngrams, zip(source, repeat(n), repeat(dictionary)), 3), total=len(source))
+            
+            print("Add to dict...")
+            for lst in ngram_lists:
+                for ngram in lst:
+                    dictionary.add_ngram(ngram, n)    
 
 def remove_marker_tokens(token, dictionary):
     """Due to some str length comparison to determine what n-gram the token

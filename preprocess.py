@@ -12,6 +12,7 @@ def main():
         args.ngme,
         args.bptt,
         args.ngram,
+        args.batch_size,
         args.max_dict_size,
         args.unk_threshold,
         args.fallback,

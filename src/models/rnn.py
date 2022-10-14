@@ -1,8 +1,9 @@
 import math
 from pathlib import Path
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union
 
 import flair
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -11,12 +12,8 @@ import torch.nn.functional as F
 from rich import print
 from rich.panel import Panel
 
-import wandb
-from src.data import tokenize_batch
 from src.loss import CrossEntropyLossSoft
-from src.utils import display_text
-
-# from src.utils import display_input_n_gram_sequences, display_prediction, display_text
+# from src.utils import display_text 
 
 from .ngme import NGramsEmbedding, soft_n_hot
 
@@ -144,17 +141,18 @@ class RNNModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
+        
+        # if batch_idx < 3:
+        #     # [ngram, seq, batch]
+        #     print(f"First sequence of batch: {batch_idx}")
+        #     display_text(batch["source"][0][:,0], self.dictionary, 1)
+        #
+        #     print(f"Second sequence of batch: {batch_idx}")
+        #     display_text(batch["source"][0][:,1], self.dictionary, 1)
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-        # display_text(batch["source"][0].squeeze(), self.dictionary, 1)
-        # display_text(batch["source"][1].squeeze(), self.dictionary, 2)
-        #
-        # print("-" * 20)
-        # 
-        # display_text(batch["target"][0].squeeze(), self.dictionary, 1)
-        # display_text(batch["target"][1].squeeze(), self.dictionary, 2)
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
@@ -204,6 +202,7 @@ class RNNModel(pl.LightningModule):
 
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
+        self.log("valid/bpc", loss / np.log(2))
 
     def test_step(self, batch, batch_idx):
         batch_size = batch["source"].size()[-1]
@@ -482,12 +481,13 @@ class RNNModel(pl.LightningModule):
             for string in chunk:
                 chars = list(string) + [" "] * (len_longest_chunk - len(string))
 
-                chars = ["".join(chars)]
-
+                chars = "".join(chars)
+                
                 # [ngram, 1, sequence]
-                n_gram_char_indices = tokenize_batch(
-                    self.dictionary, chars, self.ngrams, otf=True
-                ).unsqueeze(dim=1)
+                self.dictionary.ngme = "dense"
+                n_gram_char_indices = self.dictionary.tokenize_line(
+                    chars, id_type=torch.int64
+                )["source"].unsqueeze(dim=1)
 
                 sequences_as_char_indices.append(n_gram_char_indices)
 
