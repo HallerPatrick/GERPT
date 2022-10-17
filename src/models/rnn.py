@@ -45,6 +45,7 @@ class RNNModel(pl.LightningModule):
         unigram_ppl: bool = False,  # TODO: Remove
         weighted_loss: bool = False,
         weighted_labels: bool = False,
+        strategy: str = "const",
         generate: bool = False,
         temperature: float = 0.7,
         chars_to_gen: int = 1000,
@@ -66,6 +67,7 @@ class RNNModel(pl.LightningModule):
         self.dropout = dropout
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
+        self.strategy = strategy
 
         self.criterion = None
         self.bidirectional = False
@@ -139,16 +141,9 @@ class RNNModel(pl.LightningModule):
             {"scheduler": lr_scheduler, "monitor": "train/loss", "interval": "step"}
         ]
 
-    def training_step(self, batch, batch_idx):
+    def _step(self, batch):
+
         batch_size = batch["source"].size()[-1]
-        
-        # if batch_idx < 3:
-        #     # [ngram, seq, batch]
-        #     print(f"First sequence of batch: {batch_idx}")
-        #     display_text(batch["source"][0][:,0], self.dictionary, 1)
-        #
-        #     print(f"Second sequence of batch: {batch_idx}")
-        #     display_text(batch["source"][0][:,1], self.dictionary, 1)
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
@@ -156,9 +151,16 @@ class RNNModel(pl.LightningModule):
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
+        target = soft_n_hot(batch["target"], self.ntokens, self.strategy, self.weighted_labels)
+
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
+        return loss, decoded
+
+    def training_step(self, batch, batch_idx):
+
+        loss, decoded = self._step(batch)
+
         self.log("train/loss", loss)
         try:
             self.log("train/ppl", math.exp(loss), prog_bar=True)
@@ -188,37 +190,17 @@ class RNNModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        batch_size = batch["source"].size()[-1]
-
-        if not self.hidden:
-            self.hidden = self.init_hidden(batch_size)
-
-        decoded, hidden = self.forward(batch["source"], self.hidden)
-        self.hidden = repackage_hidden(hidden)
-
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
-        target = target.view(-1, self.ntokens)
-        loss = self.criterion(decoded, target)
+        loss, decoded = self._step(batch)
 
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
         self.log("valid/bpc", loss / np.log(2))
 
     def test_step(self, batch, batch_idx):
-        batch_size = batch["source"].size()[-1]
-        if not self.hidden:
-            self.hidden = self.init_hidden(batch_size)
-
-        self.hidden = repackage_hidden(self.hidden)
-
-        decoded, self.hidden = self.forward(batch["source"], self.hidden)
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
-        target = target.view(-1, self.ntokens)
-
-        loss = self.criterion(decoded, target)
+        loss, decoded = self._step(batch)
 
         self.log("test/loss", loss)
-        self.log("valid/ppl", math.exp(loss), prog_bar=True)
+        self.log("test/ppl", math.exp(loss), prog_bar=True)
 
     def training_epoch_end(self, outputs) -> None:
 

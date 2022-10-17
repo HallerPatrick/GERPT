@@ -14,6 +14,13 @@ n_dists = {
     4: [0.1, 0.15, 0.2, 0.25, 0.3],
 }
 
+strats = {
+    "const": lambda x: x,
+    "linear": lambda x: 2 * x,
+    "log": lambda x: log(x),
+    "exp": lambda x: x**2
+}
+
 
 def n_hot(t, num_clases):
     shape = list(t.size())[1:]
@@ -33,10 +40,10 @@ def soft_dist(n):
     return [1 / n] * n
 
 @lru_cache(maxsize=5)
-def n_dist(n: int) -> List[float]:
+def n_dist(n: int, strategy: str) -> List[float]:
     """Dist of ngram weight is logarithmic"""
     ns = list(range(1, n+1))
-    xs = list(map(lambda x: log(x+1), ns))
+    xs = list(map(strats[strategy], ns))
     result = list(map(lambda x: x / sum(xs), xs))
     return result
 
@@ -46,7 +53,7 @@ def soft_weigthed_n_dist(n):
     return n_dists[n - 1]
 
 
-def soft_n_hot(input, num_classes, weighted=False):
+def soft_n_hot(input, num_classes: int, strategy: str, weighted=False):
     # soft_dist = 1 / input.size(0)
 
     shape = list(input.size())[1:]
@@ -56,12 +63,13 @@ def soft_n_hot(input, num_classes, weighted=False):
     ret = torch.zeros(shape).to(input.device)
 
     if weighted:
-        soft_labels = n_dist(input.size(0))
+        soft_labels = n_dist(input.size(0), strategy)
     else:
         soft_labels = soft_dist(input.size()[0])
 
     for i, t in enumerate(input):
-        ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
+        if i == 0:
+            ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
     return ret
 
