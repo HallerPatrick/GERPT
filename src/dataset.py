@@ -173,7 +173,7 @@ def load_tokenized_dataset(
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
             ngme, train, ngram, max_dict_size, unk_threshold, fallback, num_proc
-    )
+        )
 
     sample = 1
 
@@ -311,15 +311,6 @@ def load_dictionary_from_hf(
 
     dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback, ngme)
 
-    for n_gram in range(1, ngrams + 1):
-        start_idx = dictionary.add_ngram("<start>", n_gram)
-        pad_idx = dictionary.add_ngram("<pad>", n_gram)
-        unk_idx = dictionary.add_ngram("<unk>", n_gram)
-        dictionary.add_ngram(" "*n_gram, n_gram)
-
-
-        if n_gram not in dictionary._marker_tokens:
-            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
     
     if ngme == "sparse":
         populate_sparse_dict(dictionary, ngrams)
@@ -327,6 +318,19 @@ def load_dictionary_from_hf(
         populate_dense_dict(dictionary, ngrams, source, num_workers)
     else:
         raise ValueError("NGME approach not known")
+    
+    if dictionary.max_dict_size > 0:
+        dictionary = dictionary.unking()
+    
+    for n_gram in range(1, dictionary.ngram + 1):
+        start_idx = dictionary.add_ngram("<start>", n_gram)
+        pad_idx = dictionary.add_ngram("<pad>", n_gram)
+        unk_idx = dictionary.add_ngram("<unk>", n_gram)
+        dictionary.add_ngram(" "*n_gram, n_gram)
+
+        if n_gram not in dictionary._marker_tokens:
+            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
+
     
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)

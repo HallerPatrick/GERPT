@@ -1,5 +1,6 @@
 import os
 import sys
+import copy
 
 import nltk
 from pathlib import Path
@@ -23,7 +24,7 @@ class Dictionary:
         self.max_dict_size = max_dict_size
         self.unk_threshold = unk_threshold
         self.fallback = fallback
-        self.frequencies: Optional[Counter] = None
+        self.frequencies: Optional[Counter] = Counter()
         self._pad_token = None
 
         self.ngram2word2idx = {}
@@ -57,6 +58,8 @@ class Dictionary:
 
     def add_ngram(self, word, ngram: int):
 
+        self.frequencies.update({word: 1})
+
         if ngram not in self.ngram2idx2word:
             self.ngram2idx2word[ngram] = {self.current_max_idx: word}
             self.ngram2word2idx[ngram] = {word: self.current_max_idx}
@@ -65,10 +68,28 @@ class Dictionary:
             if word not in self.ngram2word2idx[ngram]:
                 self.ngram2idx2word[ngram][self.current_max_idx] = word
                 self.ngram2word2idx[ngram][word] = self.current_max_idx
-
                 self.current_max_idx += 1
 
         return self.ngram2word2idx[ngram][word]
+
+    def unking(self):
+
+        candidates = list(
+            map(
+                lambda x: x[0], self.frequencies.most_common(self.max_dict_size)
+            )
+        )
+
+        dictionary = Dictionary(self.ngram, self.max_dict_size, self.unk_threshold, self.fallback, self.ngme)
+
+        for ngram in self.ngram2idx2word.keys():
+            for token, ngram_idx in self.ngram2word2idx[ngram].items():
+                if token in candidates:
+                    dictionary.add_ngram(token, ngram)
+
+
+        return dictionary
+
 
     def add_item(self, word):
         return self.add_word(word)

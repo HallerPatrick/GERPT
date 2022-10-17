@@ -68,8 +68,7 @@ def soft_n_hot(input, num_classes: int, strategy: str, weighted=False):
         soft_labels = soft_dist(input.size()[0])
 
     for i, t in enumerate(input):
-        if i == 0:
-            ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
+        ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
     return ret
 
