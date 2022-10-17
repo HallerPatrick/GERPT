@@ -155,11 +155,11 @@ class RNNModel(pl.LightningModule):
 
         target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
-        return loss, decoded
+        return loss, decoded, target
 
     def training_step(self, batch, batch_idx):
 
-        loss, decoded = self._step(batch)
+        loss, decoded, target = self._step(batch)
 
         self.log("train/loss", loss)
         try:
@@ -190,14 +190,14 @@ class RNNModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, decoded = self._step(batch)
+        loss, _, _ = self._step(batch)
 
         self.log("valid/loss", loss)
         self.log("valid/ppl", math.exp(loss), prog_bar=True)
         self.log("valid/bpc", loss / np.log(2))
 
     def test_step(self, batch, batch_idx):
-        loss, decoded = self._step(batch)
+        loss, _, _ = self._step(batch)
 
         self.log("test/loss", loss)
         self.log("test/ppl", math.exp(loss), prog_bar=True)

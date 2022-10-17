@@ -130,11 +130,11 @@ def argparser_train() -> argparse.Namespace:
         action="store_true",
         help="Use a weighted target labels for n-gram",
     )
-    # parser.add_argument(
-    #     "--unigram-ppl",
-    #     action="store_true",
-    #     help="Calculate perplexity only over unigrams",
-    # )
+    parser.add_argument(
+        "--weight-strat",
+        type=str
+    )
+
     parser.add_argument("--embedding-size", type=int, help="size of word embeddings")
     parser.add_argument(
         "--expected-size", type=int, help="Size of model adjusted by tuning hidden size"
