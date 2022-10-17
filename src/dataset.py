@@ -370,15 +370,10 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], 
 
     # Add new n-gram token only if all uni-gram parts exist
     for n in range(2, ngrams+1):
-        with Pool(processes=num_workers) as pool:
-            
-            print(f"Collect {n}-grams..")
-            ngram_lists = tqdm(pool.starmap(collect_ngrams, zip(source, repeat(n), repeat(dictionary)), 3), total=len(source))
-            
-            print("Add to dict...")
-            for lst in ngram_lists:
-                for ngram in lst:
-                    dictionary.add_ngram(ngram, n)    
+        for line in source:
+            ngram_lists = collect_ngrams(line, n, dictionary)
+            for ngram in ngram_lists:
+                dictionary.add_ngram(ngram, n)
 
 def remove_marker_tokens(token, dictionary):
     """Due to some str length comparison to determine what n-gram the token

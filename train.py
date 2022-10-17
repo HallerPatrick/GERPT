@@ -27,6 +27,8 @@ from src.utils import (
     get_encoder_params,
 )
 
+
+
 from train_ds import train_ds
 
 if __name__ == "__main__":
@@ -110,10 +112,10 @@ if __name__ == "__main__":
             # early_stop_callback,
             rick_prog_bar_callback,
             log_time_per_epoch_callback,
-            learning_rate_callback
+            learning_rate_callback,
         ],
         # Disable validation during training
-        limit_val_batches=0.0,
+        # limit_val_batches=0.0,
         # profiler="simple",
         fast_dev_run=False,
     )

@@ -78,7 +78,7 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                 else:
                     embds = [
                         FlairEmbeddings(args.saved_model),
-                        WordEmbeddings("glove")
+                        # WordEmbeddings("glove")
                     ]
                     
                 embeddings = StackedEmbeddings(
