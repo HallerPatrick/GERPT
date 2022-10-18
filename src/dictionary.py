@@ -4,7 +4,7 @@ import copy
 
 import nltk
 from pathlib import Path
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Iterator
 from collections import defaultdict, Counter
 
 
@@ -84,7 +84,7 @@ class Dictionary:
 
         for ngram in self.ngram2idx2word.keys():
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
-                if token in candidates:
+                if token in candidates or ngram == 1:
                     dictionary.add_ngram(token, ngram)
 
 
@@ -94,8 +94,10 @@ class Dictionary:
     def add_item(self, word):
         return self.add_word(word)
 
-    def get_marker_tokens(self) -> List[str]:
-        return self._marker_tokens
+    def get_marker_tokens(self) -> Iterator[int]:
+        for ngram in self._marker_tokens:
+            for token_idx in self._marker_tokens[ngram]:
+                yield token_idx
 
     def __len__(self):
         return self.current_max_idx
@@ -237,16 +239,15 @@ class Dictionary:
             if length < min_length:
                 min_length = length
 
-            # display_input_n_gram_sequences(seq, self)
             ngram_sequences.append(seq)
-            s = self.shift_left(seq, n)
-            # display_input_n_gram_sequences(s, self)
+            try:
+                s = self.shift_left(seq, n)
+            except IndexError:
+                s = seq
             ngram_target_sequences.append(s)
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
-        # display_input_n_gram_sequences(sequence, self)
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
-        # display_input_n_gram_sequences(target, self)
 
         return {"text": line, "source": sequence, "target": target}
 
@@ -328,17 +329,7 @@ class Dictionary:
             st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
-    # def _shift_left(self, t: torch.Tensor, ngram) -> torch.Tensor:
-    #     st = torch.roll(t, -1, 1)
-    #
-    #     st[0][-1] = self.ngram2word2idx[ngram]["<pad>"]
-    #     # for i in range(1, shifts + 1):
-    #     #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
-    #     return st
-
-    def create_weight_tensor(self) -> Optional[list]:
-        # if not self.frequencies:
-        #     return
+    def create_weight_tensor(self) -> torch.Tensor:
 
         t = torch.ones(len(self))
 

@@ -329,7 +329,7 @@ def load_dictionary_from_hf(
         dictionary.add_ngram(" "*n_gram, n_gram)
 
         if n_gram not in dictionary._marker_tokens:
-            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx]
+            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
 
     
     print(f"Saving dictionary at {hash_file}...")

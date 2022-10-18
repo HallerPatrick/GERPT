@@ -96,10 +96,6 @@ class RNNModel(pl.LightningModule):
         self.hidden = None
         self.epoch = 0
 
-        # self.register_buffer(
-        #     "nram_indexes", torch.tensor([indexes for indexes in  self.dictionary.ngram_indexes.values() ])
-        # )
-
         self.generate = generate
         self.temperature = temperature
         self.chars_to_gen = chars_to_gen
@@ -110,12 +106,11 @@ class RNNModel(pl.LightningModule):
 
         if self.weighted_loss:
             self.criterion = CrossEntropyLossSoft(
-                # ignore_index=self.dictionary.word2idx["<pad>"],
-                weight=torch.tensor(self.dictionary.create_weight_tensor()),
+                weight=self.dictionary.create_weight_tensor(),
             )
         else:
             self.criterion = CrossEntropyLossSoft(
-                ignore_index=self.dictionary.word2idx["<pad>"],
+                weight=self.dictionary.create_weight_tensor(),
             )
 
     @staticmethod
