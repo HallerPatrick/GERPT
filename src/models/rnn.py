@@ -13,7 +13,8 @@ from rich import print
 from rich.panel import Panel
 
 from src.loss import CrossEntropyLossSoft
-# from src.utils import display_text 
+
+# from src.utils import display_text
 
 from .ngme import NGramsEmbedding, soft_n_hot
 
@@ -42,7 +43,7 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.25,
-        unigram_ppl: bool = False,  # TODO: Remove
+        unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
         strategy: str = "const",
@@ -68,6 +69,7 @@ class RNNModel(pl.LightningModule):
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
         self.strategy = strategy
+        self.unigram_ppl = unigram_ppl
 
         self.criterion = None
         self.bidirectional = False
@@ -87,7 +89,10 @@ class RNNModel(pl.LightningModule):
 
         self.drop = nn.Dropout(dropout)
         self.decoder = nn.Linear(
-            hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
+            hidden_size * 2 if self.bidirectional else hidden_size,
+            self.ntokens
+            if not self.unigram_ppl
+            else len(self.dictionary.ngram2idx2word[1]),
         )
 
         self.save_hyperparameters()
@@ -102,16 +107,12 @@ class RNNModel(pl.LightningModule):
 
         self.proj = None
 
-    def setup(self, stage: Optional[str] = None) -> None:
-
-        if self.weighted_loss:
-            self.criterion = CrossEntropyLossSoft(
-                weight=self.dictionary.create_weight_tensor(),
-            )
-        else:
-            self.criterion = CrossEntropyLossSoft(
-                weight=self.dictionary.create_weight_tensor(),
-            )
+    def setup(self, _) -> None:
+        self.criterion = CrossEntropyLossSoft(
+            weight=self.dictionary.create_weight_tensor(
+                self.unigram_ppl, self.weighted_loss
+            ),
+        )
 
     @staticmethod
     def initialize(matrix):
@@ -146,9 +147,25 @@ class RNNModel(pl.LightningModule):
         decoded, hidden = self.forward(batch["source"], self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], self.ntokens, self.strategy, self.weighted_labels)
+        if self.unigram_ppl:
+            target = soft_n_hot(
+                batch["target"],
+                len(self.dictionary.ngram2idx2word[1]),
+                self.strategy,
+                self.weighted_labels,
+                self.unigram_ppl,
+            )
+            target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
+        else:
+            target = soft_n_hot(
+                batch["target"],
+                self.ntokens,
+                self.strategy,
+                self.weighted_labels,
+                self.unigram_ppl,
+            )
+            target = target.view(-1, self.ntokens)
 
-        target = target.view(-1, self.ntokens)
         loss = self.criterion(decoded, target)
         return loss, decoded, target
 
@@ -184,20 +201,20 @@ class RNNModel(pl.LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
         loss, _, _ = self._step(batch)
 
-        self.log("valid/loss", loss)
-        self.log("valid/ppl", math.exp(loss), prog_bar=True)
-        self.log("valid/bpc", loss / np.log(2))
+        self.log("valid/loss", loss, sync_dist=True)
+        self.log("valid/ppl", math.exp(loss), prog_bar=True, sync_dist=True)
+        self.log("valid/bpc", loss / np.log(2), sync_dist=True)
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, _):
         loss, _, _ = self._step(batch)
 
         self.log("test/loss", loss)
         self.log("test/ppl", math.exp(loss), prog_bar=True)
 
-    def training_epoch_end(self, outputs) -> None:
+    def training_epoch_end(self, _) -> None:
 
         self.epoch += 1
 
@@ -287,7 +304,11 @@ class RNNModel(pl.LightningModule):
 
         output, hidden = self.rnn(emb, hidden)
         decoded = self.decoder(output)
-        decoded = decoded.view(-1, self.ntokens)
+
+        if self.unigram_ppl:
+            decoded = decoded.view(-1, len(self.dictionary.ngram2idx2word[1]))
+        else:
+            decoded = decoded.view(-1, self.ntokens)
 
         return decoded, hidden
 
@@ -459,7 +480,7 @@ class RNNModel(pl.LightningModule):
                 chars = list(string) + [" "] * (len_longest_chunk - len(string))
 
                 chars = "".join(chars)
-                
+
                 # [ngram, 1, sequence]
                 self.dictionary.ngme = "dense"
                 n_gram_char_indices = self.dictionary.tokenize_line(

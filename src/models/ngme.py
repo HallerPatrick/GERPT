@@ -17,7 +17,7 @@ n_dists = {
 strats = {
     "const": lambda x: x,
     "linear": lambda x: 2 * x,
-    "log": lambda x: log(x),
+    "log": lambda x: log(x+1),
     "exp": lambda x: x**2
 }
 
@@ -53,7 +53,7 @@ def soft_weigthed_n_dist(n):
     return n_dists[n - 1]
 
 
-def soft_n_hot(input, num_classes: int, strategy: str, weighted=False):
+def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_ppl=False):
     # soft_dist = 1 / input.size(0)
 
     shape = list(input.size())[1:]
@@ -68,6 +68,9 @@ def soft_n_hot(input, num_classes: int, strategy: str, weighted=False):
         soft_labels = soft_dist(input.size()[0])
 
     for i, t in enumerate(input):
+        if unigram_ppl and i == 0:
+            ret.scatter_(-1, t.unsqueeze(-1), 1)
+            break
         ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
     return ret

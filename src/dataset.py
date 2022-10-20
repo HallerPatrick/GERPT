@@ -322,7 +322,7 @@ def load_dictionary_from_hf(
     if dictionary.max_dict_size > 0:
         dictionary = dictionary.unking()
     
-    for n_gram in range(1, dictionary.ngram + 1):
+    for n_gram in range(2, dictionary.ngram + 1):
         start_idx = dictionary.add_ngram("<start>", n_gram)
         pad_idx = dictionary.add_ngram("<pad>", n_gram)
         unk_idx = dictionary.add_ngram("<unk>", n_gram)
@@ -331,7 +331,8 @@ def load_dictionary_from_hf(
         if n_gram not in dictionary._marker_tokens:
             dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
 
-    
+    # Check if all unigrams were indexed first and all idx are consecutive    
+    assert list(dictionary.ngram2idx2word[1].keys()) == list(range(0, len(dictionary.ngram2idx2word[1])))
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)
 
@@ -368,16 +369,33 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], 
 
     e = FlairEmbeddings("news-forward")
     
+    # Guarantee that all unigram tokens are indexed first
     # Uni-gram tokens 
     for token in e.lm.dictionary.item2idx_not_encoded:
         dictionary.add_ngram(token, 1)
 
+    start_idx = dictionary.add_ngram("<start>", 1)
+    pad_idx = dictionary.add_ngram("<pad>", 1)
+    unk_idx = dictionary.add_ngram("<unk>", 1)
+    dictionary.add_ngram(" ", 1)
+
+    if 1 not in dictionary._marker_tokens:
+        dictionary._marker_tokens[1] = [start_idx, pad_idx, unk_idx]
+
     # Add new n-gram token only if all uni-gram parts exist
-    for n in range(2, ngrams+1):
-        for line in source:
-            ngram_lists = collect_ngrams(line, n, dictionary)
-            for ngram in ngram_lists:
-                dictionary.add_ngram(ngram, n)
+    for n in range(1, ngrams+1):
+
+        if n == 1:
+            for line in source:
+                for c in line:
+                    if c in dictionary.ngram2word2idx[1]:
+                        dictionary.frequencies.update({c: 1})
+        else:
+            for line in source:
+                ngram_lists = collect_ngrams(line, n, dictionary)
+                for ngram in ngram_lists:
+                    dictionary.add_ngram(ngram, n)
+
 
 def remove_marker_tokens(token, dictionary):
     """Due to some str length comparison to determine what n-gram the token

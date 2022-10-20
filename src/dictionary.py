@@ -86,7 +86,8 @@ class Dictionary:
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
                 if token in candidates or ngram == 1:
                     dictionary.add_ngram(token, ngram)
-
+        
+        dictionary.frequencies = self.frequencies
 
         return dictionary
 
@@ -329,14 +330,37 @@ class Dictionary:
             st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
-    def create_weight_tensor(self) -> torch.Tensor:
+    def create_weight_tensor(self, unigram_ppl: bool, weighted_loss: bool = True) -> torch.Tensor:
 
-        t = torch.ones(len(self))
+        unked_freqs = self.frequencies.most_common(self.max_dict_size)
 
-        normed_weights = t
+        if unigram_ppl:
+            t = torch.ones(len(self.ngram2idx2word[1]))
+        else:
+            t = torch.ones(len(self))
+
+        if not unigram_ppl and weighted_loss:
+            for token, freq in unked_freqs:
+                t[self.ngram2word2idx[self.token_to_n_order(token)][token]] = freq
+        
+            normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
+        else:
+            normed_weights = t
+
 
         for marker in self.get_marker_tokens():
-            normed_weights[marker] = 0
+            if marker < len(normed_weights):
+                normed_weights[marker] = 0
+
+        print(list(normed_weights))
 
         return normed_weights
+
+    def token_to_n_order(self, token: str) -> int:
+
+        for n in self.ngram2word2idx:
+            if token in self.ngram2word2idx[n]:
+                return n
+
+        return 0
 
