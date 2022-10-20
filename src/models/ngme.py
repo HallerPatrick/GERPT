@@ -15,8 +15,7 @@ n_dists = {
 }
 
 strats = {
-    "const": lambda x: x,
-    "linear": lambda x: 2 * x,
+    "linear": lambda x: x,
     "log": lambda x: log(x+1),
     "exp": lambda x: x**2
 }
@@ -37,7 +36,7 @@ def n_hot(t, num_clases):
 
 @lru_cache(maxsize=5)
 def soft_dist(n):
-    return [1 / n] * n
+    return [1] * n
 
 @lru_cache(maxsize=5)
 def n_dist(n: int, strategy: str) -> List[float]:
