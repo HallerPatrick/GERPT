@@ -45,7 +45,7 @@ def load_model(dictionary, args: Namespace):
     else:
         # Adjust args
         args.ntoken = len(dictionary)
-        args.weight_tensor = dictionary.create_weight_tensor(args.unigram_ppl, args.weighted_loss)
+        args.weight_tensor = dictionary.create_weight_tensor(args.unigram_ppl, args.weighted_loss).tolist()
 
         args.ngram_indexes = dictionary.ngram_indexes
         # args.pad_token_id = dictionary.word2idx["<pad>"]

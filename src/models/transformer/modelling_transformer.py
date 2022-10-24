@@ -40,8 +40,8 @@ class TransformerTransformer(PreTrainedModel):
         self.decoder = nn.Linear(config.embedding_size, self.ntoken)
 
         self.unigram_ppl = config.unigram_ppl
+
         self.weighted_labels = config.weighted_labels
-        
 
         self.criterion = CrossEntropyLossSoft(
             weight=torch.tensor(config.weight_tensor).to(self.device)

@@ -16,15 +16,13 @@ class Dictionary:
     def __init__(
             self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str
     ):
-        self.word2idx = {}
-        self.idx2word = []
         self._marker_tokens = {}
         self.ngram_indexes = defaultdict(list)
         self.ngram = ngram
         self.max_dict_size = max_dict_size
         self.unk_threshold = unk_threshold
         self.fallback = fallback
-        self.frequencies: Optional[Counter] = Counter()
+        self.frequencies: Counter = Counter()
         self._pad_token = None
 
         self.ngram2word2idx = {}
@@ -43,18 +41,11 @@ class Dictionary:
         self._pad_token = self.current_max_idx
         self.current_max_idx += 1
 
+    def get_all_tokens(self):
 
-    def add_word(self, word):
-        if word.startswith("<") and word.endswith(">"):
-            if word not in self._marker_tokens:
-                self._marker_tokens.append(word)
-
-        if word not in self.word2idx:
-            print(f"Adding new token: {repr(word)}")
-            self.idx2word.append(word)
-            self.word2idx[word] = len(self.idx2word) - 1
-
-        return self.word2idx[word]
+        for ngram in range(1, self.ngram+1):
+            for idx, token in self.ngram2idx2word[ngram].items():
+                yield idx, token
 
     def add_ngram(self, word, ngram: int):
 
@@ -91,10 +82,6 @@ class Dictionary:
 
         return dictionary
 
-
-    def add_item(self, word):
-        return self.add_word(word)
-
     def get_marker_tokens(self) -> Iterator[int]:
         for ngram in self._marker_tokens:
             for token_idx in self._marker_tokens[ngram]:
@@ -103,48 +90,11 @@ class Dictionary:
     def __len__(self):
         return self.current_max_idx
 
-    def get_idx_for_item(self, item: str) -> int:
-        """
-        returns the ID of the string, otherwise 0
-        :param item: string for which ID is requested
-        :return: ID of string, otherwise 0
-        """
-        item = item.encode("utf-8")
-        if item in self.word2idx.keys():
-            return self.word2idx[item]
-        else:
-            return 0
-
-    def get_idx_for_items(self, items: List[str]) -> List[int]:
-        """
-        returns the IDs for each item of the list of string, otherwise 0 if not found
-        :param items: List of string for which IDs are requested
-        :return: List of ID of strings
-        """
-        if not hasattr(self, "item2idx_not_encoded"):
-            d = dict([(key, value) for key, value in self.word2idx.items()])
-            self.item2idx_not_encoded = defaultdict(int, d)
-
-        if not items:
-            return []
-        results = itemgetter(*items)(self.item2idx_not_encoded)
-        if isinstance(results, int):
-            return [results]
-        return list(results)
-
-    def get_items(self) -> List[str]:
-        items = []
-        for item in self.idx2word:
-            items.append(item)
-        return items
 
     def get_item_for_index(self, idx):
         for idxs in self.ngram2idx2word.values():
             if idx in idxs:
                 return idxs[idx]
-        print(idx)
-        print(self.ngram2idx2word)
-        exit()
         return None
 
     def save(self, savefile):
@@ -177,9 +127,8 @@ class Dictionary:
             ) + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
             writer.write(str(ngram) + "\n")
-            for token, token_index in sorted(
-                self.word2idx.items(), key=lambda kv: kv[1]
-            ):
+
+            for token_index, token in self.get_all_tokens():
                 if index != token_index:
                     print(
                         f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
@@ -342,8 +291,10 @@ class Dictionary:
         if not unigram_ppl and weighted_loss:
             for token, freq in unked_freqs:
                 t[self.ngram2word2idx[self.token_to_n_order(token)][token]] = freq
+
+            max_t = max(t)
         
-            normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
+            normed_weights = torch.tensor([(1 - (x / (max_t + 1))).item() for x in t])
         else:
             normed_weights = t
 

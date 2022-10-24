@@ -150,18 +150,20 @@ if __name__ == "__main__":
     # Transformer is wrapped in huggingface PreTrainedModel
     elif args.model == "transformer":
 
+        trainer.lightning_module.model.save_pretrained(
+            "checkpoints" / Path(args.save), ngram=args.ngram
+        )
+
         # Save vocab file
         vocab_file = dictionary.save_vocabulary(
             "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
         )
-
+        print(vocab_file)
+        
         # Save HF tokenizer
         NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
         # Save HF model
-        trainer.lightning_module.model.save_pretrained(
-            "checkpoints" / Path(args.save), ngram=args.ngram
-        )
 
     try:
         # Save wandb run id in config for fine tuning run

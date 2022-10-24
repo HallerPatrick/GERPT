@@ -18,12 +18,16 @@ class TransformerLightningModule(BasePLModel):
     ):
 
         super(TransformerLightningModule, self).__init__()
+
         self.model = TransformerTransformer(config)
 
         self.config = config
 
         self.epoch = 0
         self.dictionary = dictionary
+
+
+
 
         # self.register_flop_profiler(self.model)
 
