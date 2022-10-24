@@ -41,19 +41,13 @@ class TransformerTransformer(PreTrainedModel):
 
         self.unigram_ppl = config.unigram_ppl
         self.weighted_labels = config.weighted_labels
+        
 
-        if config.weighted_loss:
-            self.criterion = CrossEntropyLossSoft(
-                # ignore_index=config.pad_token_id,
-                weight=torch.tensor(config.weight_tensor).to(self.device)
-            )
-        else:
-            self.criterion = CrossEntropyLossSoft(
-                # ignore_index=config.pad_token_id,
-            )
+        self.criterion = CrossEntropyLossSoft(
+            weight=torch.tensor(config.weight_tensor).to(self.device)
+        )
 
         self.init_weights()
-        self.epoch = 0
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
@@ -73,7 +67,6 @@ class TransformerTransformer(PreTrainedModel):
     def forward(self, src, has_mask=True, **kwargs):
 
         # (ngram, seq, batch)
-
         if has_mask:
             if self.src_mask is None or self.src_mask.size(0) != src.size(1):
                 mask = self._generate_square_subsequent_mask(src.size(1)).to(
@@ -86,7 +79,7 @@ class TransformerTransformer(PreTrainedModel):
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
         output = self.decoder(output)
-        return F.log_softmax(output, dim=-1)
+        return output
 
     def forward_hidden(self, src, has_mask=True, **kwargs):
         # if "attention_mask" in kwargs:

@@ -352,8 +352,6 @@ class Dictionary:
             if marker < len(normed_weights):
                 normed_weights[marker] = 0
 
-        print(list(normed_weights))
-
         return normed_weights
 
     def token_to_n_order(self, token: str) -> int:

@@ -107,7 +107,7 @@ class RNNModel(pl.LightningModule):
 
         self.proj = None
 
-    def setup(self, _) -> None:
+    def setup(self, stage) -> None:
         self.criterion = CrossEntropyLossSoft(
             weight=self.dictionary.create_weight_tensor(
                 self.unigram_ppl, self.weighted_loss
@@ -130,7 +130,7 @@ class RNNModel(pl.LightningModule):
             verbose=True,
             min_lr=1.25,
             threshold=1e-6,
-            patience=100,
+            patience=10000,
             threshold_mode="abs",
         )
         return [optimizer], [
@@ -165,7 +165,7 @@ class RNNModel(pl.LightningModule):
                 self.unigram_ppl,
             )
             target = target.view(-1, self.ntokens)
-
+            
         loss = self.criterion(decoded, target)
         return loss, decoded, target
 

@@ -67,5 +67,5 @@ class TransformerConfig(PretrainedConfig):
             generate=args.generate,
             temperature=args.temperature,
             chars=args.chars,
-            pad_token_id=args.pad_token_id,
+            # pad_token_id=args.pad_token_id,
         )

@@ -36,7 +36,7 @@ def n_hot(t, num_clases):
 
 @lru_cache(maxsize=5)
 def soft_dist(n):
-    return [1] * n
+    return [1 / n] * n
 
 @lru_cache(maxsize=5)
 def n_dist(n: int, strategy: str) -> List[float]:
@@ -45,11 +45,6 @@ def n_dist(n: int, strategy: str) -> List[float]:
     xs = list(map(strats[strategy], ns))
     result = list(map(lambda x: x / sum(xs), xs))
     return result
-
-
-@lru_cache(maxsize=5)
-def soft_weigthed_n_dist(n):
-    return n_dists[n - 1]
 
 
 def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_ppl=False):
