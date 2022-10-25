@@ -123,10 +123,6 @@ def batchify(text: str, batch_size: int, bptt: int):
     # Evenly divide the data across the bsz batches.
     text = text.reshape(batch_size, -1).T
 
-    # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    nbatch = text.size // bptt
-    text = text[: nbatch * bptt].T
-
     bptt_per_batch = nbatch // bptt
     new_text = []
 
