@@ -122,14 +122,6 @@ def load_tokenized_dataset(
 ) -> Tuple[Dataset, Dictionary]:
     """🤗"""
 
-    # tokenizer = AutoTokenizer.from_pretrained("google/byt5-small", use_fast=True)
-
-    # tokenizer = NGMETokenizerSparse(ngram)
-    # tokenizer = NGMETokenizer(ngram)
-
-    # def tokenize_function(examples):
-    #     return tokenizer(examples["text"])
-
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
@@ -138,19 +130,6 @@ def load_tokenized_dataset(
     else:
         # Load the datasets from huggingface
         dataset = ld(*args, **kwargs)
-
-    # Load according dictionary for dataset
-
-    # Check if we have a cached tokenized version of the dataset already in the huggingface cache
-
-    # hash_value = hashlib.md5(
-    #     f"{Hasher.hash(dataset)}{Hasher.hash(dictionary)}".encode()
-    # ).hexdigest()
-    # hashed_file = get_tokenized_cache() / hash_value
-    #
-    # if hashed_file.exists() and USE_CACHE:
-    #     print(f"Loading cached processed tokenized dataset at {hashed_file.resolve()}")
-    #     return load_from_disk(hashed_file), dictionary
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Preprocess dataset...")
@@ -168,8 +147,7 @@ def load_tokenized_dataset(
             valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
         else:
             valid = []
-
-
+    
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
             ngme, train, ngram, max_dict_size, unk_threshold, fallback, num_proc
@@ -211,7 +189,7 @@ def load_tokenized_dataset(
         if len(split_seq[-1]) != bptt:
             split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
-
+    
     train1 = split_seq[0: int(len(split_seq) * 0.5)]
     train2 = split_seq[int(len(split_seq) * 0.5):int(len(split_seq))]
 
@@ -238,18 +216,10 @@ def load_tokenized_dataset(
             }
         )
 
-    # For remote
-    cache_dirs = {
-        "train": "/home/tmp/halerpat/train.arrow",
-        "test": "/home/tmp/halerpat/test.arrow",
-        "validation": "/home/tmp/halerpat/validation.arrow",
-    }
-
     print("Tokenize dataset...")
     tokenized_dataset1 = dataset1.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
-        # cache_file_names=cache_dirs,
         num_proc=num_proc,
     )
 
@@ -258,16 +228,15 @@ def load_tokenized_dataset(
     tokenized_dataset2 = dataset2.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
-        # cache_file_names=cache_dirs,
         num_proc=num_proc,
     )
 
     tokenized_dataset2.cleanup_cache_files()
 
-
-    tokenized_dataset_train = concatenate_datasets([tokenized_dataset1["train"], tokenized_dataset1["train"]])
-    tokenized_dataset_test = concatenate_datasets([tokenized_dataset1["test"], tokenized_dataset1["test"]])
-    tokenized_dataset_valid = concatenate_datasets([tokenized_dataset1["validation"], tokenized_dataset1["validation"]])
+    
+    tokenized_dataset_train = concatenate_datasets([tokenized_dataset1["train"], tokenized_dataset2["train"]])
+    tokenized_dataset_test = concatenate_datasets([tokenized_dataset1["test"], tokenized_dataset2["test"]])
+    tokenized_dataset_valid = concatenate_datasets([tokenized_dataset1["validation"], tokenized_dataset2["validation"]])
 
     tokenized_dataset = DatasetDict(
             {
@@ -280,6 +249,7 @@ def load_tokenized_dataset(
         try:
             print(f"Saving tokenized dataset at {hashed_file.resolve()}")
             tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
+            tokenized_dataset
         except OSError:
             print("Failed to save... 😢")
 

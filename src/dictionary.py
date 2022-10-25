@@ -175,12 +175,7 @@ class Dictionary:
                 try:
                     ids.append(self.ngram2word2idx[n]["".join(word)])
                 except KeyError:
-
-                    # Fall back on n-1 gram if possible
-                    if self.fallback and tuple(word)[1:] in self.word2idx:
-                        ids.append(self.ngram2word2idx[n][word])
-                    else:
-                        ids.append(self.ngram2word2idx[n]["<unk>"])
+                    ids.append(self.ngram2word2idx[n]["<unk>"])
                 length += 1
 
             seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
