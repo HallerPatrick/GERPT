@@ -105,31 +105,23 @@ def grouped(iterable, n):
     # s -> (s0,s1,s2,...sn-1), (sn,sn+1,sn+2,...s2n-1), (s2n,s2n+1,s2n+2,...s3n-1), ...
     return zip(*[iter(iterable)] * n)
 
-
 def batchify(text: str, batch_size: int, bptt: int):
-    """Given a text, batch size and bptt batchify text in the way that 
-    the recurrent state from last batch connects with the current batch for each 
-    sample with numpy arrays.
+    """Splits text into batches of size batch_size and bptt.
+    Parameters
+    ----------
+    text: str
+        Text to be batchified
+    batch_size: int
+        Number of batches
+    bptt: int
+        Number of tokens per batch
     """
-
     text = np.array(list(text))
-
-    # Work out how cleanly we can divide the dataset into bptt parts.
-    nbatch = text.size // (batch_size * bptt)
-    
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    nbatch = text.size // (batch_size * bptt)
     text = text[: nbatch * batch_size * bptt]
-
-    # Evenly divide the data across the bsz batches.
     text = text.reshape(batch_size, -1).T
-
-    bptt_per_batch = nbatch // bptt
     new_text = []
-
-    for i in range(bptt_per_batch):
-        new_text.extend(text[:, i * bptt : (i + 1) * bptt].flatten())
-
-    return "".join(np.array(new_text).flatten().tolist())
-
-
-
+    for i in range(0, nbatch+1):
+        new_text.extend(text[i * bptt : (i + 1) * bptt].flatten("F"))
+    return "".join(new_text)

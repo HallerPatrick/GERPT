@@ -178,7 +178,6 @@ def load_tokenized_dataset(
     test = batchify(test, batch_size, bptt)
     valid = batchify(valid, batch_size, bptt)
 
-
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Split in bptt")
         split_seq: List[str] = []
@@ -189,67 +188,29 @@ def load_tokenized_dataset(
         if len(split_seq[-1]) != bptt:
             split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
-    
-    train1 = split_seq[0: int(len(split_seq) * 0.5)]
-    train2 = split_seq[int(len(split_seq) * 0.5):int(len(split_seq))]
-
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        # Divide sequence into bptt
-        print("Build dataset...")
-        dataset1 = DatasetDict(
-            {
-                "train": HfDataset.from_dict({"text": train1}),
-                "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
-                "validation": HfDataset.from_dict(
-                    {"text": list(grouper(valid, bptt, " "))}
-                ),
-            }
-        )
-
-        dataset2 = DatasetDict(
-            {
-                "train": HfDataset.from_dict({"text": train2}),
-                "test": HfDataset.from_dict({"text": list()}),
-                "validation": HfDataset.from_dict(
-                    {"text": list()}
-                ),
-            }
-        )
+    dataset = DatasetDict(
+        {
+            "train": HfDataset.from_dict({"text": split_seq}),
+            "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
+            "validation": HfDataset.from_dict(
+                {"text": list(grouper(valid, bptt, " "))}
+            ),
+        }
+    )
 
     print("Tokenize dataset...")
-    tokenized_dataset1 = dataset1.map(
+    tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"]),
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
 
-    tokenized_dataset1.cleanup_cache_files()
-
-    tokenized_dataset2 = dataset2.map(
-        lambda x: dictionary.tokenize_line(x["text"]),
-        load_from_cache_file=USE_CACHE,
-        num_proc=num_proc,
-    )
-
-    tokenized_dataset2.cleanup_cache_files()
-
-    
-    tokenized_dataset_train = concatenate_datasets([tokenized_dataset1["train"], tokenized_dataset2["train"]])
-    tokenized_dataset_test = concatenate_datasets([tokenized_dataset1["test"], tokenized_dataset2["test"]])
-    tokenized_dataset_valid = concatenate_datasets([tokenized_dataset1["validation"], tokenized_dataset2["validation"]])
-
-    tokenized_dataset = DatasetDict(
-            {
-                "train": tokenized_dataset_train,
-                "test": tokenized_dataset_test,
-                "validation": tokenized_dataset_valid
-    })
+    tokenized_dataset.cleanup_cache_files()
 
     if USE_CACHE:
         try:
             print(f"Saving tokenized dataset at {hashed_file.resolve()}")
             tokenized_dataset.save_to_disk(str(hashed_file.resolve()))
-            tokenized_dataset
         except OSError:
             print("Failed to save... 😢")
 

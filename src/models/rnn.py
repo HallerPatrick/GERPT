@@ -170,7 +170,6 @@ class RNNModel(pl.LightningModule):
         return loss, decoded, target
 
     def training_step(self, batch, batch_idx):
-
         loss, decoded, target = self._step(batch)
 
         self.log("train/loss", loss)
