@@ -121,6 +121,7 @@ def batchify(text: str, batch_size: int, bptt: int):
     nbatch = text.size // (batch_size * bptt)
     text = text[: nbatch * batch_size * bptt]
     text = text.reshape(batch_size, -1).T
+    print(text)
     new_text = []
     for i in range(0, nbatch+1):
         new_text.extend(text[i * bptt : (i + 1) * bptt].flatten("F"))

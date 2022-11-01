@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 import torch
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers import AutoModel, AutoConfig
 import wrapt
 from flair.data import Corpus, Sentence, Token
 from flair.embeddings.token import TransformerWordEmbeddings
@@ -248,7 +250,7 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                 )
 
 
-def patch_flair():
+def patch_flair_lstm():
 
     import flair
     import torch
@@ -279,6 +281,25 @@ def patch_flair():
 
         return model
 
+def patch_flair_trans():
+
+    import flair
+    import torch
+
+    from src.models.rnn import RNNModel
+
+    @wrapt.patch_function_wrapper(flair.models.LanguageModel, "load_language_model")
+    def load_language_model(wrapped, instance, args, kwargs):
+        """Monkey patch load_language_model to load our RNNModel"""
+        
+        print("LOAD TRANSFORMER")
+        print(str(args[0]))
+        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(str(args[0]), vocab_file=str(args[0]) + "/vocab.txt", **kwargs)
+        config = AutoConfig.from_pretrained(str(args[0]), output_hidden_states=True, **kwargs)
+        model = AutoModel.from_pretrained(str(args[0]), config=config)
+        model.is_forward_lm = True
+        model.tokenizer = tokenizer
+        return model
 
 def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None

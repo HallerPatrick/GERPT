@@ -9,7 +9,7 @@ from torch import manual_seed
 import wandb
 from src.args import argparse_flair_train, read_config
 from src.models.flair_models import (NGMETransformerWordEmbeddings,
-                                     load_corpus, patch_flair)
+                                     load_corpus, patch_flair_lstm, patch_flair_trans)
 
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):
@@ -31,8 +31,9 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
 
     # Has to be called first, before importing flair modules
     if args.model_name == "rnn":
-        patch_flair()
-
+        patch_flair_lstm()
+    else:
+        patch_flair_trans()
     from flair.embeddings import FlairEmbeddings, StackedEmbeddings
     from flair.models import SequenceTagger, TextClassifier
     from flair.trainers import ModelTrainer
@@ -43,7 +44,8 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
         if wandb_run_id:
             pass
         elif args.wandb_run_id:
-            wandb.init(id=args.wandb_run_id, project="gerpt")
+            pass
+            # wandb.init(id=args.wandb_run_id, project="gerpt")
 
     results = {}
 
@@ -108,9 +110,12 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=[FlairEmbeddings(args.saved_model)]
                 )
             else:
-                document_embeddings = NGMETransformerWordEmbeddings(
-                    args.saved_model, vocab_file=args.saved_model + "/vocab.txt"
+                document_embeddings = DocumentRNNEmbeddings(
+                    embeddings=[FlairEmbeddings(args.saved_model)]
                 )
+                # document_embeddings = NGMETransformerWordEmbeddings(
+                #     args.saved_model, vocab_file=args.saved_model + "/vocab.txt"
+                # )
 
             task_model = TextClassifier(
                 document_embeddings=document_embeddings,

@@ -121,7 +121,14 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int,
 
     return result.evalf()
 
+def lstm_size(e, h):
+    c = 4
+    lstm_size = (
+        e * h + h * h + h + h
+    ) * 4
 
+    lstm_size = 4 * ( h * (e + h) + h + h )
+    return lstm_size
 def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, h):
     """
 

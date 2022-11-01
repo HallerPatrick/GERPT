@@ -193,6 +193,9 @@ class RNNModel(pl.LightningModule):
                 self.device
             ),
         )
+        # Back to simple one hot encoding
+        targets[targets != 0] = 1
+
         unigram_loss = self.criterion.unigram_loss(output, targets)
 
         self.log("train/unigram_loss", unigram_loss, prog_bar=True)
@@ -481,7 +484,7 @@ class RNNModel(pl.LightningModule):
                 chars = "".join(chars)
 
                 # [ngram, 1, sequence]
-                self.dictionary.ngme = "dense"
+                # self.dictionary.ngme = "dense"
                 n_gram_char_indices = self.dictionary.tokenize_line(
                     chars, id_type=torch.int64
                 )["source"].unsqueeze(dim=1)
