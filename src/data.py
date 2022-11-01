@@ -29,8 +29,11 @@ local_dataset_mapper = {
         "test": "home/tmp/halerpat/data/test.txt",
         "validation": "home/tmp/halerpat/data/valid.txt",
     },
-    "wikipedia": {
+    "wikipedia_en": {
         "args": ["wikipedia", "20220301.en"]
+    },
+    "wikipedia_en": {
+        "args": ["wikipedia", "20220301.de"]
     },
     "obw_news": {
         "train": "data/obw_news/train.txt"

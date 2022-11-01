@@ -54,6 +54,7 @@ class GenericDataModule(pl.LightningDataModule):
             collate_fn=batch_collate,
             drop_last=True,
             num_workers=self.cpus,
+            pin_memory=True
         )
 
     def val_dataloader(self):
@@ -63,6 +64,7 @@ class GenericDataModule(pl.LightningDataModule):
             collate_fn=batch_collate,
             drop_last=True,
             num_workers=self.cpus,
+            pin_memory=True
         )
 
     def test_dataloader(self):
@@ -72,6 +74,7 @@ class GenericDataModule(pl.LightningDataModule):
             collate_fn=batch_collate,
             drop_last=True,
             num_workers=self.cpus,
+            pin_memory=True
         )
 
 
@@ -125,7 +128,7 @@ def load_tokenized_dataset(
     # Check if we have a local config for local dataset
     if args[0] == "text" and args[1] in local_dataset_mapper:
         dataset = ld("text", data_files=local_dataset_mapper[args[1]])
-    elif args[0] == "wikipedia":
+    elif args[0].startswith("wikipedia"):
         dataset = ld(*local_dataset_mapper[args[0]]["args"])
     else:
         # Load the datasets from huggingface
@@ -134,19 +137,35 @@ def load_tokenized_dataset(
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Preprocess dataset...")
 
-        train = []
-        for row in tqdm(dataset["train"]):
-            train.append(row["text"])
-
-        if "test" in dataset:
-            test = process_map(get_text, dataset["test"], max_workers=num_proc)
-        else:
+        if args[0].startswith("wikipedia"):
+            train = []
             test = []
-
-        if "validation" in dataset:
-            valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
-        else:
             valid = []
+
+            wiki206 = 120000 # For english about 2x wiki103
+
+            for row in tqdm(dataset["train"]["text"][:wiki206]):
+                train.append(row)
+
+            for row in tqdm(dataset["train"]["text"][wiki206+1:wiki206+1000]):
+                test.append(row)
+
+            for row in tqdm(dataset["train"]["text"][wiki206+1001:wiki206+2000]):
+                valid.append(row)
+        else:
+            train = []
+            for row in tqdm(dataset["train"]):
+                train.append(row["text"])
+
+            if "test" in dataset:
+                test = process_map(get_text, dataset["test"], max_workers=num_proc)
+            else:
+                test = []
+
+            if "validation" in dataset:
+                valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
+            else:
+                valid = []
     
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
@@ -253,14 +272,15 @@ def load_dictionary_from_hf(
     if dictionary.max_dict_size > 0:
         dictionary = dictionary.unking()
     
-    for n_gram in range(2, dictionary.ngram + 1):
-        start_idx = dictionary.add_ngram("<start>", n_gram)
-        pad_idx = dictionary.add_ngram("<pad>", n_gram)
-        unk_idx = dictionary.add_ngram("<unk>", n_gram)
-        dictionary.add_ngram(" "*n_gram, n_gram)
+    if ngme == "dense":
+        for n_gram in range(2, dictionary.ngram + 1):
+            start_idx = dictionary.add_ngram("<start>", n_gram)
+            pad_idx = dictionary.add_ngram("<pad>", n_gram)
+            unk_idx = dictionary.add_ngram("<unk>", n_gram)
+            dictionary.add_ngram(" "*n_gram, n_gram)
 
-        if n_gram not in dictionary._marker_tokens:
-            dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
+            if n_gram not in dictionary._marker_tokens:
+                dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
 
     # Check if all unigrams were indexed first and all idx are consecutive    
     assert list(dictionary.ngram2idx2word[1].keys()) == list(range(0, len(dictionary.ngram2idx2word[1])))
@@ -278,6 +298,12 @@ def populate_sparse_dict(dictionary, ngrams: int):
     for token in e.lm.dictionary.item2idx_not_encoded:
         for n_gram in range(1, ngrams + 1):
             dictionary.add_ngram(token, n_gram)
+
+    for n_gram in range(1, ngrams + 1):
+        dictionary.add_ngram("<start>", n_gram)
+        dictionary.add_ngram("<pad>", n_gram)
+        dictionary.add_ngram("<unk>", n_gram)
+
 
 
 def collect_ngrams(line, n, dictionary):

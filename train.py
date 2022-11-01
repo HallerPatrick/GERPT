@@ -49,14 +49,15 @@ if __name__ == "__main__":
     else:
         # --- Dataloading & Tokenization ---
         tokenized_dataset, dictionary = load_tokenized_dataset(
+            args.ngme,
             args.bptt,
             args.ngram,
+            args.batch_size,
             args.max_dict_size,
             args.unk_threshold,
             args.fallback,
             args.cpus,
             args.is_forward,
-            USE_CACHE,
             *args.data.split("/"),
             # cache_dir="/home/tmp/halerpat/datasets"
         )
@@ -158,7 +159,6 @@ if __name__ == "__main__":
         vocab_file = dictionary.save_vocabulary(
             "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
         )
-        print(vocab_file)
         
         # Save HF tokenizer
         NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))

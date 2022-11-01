@@ -126,7 +126,7 @@ class TransformerLightningModule(BasePLModel):
                 # Use last 200 chars as sequence for new input
                 inp = (
                     self.dictionary.tokenize_line(
-                        generated_output[-200:],
+                        generated_output[-200:], id_type=torch.int64
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
