@@ -87,14 +87,16 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
                     embeddings=embds
                 )
             else:
-                embeddings = NGMETransformerWordEmbeddings(
-                    args.saved_model,
-                    vocab_file=args.saved_model + "/vocab.txt",
-                    layers="all",
-                    subtoken_pooling="first",
-                    fine_tune=False,
-                    use_context=False,
-                )
+
+                embeddings = FlairEmbeddings(args.saved_model)
+                # embeddings = NGMETransformerWordEmbeddings(
+                #     args.saved_model,
+                #     vocab_file=args.saved_model + "/vocab.txt",
+                #     layers="all",
+                #     subtoken_pooling="first",
+                #     fine_tune=False,
+                #     use_context=False,
+                # )
 
             task_model = SequenceTagger(
                 hidden_size=settings.hidden_size,

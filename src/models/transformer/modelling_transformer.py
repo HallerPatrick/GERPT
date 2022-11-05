@@ -77,6 +77,7 @@ class TransformerTransformer(PreTrainedModel):
                 self.src_mask = mask
         else:
             self.src_mask = None
+
         src = self.encoder(src) * math.sqrt(self.embedding_size)
         src = self.pos_encoder(src)
         output = self.transformer_encoder(src, self.src_mask)
@@ -95,7 +96,7 @@ class TransformerTransformer(PreTrainedModel):
                 self.src_mask = mask
         else:
             self.src_mask = None
-
+        
         # in: [ngram, seq, batch]
 
         src = self.encoder(src)
@@ -146,7 +147,8 @@ class TransformerTransformer(PreTrainedModel):
         # hidden = self.init_hidden(len(chunks[0]))
 
         batches: List[torch.Tensor] = []
-
+    
+        print(chunks)
         # push each chunk through the RNN language model
         for chunk in chunks:
             len_longest_chunk: int = len(max(chunk, key=len))
@@ -174,9 +176,12 @@ class TransformerTransformer(PreTrainedModel):
 
         output_parts = []
         for batch in batches:
-            # [ngram, sequence, batch_size]
-            batch = batch.transpose(1, 2).to(flair.device)
-
+            
+            # batch: [batch, ngram, seq]
+            batch = torch.permute(batch, ( 1, 2, 0 )).to(flair.device)
+            # batch: [batch, sequence, batch_size]
+        
+            # hidden: [seq_len, ngram, hidden]
             hidden = self.forward_hidden(batch)
 
             output_parts.append(hidden)
