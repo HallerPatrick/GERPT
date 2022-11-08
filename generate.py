@@ -61,8 +61,8 @@ def analyze(model, seed_text: str, target: str):
                 # .unsqueeze(dim=2)
                 .to(model.device)
             )
-            # print(targets)
-            # print(targets.size())
+
+            target_tokens = targets[:, -1]
 
             targets = soft_n_hot(targets, len(model.dictionary), "exp")
 
@@ -100,17 +100,14 @@ def analyze(model, seed_text: str, target: str):
                 print(f"Entropy: {entropy}")
 
                 target_idx = torch.argmax(out)
-                # ngram_idx = model.dictionary.ngram_indexes[n][ngram_idx]
+                total_output = F.log_softmax(output[-1], dim=0).detach()
 
-                # target_idx = model.dictionary.word2idx[token]
-                # target_idx = model.dictionary.ngram_indexes[n].index(target_idx)
-                #
-                idx_to_pred = [(idx, pred.item()) for idx, pred in enumerate(out)]
+                idx_to_pred = [(idx, pred.item()) for idx, pred in enumerate(total_output)]
                 idx_to_pred.sort(key=lambda x: x[1], reverse=True)
                 
                 r = None
                 for rank, pred in enumerate(idx_to_pred):
-                    if target_idx == pred[0]:
+                    if target_tokens[n-1] == pred[0]:
                         r = rank + 1
                         print(f"Rank of {n}-gram '{c}': {rank}")
                         break
@@ -130,7 +127,7 @@ def analyze(model, seed_text: str, target: str):
             current_text = current_text + c
 
             inp = (
-                model.dictionary.tokenize_line(list(current_text))["source"]
+                model.dictionary.tokenize_line(list(current_text), id_type=torch.int64)["source"]
                 .unsqueeze(dim=2)
                 .to(model.device)
             )
