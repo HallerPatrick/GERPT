@@ -144,11 +144,8 @@ class TransformerTransformer(PreTrainedModel):
             [text[splice_begin:longest_padded_str] for text in padded_strings]
         )
 
-        # hidden = self.init_hidden(len(chunks[0]))
-
         batches: List[torch.Tensor] = []
     
-        print(chunks)
         # push each chunk through the RNN language model
         for chunk in chunks:
             len_longest_chunk: int = len(max(chunk, key=len))
@@ -165,14 +162,10 @@ class TransformerTransformer(PreTrainedModel):
                     chars, return_attention_mask=False, return_tensors="pt"
                 )["input_ids"]
 
-                # n_gram_char_indices = self.dictionary.tokenize_line(
-                #     chars, id_type=torch.int64
-                # )["source"].unsqueeze(dim=1)
-
                 sequences_as_char_indices.append(n_gram_char_indices)
 
             # [ngram, batch_size, sequence]
-            batches.append(torch.cat(sequences_as_char_indices, dim=1))
+            batches.append(torch.cat(sequences_as_char_indices, dim=0))
 
         output_parts = []
         for batch in batches:
@@ -183,7 +176,7 @@ class TransformerTransformer(PreTrainedModel):
         
             # hidden: [seq_len, ngram, hidden]
             hidden = self.forward_hidden(batch)
-
+            
             output_parts.append(hidden)
 
         # concatenate all chunks to make final output

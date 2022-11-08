@@ -42,10 +42,15 @@ class Dictionary:
         self.current_max_idx += 1
 
     def get_all_tokens(self):
-
         for ngram in range(1, self.ngram+1):
             for idx, token in self.ngram2idx2word[ngram].items():
                 yield idx, token
+
+    def get_ngram_order(self, idx) -> int:
+        for ngram, idx2word in self.ngram2idx2word.items():
+            if idx in idx2word:
+                return ngram
+        return -1
 
     def add_ngram(self, word, ngram: int):
 
@@ -90,7 +95,6 @@ class Dictionary:
     def __len__(self):
         return self.current_max_idx
 
-
     def get_item_for_index(self, idx):
         for idxs in self.ngram2idx2word.values():
             if idx in idxs:
@@ -126,22 +130,23 @@ class Dictionary:
                 filename_prefix + "-" if filename_prefix else ""
             ) + save_directory
         with open(vocab_file, "w", encoding="utf-8") as writer:
-            writer.write(str(ngram) + "\n")
+            writer.write(str(ngram) + " " + self.ngme + "\n")
+            
+            for ngram in range(1, self.ngram+1):
+                for idx, token in self.ngram2idx2word[ngram].items():
+                    if index != idx:
+                        print(
+                            f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
+                            " Please check that the vocabulary is not corrupted!"
+                        )
+                        index = idx
 
-            for token_index, token in self.get_all_tokens():
-                if index != token_index:
-                    print(
-                        f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
-                        " Please check that the vocabulary is not corrupted!"
-                    )
-                    index = token_index
+                    # TODO:Is this sound?
+                    if "\n" in token:
+                        token = token.replace("\n", "\\n")
 
-                # TODO:Is this sound?
-                if "\n" in token:
-                    token = token.replace("\n", "\\n")
-
-                writer.write(token + "\n")
-                index += 1
+                    writer.write(str(ngram) + " " + token + "\n")
+                    index += 1
         return vocab_file
 
     def tokenize_line(self, line: List[str], id_type=torch.int16) -> dict:

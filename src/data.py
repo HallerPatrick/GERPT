@@ -32,7 +32,7 @@ local_dataset_mapper = {
     "wikipedia_en": {
         "args": ["wikipedia", "20220301.en"]
     },
-    "wikipedia_en": {
+    "wikipedia_de": {
         "args": ["wikipedia", "20220301.de"]
     },
     "obw_news": {

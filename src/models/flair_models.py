@@ -14,7 +14,7 @@ from flair.embeddings.token import TransformerWordEmbeddings
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
     def __init__(
         self,
-        model: str = "bert-base-uncased",
+        model,
         is_document_embedding: bool = True,
         allow_long_sentences: bool = True,
         **kwargs,
@@ -299,6 +299,7 @@ def patch_flair_trans():
         model = AutoModel.from_pretrained(str(args[0]), config=config)
         model.is_forward_lm = True
         model.tokenizer = tokenizer
+        model.to(flair.device)
         return model
 
 def load_corpus(

@@ -250,6 +250,7 @@ class RNNModel(pl.LightningModule):
                     output = F.softmax(output, dim=0).detach()
                     # Just get highest confidence
                     ngram_idx = torch.argmax(output)
+                    word = self.dictionary.get_item_for_index(ngram_idx.item())
                 else:
                     output = F.log_softmax(output, dim=0)
 
@@ -258,8 +259,21 @@ class RNNModel(pl.LightningModule):
                     # multinomial over all tokens
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
 
-                # Get ngram word
-                word = self.dictionary.get_item_for_index(ngram_idx.item())
+
+                    ngram_order = self.dictionary.get_ngram_order(ngram_idx.item())
+                    ngrams_idxs = [ngram_idx]
+                    if self.dictionary.ngme == "sparse":
+                        for i in range(1, ngram_order):
+                            ngram_subset = torch.index_select(
+                                word_weights,
+                                0,
+                                torch.tensor(list(self.dictionary.ngram2idx2word[i].keys()))
+                            )
+
+                            ngrams_idxs.append(torch.multinomial(ngram_subset, 1)[0])
+
+
+                    word = "".join(list(reversed([self.dictionary.get_item_for_index(idx.item()) for idx in ngrams_idxs])))
 
                 if word == "<pad>":
                     word = " "
@@ -496,10 +510,13 @@ class RNNModel(pl.LightningModule):
 
         output_parts = []
         for batch in batches:
-            # [ngram, sequence, batch_size]
+            # batch: [ngram, batch, seq]
             batch = batch.transpose(1, 2).to(flair.device)
 
+            # batch: [ngram, sequence, batch_size]
             _, rnn_output, hidden = self.forward2(batch, hidden)
+
+            # rnn_output: [seq_len, batch, hidden]
 
             output_parts.append(rnn_output)
 
