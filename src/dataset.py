@@ -114,6 +114,7 @@ def load_tokenized_dataset(
     ngme: str,
     bptt: int,
     ngram: int,
+    model_type: str, 
     batch_size: int,
     max_dict_size: int,
     unk_threshold: int,
@@ -169,7 +170,7 @@ def load_tokenized_dataset(
     
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
-            ngme, train, ngram, max_dict_size, unk_threshold, fallback, num_proc
+            ngme, train, ngram, model_type, max_dict_size, unk_threshold, fallback, num_proc
         )
 
     sample = 1
@@ -178,6 +179,12 @@ def load_tokenized_dataset(
         with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
             print(f"Subsample to {sample}...")
             train = train[0 : int(len(train) * sample)]
+
+    # if model_type == "transformer":
+    #     print("Adding 'eod' token to end of documents")
+    #     train = [row + "<eod>" for row in train]
+    #     test = [row + "<eod>" for row in test]
+    #     valid = [row + "<eod>" for row in valid]
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Join all text rows...")
@@ -219,7 +226,7 @@ def load_tokenized_dataset(
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
-        lambda x: dictionary.tokenize_line(x["text"]),
+        lambda x: dictionary.tokenize_line(x["text"], check_special_tokens=True),
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
@@ -242,6 +249,7 @@ def load_dictionary_from_hf(
     ngme: str,
     source: List[str],
     ngrams: int,
+    model_type: str,
     max_dict_size: int,
     unk_threshold: int,
     fallback: bool,
@@ -263,7 +271,7 @@ def load_dictionary_from_hf(
 
     
     if ngme == "sparse":
-        populate_sparse_dict(dictionary, ngrams)
+        populate_sparse_dict(dictionary, ngrams, model_type)
     elif ngme == "dense":
         populate_dense_dict(dictionary, ngrams, source, num_workers)
     else:
@@ -279,6 +287,9 @@ def load_dictionary_from_hf(
             unk_idx = dictionary.add_ngram("<unk>", n_gram)
             dictionary.add_ngram(" "*n_gram, n_gram)
 
+            if model_type == "transformer":
+                eod_idx = dictionary.add_ngram("<eod>", n_gram)
+
             if n_gram not in dictionary._marker_tokens:
                 dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
 
@@ -289,7 +300,7 @@ def load_dictionary_from_hf(
 
     return dictionary
 
-def populate_sparse_dict(dictionary, ngrams: int):
+def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
     """Build dictionary based on Akbik et. al character LM dict"""
     e = FlairEmbeddings("news-forward")
 
@@ -303,6 +314,9 @@ def populate_sparse_dict(dictionary, ngrams: int):
         dictionary.add_ngram("<start>", n_gram)
         dictionary.add_ngram("<pad>", n_gram)
         dictionary.add_ngram("<unk>", n_gram)
+
+        if model_type == "transformer":
+            eod_idx = dictionary.add_ngram("<eod>", n_gram)
 
 
 

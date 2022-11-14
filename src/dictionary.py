@@ -1,3 +1,4 @@
+from functools import lru_cache
 import os
 import sys
 import copy
@@ -149,16 +150,20 @@ class Dictionary:
                     index += 1
         return vocab_file
 
-    def tokenize_line(self, line: List[str], id_type=torch.int16) -> dict:
+    def tokenize_line(self, line: List[str], id_type=torch.int16, check_special_tokens: bool = False) -> dict:
         if self.ngme == "dense":
-            return self._tokenize_line_dense(line, id_type)
+            return self._tokenize_line_dense(line, id_type, check_special_tokens)
         elif self.ngme == "sparse":
-            return self._tokenize_line_sparse(line, id_type)
+            return self._tokenize_line_sparse(line, id_type, check_special_tokens)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
+    
+    @lru_cache
+    def _special_tokens(self) -> List[str]:
+        return [self.ngram2idx2word[1][special_token_id] for special_token_id in self._marker_tokens[1]]
 
 
-    def _tokenize_line_dense(self, line: List[str], id_type):
+    def _tokenize_line_dense(self, line: List[str], id_type, check_special_tokens: bool = False):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -167,7 +172,16 @@ class Dictionary:
 
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
-            words.extend(list(line))
+            if check_special_tokens:
+
+                if isinstance(line, list):
+                    line = "".join(line)
+
+                line = line.replace("<eod>", "Ġ")
+                words.extend(list(line))
+                words[words.index("Ġ")] = "<eod>"
+            else:
+                words.extend(list(line))
 
             ids = []
             length = 0
@@ -201,7 +215,7 @@ class Dictionary:
 
         return {"text": line, "source": sequence, "target": target}
 
-    def _tokenize_line_sparse(self, line: List[str], id_type):
+    def _tokenize_line_sparse(self, line: List[str], id_type, check_special_tokens: bool = False):
         """
 
         line: List of chars
@@ -222,6 +236,17 @@ class Dictionary:
 
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
+
+            if check_special_tokens:
+
+                if isinstance(line, list):
+                    line = "".join(line)
+
+                line = line.replace("<eod>", "Ġ")
+                words.extend(list(line))
+                words[words.index("Ġ")] = "<eod>"
+            else:
+                words.extend(list(line))
             words.extend(list(line))
 
             ids = []
@@ -300,7 +325,8 @@ class Dictionary:
 
 
         for marker in self.get_marker_tokens():
-            if marker < len(normed_weights):
+            print(self.get_item_for_index(marker))
+            if marker < len(normed_weights) and self.get_item_for_index(marker) != "<eod>":
                 normed_weights[marker] = 0
 
         return normed_weights

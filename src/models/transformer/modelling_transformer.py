@@ -159,7 +159,7 @@ class TransformerTransformer(PreTrainedModel):
                 # [ngram, 1, sequence]
                 # self.dictionary.ngme = "dense"
                 n_gram_char_indices = self.tokenizer(
-                    chars, return_attention_mask=False, return_tensors="pt"
+                    chars, return_tensors="pt"
                 )["input_ids"]
 
                 sequences_as_char_indices.append(n_gram_char_indices)

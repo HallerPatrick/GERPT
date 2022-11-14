@@ -32,13 +32,13 @@ def load_vocab(vocab_file):
 
     for index, token in enumerate(tokens):
         token = token.rstrip("\n")
-        
+
         ngram = int(token[0])
         token = token[2:]
 
         if "\\n" in token:
             token = token.replace("\\n", "\n")
-        
+
         if ngram not in vocab:
             vocab[ngram] = {token: index}
         else:
@@ -54,11 +54,11 @@ class NGMETokenizer(PreTrainedTokenizer):
     model_input_names = ["input_ids"]
 
     def __init__(
-            self,
-            vocab_file: Optional[str] = None,
-            unk_token="<unk>",
-            pad_token="<pad>",
-            **kwargs,
+        self,
+        vocab_file: Optional[str] = None,
+        unk_token="<unk>",
+        pad_token="<pad>",
+        **kwargs,
     ):
 
         unk_token = AddedToken(unk_token) if isinstance(unk_token, str) else unk_token
@@ -76,17 +76,27 @@ class NGMETokenizer(PreTrainedTokenizer):
             for token in self.vocab[ngram]:
                 self.token_to_ngram[token] = ngram
                 self.idx_to_ngram[self.vocab[ngram][token]] = ngram
-                
+
                 if ngram not in self.decoder:
                     self.decoder[ngram] = {self.vocab[ngram][token]: token}
                 else:
-                    self.decoder[ngram][self.vocab[ngram][token]] =  token
+                    self.decoder[ngram][self.vocab[ngram][token]] = token
+
+        # if "<eod>" in self.token_to_ngram:
+        #     self.eod_id = self.vocab[1]["<eod>"]
 
         super().__init__(pad_token=pad_token, unk_token=unk_token, **kwargs)
 
         # self.add_special_tokens({"pad_token": "<pad>"})
 
         # self.pad_token_id = 0
+    
+    @property
+    def eod_id(self):
+        print(self.vocab[1])
+        if "<eod>" in self.vocab[1]:
+            return self.vocab[1]["<eod>"]
+
 
     @property
     def vocab_size(self):
@@ -102,13 +112,25 @@ class NGMETokenizer(PreTrainedTokenizer):
         else:
             raise ValueError(f"NGME approach: {self.ngme_type} is unknown")
 
-
     def _tokenize_dense(self, text, **kwargs):
         ngram_sequences = []
 
         for n in range(1, self.ngrams + 1):
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(text))
+            
+            if "check_special_tokens" in kwargs and kwargs["check_special_tokens"]:
+
+
+                if isinstance(text, list):
+                    text = "".join(text)
+
+                text = text.replace("<eod>", "Ġ")
+                words.extend(list(text))
+                words[words.index("Ġ")] = "<eod>"
+            else:
+                words.extend(list(text))
+
 
             tokens = []
 
@@ -127,11 +149,22 @@ class NGMETokenizer(PreTrainedTokenizer):
 
         for n in range(1, self.ngrams + 1):
             words = ["<start>" for _ in range(1, n)]
-            words.extend(list(text))
+
+            if "check_special_tokens" in kwargs and kwargs["check_special_tokens"]:
+
+                if isinstance(text, list):
+                    text = "".join(text)
+
+                text = text.replace("<eod>", "Ġ")
+                words.extend(list(text))
+                words[words.index("Ġ")] = "<eod>"
+            else:
+                words.extend(list(text))
+
+            words = words[:len(text)]
             ngram_sequences.append(words)
 
         return ngram_sequences
-
 
     def get_token_ngram_order(self, token):
         if token in self.token_to_ngram:
@@ -147,18 +180,17 @@ class NGMETokenizer(PreTrainedTokenizer):
     def _convert_id_to_token(self, index, ngram):
         """Converts an index (integer) in a token (str) using the vocab."""
         return self.decoder[ngram].get(index)
-    
+
     def _convert_ids_to_tokens(self, ids: List[int], ngram: int):
         return [self._convert_id_to_token(idx, ngram) for idx in ids]
 
     def convert_ids_to_tokens(self, ids: List[List[int]]):
-        return [self._convert_ids_to_tokens(idxs, n+1) for n, idxs in enumerate(ids)]
+        return [self._convert_ids_to_tokens(idxs, n + 1) for n, idxs in enumerate(ids)]
 
     def convert_tokens_to_ids(
-            self, tokens: Union[str, List[str]]
+        self, tokens: Union[str, List[str]]
     ) -> Union[int, List[int]]:
 
-        
         if isinstance(tokens, int) or isinstance(tokens, str):
             # Check if we can find ngram
             ngram = self.get_token_ngram_order(tokens)
@@ -172,28 +204,28 @@ class NGMETokenizer(PreTrainedTokenizer):
             ids = []
 
             for token in n_gram_seq:
-                ids.append(self._convert_token_to_id(token, n+1))
+                ids.append(self._convert_token_to_id(token, n + 1))
 
             n_gram_ids.append(ids)
-        
+
         print(n_gram_ids)
         return n_gram_ids
 
     def pad(
-            self,
-            encoded_inputs: Union[
-                BatchEncoding,
-                List[BatchEncoding],
-                Dict[str, EncodedInput],
-                Dict[str, List[EncodedInput]],
-                List[Dict[str, EncodedInput]],
-            ],
-            padding: Union[bool, str, PaddingStrategy] = True,
-            max_length: Optional[int] = None,
-            pad_to_multiple_of: Optional[int] = None,
-            return_attention_mask: Optional[bool] = None,
-            return_tensors: Optional[Union[str, TensorType]] = None,
-            verbose: bool = True,
+        self,
+        encoded_inputs: Union[
+            BatchEncoding,
+            List[BatchEncoding],
+            Dict[str, EncodedInput],
+            Dict[str, List[EncodedInput]],
+            List[Dict[str, EncodedInput]],
+        ],
+        padding: Union[bool, str, PaddingStrategy] = True,
+        max_length: Optional[int] = None,
+        pad_to_multiple_of: Optional[int] = None,
+        return_attention_mask: Optional[bool] = None,
+        return_tensors: Optional[Union[str, TensorType]] = None,
+        verbose: bool = True,
     ) -> BatchEncoding:
         """
         Pad a single encoded input or a batch of encoded inputs up to predefined length or to the max sequence length
@@ -253,7 +285,7 @@ class NGMETokenizer(PreTrainedTokenizer):
         # If we have a list of dicts, let's convert it in a dict of lists
         # We do this to allow using this method as a collate_fn function in PyTorch Dataloader
         if isinstance(encoded_inputs, (list, tuple)) and isinstance(
-                encoded_inputs[0], (dict, BatchEncoding)
+            encoded_inputs[0], (dict, BatchEncoding)
         ):
             encoded_inputs = {
                 key: [example[key] for example in encoded_inputs]
@@ -336,12 +368,12 @@ class NGMETokenizer(PreTrainedTokenizer):
         return BatchEncoding(batch_outputs, tensor_type=return_tensors)
 
     def _pad(
-            self,
-            encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
-            max_length: Optional[int] = None,
-            padding_strategy: PaddingStrategy = ...,
-            pad_to_multiple_of: Optional[int] = None,
-            return_attention_mask: Optional[bool] = None,
+        self,
+        encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
+        max_length: Optional[int] = None,
+        padding_strategy: PaddingStrategy = ...,
+        pad_to_multiple_of: Optional[int] = None,
+        return_attention_mask: Optional[bool] = None,
     ) -> dict:
 
         """
@@ -367,79 +399,44 @@ class NGMETokenizer(PreTrainedTokenizer):
             return_attention_mask:
                 (optional) Set to False to avoid returning attention mask (default: set to model specifics)
         """
-        # Load from model defaults
-        if return_attention_mask is None:
-            return_attention_mask = "attention_mask" in self.model_input_names
 
-        required_input = encoded_inputs[self.model_input_names[0]]
-        print(self.model_input_names)
-        print(encoded_inputs)
         required_input_first = encoded_inputs[self.model_input_names[0]][0]
 
         if padding_strategy == PaddingStrategy.LONGEST:
             max_length = len(required_input_first)
 
         if (
-                max_length is not None
-                and pad_to_multiple_of is not None
-                and (max_length % pad_to_multiple_of != 0)
+            max_length is not None
+            and pad_to_multiple_of is not None
+            and (max_length % pad_to_multiple_of != 0)
         ):
             max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
 
         needs_to_be_padded = (
-                padding_strategy != PaddingStrategy.DO_NOT_PAD
-                and len(required_input_first) != max_length
+            padding_strategy != PaddingStrategy.DO_NOT_PAD
+            and len(required_input_first) != max_length
         )
-
-        # Initialize attention mask if not present.
-        if return_attention_mask and "attention_mask" not in encoded_inputs:
-            encoded_inputs["attention_mask"] = [1] * len(required_input_first)
 
         if needs_to_be_padded:
             difference = max_length - len(required_input_first)
 
             if self.padding_side == "right":
-                if return_attention_mask:
-                    encoded_inputs["attention_mask"] = (
-                            encoded_inputs["attention_mask"] + [0] * difference
-                    )
-                if "token_type_ids" in encoded_inputs:
-                    encoded_inputs["token_type_ids"] = (
-                            encoded_inputs["token_type_ids"]
-                            + [self.pad_token_type_id] * difference
-                    )
-                if "special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["special_tokens_mask"] = (
-                            encoded_inputs["special_tokens_mask"] + [1] * difference
-                    )
                 for n, n_seq in enumerate(encoded_inputs[self.model_input_names[0]]):
                     encoded_inputs[self.model_input_names[0]][n] = (
-                            n_seq + [self.pad_token_id] * difference
+                        n_seq + [self.pad_token_id] * difference
                     )
             elif self.padding_side == "left":
-                if return_attention_mask:
-                    encoded_inputs["attention_mask"] = [
-                                                           0
-                                                       ] * difference + encoded_inputs["attention_mask"]
-                if "token_type_ids" in encoded_inputs:
-                    encoded_inputs["token_type_ids"] = [
-                                                           self.pad_token_type_id
-                                                       ] * difference + encoded_inputs["token_type_ids"]
-                if "special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["special_tokens_mask"] = [
-                                                                1
-                                                            ] * difference + encoded_inputs["special_tokens_mask"]
                 for n, n_seq in enumerate(encoded_inputs[self.model_input_names[0]]):
                     encoded_inputs[self.model_input_names[0]][n] = [
-                                                                       self.pad_token_id
-                                                                   ] * difference + n_seq
+                        self.pad_token_id
+                    ] * difference + n_seq
             else:
                 raise ValueError("Invalid padding strategy:" + str(self.padding_side))
 
         return encoded_inputs
 
     def save_vocabulary(
-            self, save_directory: str, filename_prefix: Optional[str] = None
+        self, save_directory: str, filename_prefix: Optional[str] = None
     ) -> Tuple[str]:
 
         if isinstance(save_directory, Path):
@@ -458,7 +455,7 @@ class NGMETokenizer(PreTrainedTokenizer):
         with open(vocab_file, "w", encoding="utf-8") as writer:
             writer.write(str(self.ngrams) + " " + self.ngme_type + "\n")
 
-            for ngram in range(1, self.ngrams+1):
+            for ngram in range(1, self.ngrams + 1):
                 for idx, token in self.decoder[ngram].items():
                     if index != idx:
                         print(
@@ -472,4 +469,4 @@ class NGMETokenizer(PreTrainedTokenizer):
                     print(repr(token))
                     writer.write(str(ngram) + " " + token + "\n")
                     index += 1
-        return vocab_file, 
+        return (vocab_file,)
