@@ -208,7 +208,6 @@ class NGMETokenizer(PreTrainedTokenizer):
 
             n_gram_ids.append(ids)
 
-        print(n_gram_ids)
         return n_gram_ids
 
     def pad(
@@ -466,7 +465,7 @@ class NGMETokenizer(PreTrainedTokenizer):
 
                     if "\n" in token:
                         token = token.replace("\n", "\\n")
-                    print(repr(token))
+
                     writer.write(str(ngram) + " " + token + "\n")
                     index += 1
         return (vocab_file,)

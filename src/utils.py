@@ -49,11 +49,6 @@ def display_text(t, dictionary, ngram):
     print()
 
 
-# def display_input_n_gram_sequences(input, dictionary):
-#     for i in range(input.size()[0]):
-#         print(f"{i + 1}-gram")
-#         display_text(dictionary, input[i])
-
 
 def display_prediction(prediction, dictionary):
     prediction = F.softmax(prediction.view(-1), dim=0)
@@ -81,45 +76,28 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int,
 
     """
 
-    encoder_size = d * e + e
-
-    # attention head
-    self_attn_in = e * (3 * e) + (3 * e)
-    self_attn_out = e * e + e
-
-    l_layer1 = e * hid + hid
-    l_layer2 = e * hid + e
-
-    norm1_2 = 2 * (2 * e)
-
-    transformer_encoder_size = (
-        self_attn_in
-        + self_attn_out
-        + l_layer1
-        + l_layer2
-        + norm1_2
-    ) * l
-
-    decoder_size = d * hid + d
-
-    print(decoder_size)
-
-    # total_size = encoder_size + transformer_encoder_size + decoder_size
-
     hid = Symbol("hid")
 
     result = solve(
-        encoder_size
-        + transformer_encoder_size
-        + decoder_size
-        - total_size,
-        hid,
+        ( d * e + e ) # encoder
+        + l * (
+            (e * (3 * e) + (3 * e)) #atnn_in
+            + (e * e + e) #atnn_out
+            + (e * hid + hid) #layer1
+            + (e * hid + e) #layer2
+            + (2 * (2 * e)) #norm
         )
+        + (d * e + e) # decoder
+        - total_size,
+        hid
+
+    )
 
     if isinstance(result, list):
         return result[0].evalf()
 
     return result.evalf()
+
 
 def lstm_size(e, h):
     c = 4
@@ -129,6 +107,8 @@ def lstm_size(e, h):
 
     lstm_size = 4 * ( h * (e + h) + h + h )
     return lstm_size
+
+
 def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, h):
     """
 

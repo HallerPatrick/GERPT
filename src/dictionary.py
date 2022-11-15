@@ -185,7 +185,6 @@ class Dictionary:
 
             ids = []
             length = 0
-            # print(f"Processed line: {words}")
             for i, word in enumerate(nltk.ngrams(words, n)):
 
                 if "<start>" in word:
@@ -325,7 +324,6 @@ class Dictionary:
 
 
         for marker in self.get_marker_tokens():
-            print(self.get_item_for_index(marker))
             if marker < len(normed_weights) and self.get_item_for_index(marker) != "<eod>":
                 normed_weights[marker] = 0
 
