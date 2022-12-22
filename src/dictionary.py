@@ -1,4 +1,5 @@
 from functools import lru_cache
+import itertools
 import os
 import sys
 import copy
@@ -10,6 +11,8 @@ from collections import defaultdict, Counter
 
 
 import torch
+
+from src import utils
 
 # from src.utils import display_input_n_gram_sequences, display_text
 
@@ -172,16 +175,7 @@ class Dictionary:
 
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
-            if check_special_tokens:
-
-                if isinstance(line, list):
-                    line = "".join(line)
-
-                line = line.replace("<eod>", "Ġ")
-                words.extend(list(line))
-                words[words.index("Ġ")] = "<eod>"
-            else:
-                words.extend(list(line))
+            words.extend(list(line))
 
             ids = []
             length = 0
@@ -196,8 +190,9 @@ class Dictionary:
                     ids.append(self.ngram2word2idx[n]["<unk>"])
                 length += 1
 
-            seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
-            length = seq.size(1)
+            seq = ids #torch.tensor(ids).type(torch.int64)
+
+            length = len(seq)
 
             if length < min_length:
                 min_length = length
@@ -209,8 +204,9 @@ class Dictionary:
                 s = seq
             ngram_target_sequences.append(s)
 
-        sequence = torch.cat([t[:min_length] for t in ngram_sequences])
-        target = torch.cat([t[:min_length] for t in ngram_target_sequences])
+        
+        sequence = torch.tensor([utils.pack(n_grams) for n_grams in zip(*[t[:min_length] for t in ngram_sequences])])
+        target = torch.tensor([utils.pack(n_grams) for n_grams in zip(*[t[:min_length] for t in ngram_target_sequences])])
 
         return {"text": line, "source": sequence, "target": target}
 
@@ -285,7 +281,7 @@ class Dictionary:
 
         return {"source": sequence, "target": target}
 
-    def shift_left(self, t: torch.Tensor, shifts) -> torch.Tensor:
+    def shift_left(self, t: List, shifts) -> torch.Tensor:
         """
         "hello world"
         1. "h"   "e"   "l"   "l"   "o"
@@ -296,6 +292,7 @@ class Dictionary:
         3. "lo " "o w" " wo"       :offset 3
         Shifts have to be applied ngram-time for correct target matching
         """
+        t = torch.tensor(t)
         st = torch.roll(t, -shifts, 1)
 
         st[0][-1] = self.ngram2word2idx[1]["<pad>"]

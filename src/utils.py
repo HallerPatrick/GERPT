@@ -12,6 +12,21 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sympy import *
 from sympy.solvers import solve
 
+def pack(integer_list):
+    """Pack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
+    packed_integer = 0
+    for i, integer in enumerate(integer_list):
+        packed_integer |= integer << (16 * i)
+    return packed_integer
+
+def unpack(packed_integer):
+    """Unpack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
+    integer_list = []
+    while packed_integer > 0:
+        integer = packed_integer & (2**16 - 1)
+        packed_integer >>= 16
+        integer_list.append(integer)
+    return integer_list
     
 
 class TimePerEpochCallback(Callback):

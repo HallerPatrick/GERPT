@@ -180,12 +180,6 @@ def load_tokenized_dataset(
             print(f"Subsample to {sample}...")
             train = train[0 : int(len(train) * sample)]
 
-    # if model_type == "transformer":
-    #     print("Adding 'eod' token to end of documents")
-    #     train = [row + "<eod>" for row in train]
-    #     test = [row + "<eod>" for row in test]
-    #     valid = [row + "<eod>" for row in valid]
-
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         print("Join all text rows...")
         train = "\n".join(train)

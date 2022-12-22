@@ -5,6 +5,9 @@ from math import log
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
+import functorch
+
+from src import utils
 
 n_dists = {
     0: [1],
@@ -22,14 +25,22 @@ strats = {
 
 
 def n_hot(t, num_clases):
-    shape = list(t.size())[1:]
+    shape = list(t.size())
 
     shape.append(num_clases)
     ret = torch.zeros(shape).to(t.device)
+    
+    ts = []
+    for i in range(t.size(1)):
+        a = torch.tensor([utils.unpack(x) for x in t[:, i]]).unsqueeze(dim=0)
+        ts.append(a)
 
+    ts = torch.cat(ts, dim=0)
+    
+    # seq: [seq, btx]
     # Expect that first dimension is for all n-grams
-    for seq in t:
-        ret.scatter_(-1, seq.unsqueeze(-1), 1)
+    for i in range(ts.size(2)):
+        ret.scatter_(-1, ts[:,:,i].t().unsqueeze(-1), 1)
 
     return ret
 
@@ -50,7 +61,7 @@ def n_dist(n: int, strategy: str) -> List[float]:
 def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_ppl=False):
     # soft_dist = 1 / input.size(0)
 
-    shape = list(input.size())[1:]
+    shape = list(input.size())
 
     shape.append(num_classes)
 
@@ -61,11 +72,15 @@ def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_p
     else:
         soft_labels = soft_dist(input.size()[0])
 
-    for i, t in enumerate(input):
-        if unigram_ppl and i == 0:
-            ret.scatter_(-1, t.unsqueeze(-1), 1)
-            break
-        ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
+    ts = []
+    for i in range(input.size(1)):
+        a = torch.tensor([utils.unpack(x) for x in input[:, i]]).unsqueeze(dim=0)
+        ts.append(a)
+
+    ts = torch.cat(ts, dim=0)
+
+    for i in range(ts.size(2)):
+        ret.scatter_(-1, ts[:,:,i].t().unsqueeze(-1), soft_labels[i])
 
     return ret
 

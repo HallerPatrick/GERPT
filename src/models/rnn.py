@@ -1,4 +1,5 @@
 import math
+import itertools
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -11,6 +12,7 @@ import torch.nn.functional as F
 
 from rich import print
 from rich.panel import Panel
+from src import utils
 
 from src.loss import CrossEntropyLossSoft
 
@@ -235,6 +237,10 @@ class RNNModel(pl.LightningModule):
         generated_output = self.dictionary.get_item_for_index(idx.item())
         sample_text = self.dictionary.get_item_for_index(idx.item())
 
+        inp = inp.detach().numpy().flatten().tolist()
+
+        inp = torch.tensor([utils.pack(inp)]).unsqueeze(-1)
+
         with torch.no_grad():
             self.eval()
             for i in range(self.chars_to_gen):
@@ -283,12 +289,12 @@ class RNNModel(pl.LightningModule):
                 sample_text = sample_text + "·" + word
 
                 # Use last 200 chars as sequence for new input
-
+                
                 inp = (
                     self.dictionary.tokenize_line(
                         list(generated_output[-200:]), id_type=torch.int64
                     )["source"]
-                    .unsqueeze(dim=2)
+                    .unsqueeze(dim=1)
                     .to(self.device)
                 )
 

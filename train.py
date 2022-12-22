@@ -116,7 +116,7 @@ if __name__ == "__main__":
             learning_rate_callback,
         ],
         # Disable validation during training
-        # limit_val_batches=0.0,
+        limit_val_batches=0.0,
         # profiler="simple",
         fast_dev_run=False,
     )
