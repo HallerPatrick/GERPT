@@ -39,7 +39,8 @@ def load_model(dictionary, args: Namespace):
             print(f"New Hidden Size: {new_hidden_size}")
             args.hidden_size = new_hidden_size
 
-    if args.model == "lstm":
+    if "lstm" in args.model:
+        
         model = RNNModel(
             dictionary,
             args.nlayers,
@@ -55,7 +56,9 @@ def load_model(dictionary, args: Namespace):
             generate=args.generate,
             temperature=args.temperature,
             chars_to_gen=args.chars,
-            is_forward_lm=args.is_forward
+            is_forward_lm=args.is_forward,
+            cell_type=args.model,
+            packed=args.packed
         )
     else:
         # Adjust args

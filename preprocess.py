@@ -19,6 +19,7 @@ def main():
         args.fallback,
         args.cpus,
         args.is_forward,
+        args.packed,
         *args.data.split("/")
     )
 

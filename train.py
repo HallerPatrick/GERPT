@@ -58,6 +58,7 @@ if __name__ == "__main__":
             args.fallback,
             args.cpus,
             args.is_forward,
+            args.packed,
             *args.data.split("/"),
             # cache_dir="/home/tmp/halerpat/datasets"
         )

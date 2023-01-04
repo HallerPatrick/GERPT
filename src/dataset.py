@@ -15,7 +15,7 @@ from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
-from datasets.load import load_from_disk
+# from datasets.load import load_from_disk
 
 # from nltk import ngrams as ngram_tokenizer
 from torch.utils.data.dataloader import DataLoader
@@ -121,6 +121,7 @@ def load_tokenized_dataset(
     fallback: bool,
     num_proc: int,
     is_forward: bool,
+    packed: bool,
     *args,
     **kwargs,
 ) -> Tuple[Dataset, Dictionary]:
@@ -133,6 +134,7 @@ def load_tokenized_dataset(
         dataset = ld(*local_dataset_mapper[args[0]]["args"])
     else:
         # Load the datasets from huggingface
+        print(args, kwargs)
         dataset = ld(*args, **kwargs)
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
@@ -170,7 +172,7 @@ def load_tokenized_dataset(
     
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
-            ngme, train, ngram, model_type, max_dict_size, unk_threshold, fallback, num_proc
+            ngme, train, ngram, model_type, max_dict_size, unk_threshold, fallback, num_proc, packed=packed
         )
 
     sample = 1
@@ -247,7 +249,8 @@ def load_dictionary_from_hf(
     max_dict_size: int,
     unk_threshold: int,
     fallback: bool,
-    num_workers: int
+    num_workers: int,
+    packed: bool = False
 ) -> Dictionary:
 
     # Hash the combination of dataset and configs
@@ -261,7 +264,7 @@ def load_dictionary_from_hf(
         print(f"Loading cached processed dictionary at {hash_file.resolve()}")
         return torch.load(hash_file)
 
-    dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback, ngme)
+    dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback, ngme, packed=packed)
 
     
     if ngme == "sparse":

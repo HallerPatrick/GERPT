@@ -100,7 +100,7 @@ def argparser_train() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        help="type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, Transformer)",
+        help="type of recurrent net (LSTM, Transformer, MOG_LSTM)",
     )
 
     parser.add_argument(

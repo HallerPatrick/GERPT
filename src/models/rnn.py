@@ -52,12 +52,14 @@ class RNNModel(pl.LightningModule):
         generate: bool = False,
         temperature: float = 0.7,
         chars_to_gen: int = 1000,
+        cell_type = "lstm",
+        packed = False
     ):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
 
-        self.encoder = NGramsEmbedding(len(dictionary), embedding_size)
+        self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
         self.ngrams = ngrams
         self.unk_t = unk_t
         self.dictionary = dictionary
@@ -76,18 +78,28 @@ class RNNModel(pl.LightningModule):
         self.criterion = None
         self.bidirectional = False
 
-        if nlayers == 1 and not self.bidirectional:
-            self.rnn = nn.LSTM(
-                embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional
-            )
-        else:
-            self.rnn = nn.LSTM(
-                embedding_size,
-                hidden_size,
-                nlayers,
-                dropout=dropout,
-                bidirectional=self.bidirectional,
-            )
+        if cell_type == "lstm":
+            if nlayers == 1 and not self.bidirectional:
+                self.rnn = nn.LSTM(
+                    embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional
+                )
+            else:
+                self.rnn = nn.LSTM(
+                    embedding_size,
+                    hidden_size,
+                    nlayers,
+                    dropout=dropout,
+                    bidirectional=self.bidirectional,
+                )
+        elif cell_type == "mog_lstm":
+            from src.models.mogrifier_lstm import MogLSTM
+            # TODO: No Support for bidirectional and layers yet
+            # TODO: Good amount of iterations for mog?
+            self.rnn = MogLSTM(embedding_size, hidden_size, 5)
+
+
+
+
 
         self.drop = nn.Dropout(dropout)
         self.decoder = nn.Linear(
@@ -156,6 +168,7 @@ class RNNModel(pl.LightningModule):
                 self.strategy,
                 self.weighted_labels,
                 self.unigram_ppl,
+                self.encoder.packed
             )
             target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
         else:
@@ -165,6 +178,7 @@ class RNNModel(pl.LightningModule):
                 self.strategy,
                 self.weighted_labels,
                 self.unigram_ppl,
+                self.encoder.packed
             )
             target = target.view(-1, self.ntokens)
             
@@ -321,10 +335,17 @@ class RNNModel(pl.LightningModule):
         # [#ngram, #seq_len, #batch_size]
         emb = self.encoder(input)
         emb = self.drop(emb)
+        
+        if isinstance(self.rnn, nn.LSTM):
+            self.rnn.flatten_parameters()
+            output, hidden = self.rnn(emb, hidden)
+        else:
+            emb = torch.transpose(emb, 0, 1).contiguous()
+            print(emb.size())
+            print(hidden[0].size())
+            print(hidden[1].size())
+            output, hidden = self.rnn(emb, hidden)
 
-        self.rnn.flatten_parameters()
-
-        output, hidden = self.rnn(emb, hidden)
         decoded = self.decoder(output)
 
         if self.unigram_ppl:

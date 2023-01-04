@@ -5,7 +5,6 @@ from math import log
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-import functorch
 
 from src import utils
 
@@ -24,23 +23,19 @@ strats = {
 }
 
 
-def n_hot(t, num_clases):
-    shape = list(t.size())
+def n_hot(t, num_clases, packed=False):
+
+    if packed:
+        t = utils.unpack_batched_tensor(t)
+    
+    shape = list(t.size())[1:]
 
     shape.append(num_clases)
     ret = torch.zeros(shape).to(t.device)
-    
-    ts = []
-    for i in range(t.size(1)):
-        a = torch.tensor([utils.unpack(x) for x in t[:, i]]).unsqueeze(dim=0)
-        ts.append(a)
 
-    ts = torch.cat(ts, dim=0)
-    
-    # seq: [seq, btx]
     # Expect that first dimension is for all n-grams
-    for i in range(ts.size(2)):
-        ret.scatter_(-1, ts[:,:,i].t().unsqueeze(-1), 1)
+    for seq in t:
+        ret.scatter_(-1, seq.unsqueeze(-1), 1)
 
     return ret
 
@@ -58,10 +53,12 @@ def n_dist(n: int, strategy: str) -> List[float]:
     return result
 
 
-def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_ppl=False):
-    # soft_dist = 1 / input.size(0)
+def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_ppl=False, packed=False):
 
-    shape = list(input.size())
+    if packed:
+        input = utils.unpack_batched_tensor(input)
+
+    shape = list(input.size())[1:]
 
     shape.append(num_classes)
 
@@ -72,18 +69,13 @@ def soft_n_hot(input, num_classes: int, strategy: str, weighted=False, unigram_p
     else:
         soft_labels = soft_dist(input.size()[0])
 
-    ts = []
-    for i in range(input.size(1)):
-        a = torch.tensor([utils.unpack(x) for x in input[:, i]]).unsqueeze(dim=0)
-        ts.append(a)
-
-    ts = torch.cat(ts, dim=0)
-
-    for i in range(ts.size(2)):
-        ret.scatter_(-1, ts[:,:,i].t().unsqueeze(-1), soft_labels[i])
+    for i, t in enumerate(input):
+        if unigram_ppl and i == 0:
+            ret.scatter_(-1, t.unsqueeze(-1), 1)
+            break
+        ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
     return ret
-
 
 class NGramsEmbedding(nn.Embedding):
     """N-Hot encoder"""
@@ -100,6 +92,7 @@ class NGramsEmbedding(nn.Embedding):
         _weight: Optional[Tensor] = None,
         device=None,
         dtype=None,
+        packed=False
     ) -> None:
         super().__init__(
             num_embeddings,
@@ -116,9 +109,10 @@ class NGramsEmbedding(nn.Embedding):
 
         # self.embedding = nn.Embedding(num_embeddings, embedding_dim)
         self.num_classes = num_embeddings
+        self.packed = packed
 
     def forward(self, input: torch.Tensor, **kwargs):
-        return self._forward(n_hot(input, self.num_classes, **kwargs))
+        return self._forward(n_hot(input, self.num_classes, **kwargs, packed=self.packed))
 
     def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
         return F.linear(n_hot, self.weight.t())

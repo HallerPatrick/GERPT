@@ -1,35 +1,35 @@
 downstream_tasks:
 - task:
     base_path: data
-    dataset: conll_03
+    dataset: conll_03_de
     hidden_size: 512
     lr: 0.1
     max_epochs: 1
     mini_batch_size: 32
-    save: resources/taggers/conll_03-ner
+    save: resources/taggers/conll_03-ner-de
     task_name: ner
     use: false
 - task:
     base_path: null
-    dataset: ud_english
+    dataset: ud_german
     hidden_size: 256
     lr: 0.1
-    max_epochs: 150
+    max_epochs: 1
     mini_batch_size: 32
-    save: resources/taggers/ud_english-upos
+    save: resources/taggers/ud_german-upos
     task_name: upos
     use: true
 - task:
     base_path: null
-    dataset: glue/sst2
+    dataset: germeval_2010
     hidden_size: 256
     lr: 0.1
-    max_epochs: 150
+    max_epochs: 1
     mini_batch_size: 32
-    save: resources/class/sst2-sent-class
+    save: resources/taggers/germeval-sent
     task_name: class
-    use: true
+    use: false
 model_name: rnn
-saved_model: checkpoints/flair_model.pt
+saved_model: checkpoints/flair_model_backward.pt
 seed: 1111
-wandb_run_id: gerpt/32rgq99g
+wandb_run_id: gerpt/38i7zzln

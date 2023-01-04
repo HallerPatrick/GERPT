@@ -3,6 +3,8 @@ from datetime import timedelta
 from typing import Any, Callable, Optional
 
 import pytorch_lightning as pl
+import torch
+from torch import Tensor
 import torch.nn.functional as F
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
@@ -14,11 +16,22 @@ from sympy.solvers import solve
 
 def pack(integer_list):
     """Pack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
+
+    assert len(integer_list) <= 4
+
     packed_integer = 0
     for i, integer in enumerate(integer_list):
         packed_integer |= integer << (16 * i)
     return packed_integer
 
+def pack_tensor(tensor: Tensor) -> Tensor:
+
+    # Assume n-gram is first dimension
+    assert len(tensor.shape) == 2
+    
+    return torch.tensor([pack(tensor[:, col_i]) for col_i in range(tensor.size(1))])
+        
+        
 def unpack(packed_integer):
     """Unpack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
     integer_list = []
@@ -27,7 +40,25 @@ def unpack(packed_integer):
         packed_integer >>= 16
         integer_list.append(integer)
     return integer_list
+
+def unpack_tensor(tensor: Tensor) -> Tensor:
+    assert len(tensor.shape) == 1
     
+    unpacked_sequence = [unpack(i) for i in tensor]
+
+    return torch.tensor(unpacked_sequence, dtype=torch.int64).t().to(tensor.device)
+
+def unpack_batched_tensor(tensor: Tensor) -> Tensor:
+
+    assert len(tensor.shape) == 2
+
+    # Expect batch dimension second
+    ts = [unpack_tensor(tensor[:, batch_i]).unsqueeze(-1) for batch_i in range(tensor.size(1))]
+
+    return torch.cat(ts, dim=-1).to(tensor.device)
+
+
+
 
 class TimePerEpochCallback(Callback):
     def on_train_epoch_start(

@@ -18,7 +18,7 @@ from src import utils
 
 class Dictionary:
     def __init__(
-            self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str
+            self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str, packed: bool = False
     ):
         self._marker_tokens = {}
         self.ngram_indexes = defaultdict(list)
@@ -34,6 +34,7 @@ class Dictionary:
 
         self.current_max_idx = 0
         self.ngme = ngme
+        self.packed = packed
 
     @property
     def pad_token(self):
@@ -153,7 +154,7 @@ class Dictionary:
                     index += 1
         return vocab_file
 
-    def tokenize_line(self, line: List[str], id_type=torch.int16, check_special_tokens: bool = False) -> dict:
+    def tokenize_line(self, line: Union[str, List[str]], id_type=torch.int16, check_special_tokens: bool = False) -> dict:
         if self.ngme == "dense":
             return self._tokenize_line_dense(line, id_type, check_special_tokens)
         elif self.ngme == "sparse":
@@ -166,7 +167,7 @@ class Dictionary:
         return [self.ngram2idx2word[1][special_token_id] for special_token_id in self._marker_tokens[1]]
 
 
-    def _tokenize_line_dense(self, line: List[str], id_type, check_special_tokens: bool = False):
+    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, check_special_tokens: bool = False):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -188,16 +189,19 @@ class Dictionary:
                     ids.append(self.ngram2word2idx[n]["".join(word)])
                 except KeyError:
                     ids.append(self.ngram2word2idx[n]["<unk>"])
+
                 length += 1
 
-            seq = ids #torch.tensor(ids).type(torch.int64)
+            seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
 
-            length = len(seq)
+            # length = len(seq)
+            length = seq.size(1)
 
             if length < min_length:
                 min_length = length
 
             ngram_sequences.append(seq)
+
             try:
                 s = self.shift_left(seq, n)
             except IndexError:
@@ -205,12 +209,17 @@ class Dictionary:
             ngram_target_sequences.append(s)
 
         
-        sequence = torch.tensor([utils.pack(n_grams) for n_grams in zip(*[t[:min_length] for t in ngram_sequences])])
-        target = torch.tensor([utils.pack(n_grams) for n_grams in zip(*[t[:min_length] for t in ngram_target_sequences])])
+        sequence = torch.cat([t[:min_length] for t in ngram_sequences])
+        target = torch.cat([t[:min_length] for t in ngram_target_sequences])
+
+        if self.packed:
+            sequence = utils.pack_tensor(sequence)
+            target = utils.pack_tensor(target)
+
 
         return {"text": line, "source": sequence, "target": target}
 
-    def _tokenize_line_sparse(self, line: List[str], id_type, check_special_tokens: bool = False):
+    def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type, check_special_tokens: bool = False):
         """
 
         line: List of chars
@@ -281,7 +290,7 @@ class Dictionary:
 
         return {"source": sequence, "target": target}
 
-    def shift_left(self, t: List, shifts) -> torch.Tensor:
+    def shift_left(self, t: Union[List, torch.Tensor], shifts) -> torch.Tensor:
         """
         "hello world"
         1. "h"   "e"   "l"   "l"   "o"
@@ -292,10 +301,12 @@ class Dictionary:
         3. "lo " "o w" " wo"       :offset 3
         Shifts have to be applied ngram-time for correct target matching
         """
-        t = torch.tensor(t)
+        if isinstance(t, list):
+            t = torch.tensor(t)
+
         st = torch.roll(t, -shifts, 1)
 
-        st[0][-1] = self.ngram2word2idx[1]["<pad>"]
+        # st[0][-1] = self.ngram2word2idx[1]["<pad>"]
         for i in range(1, shifts + 1):
             st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
