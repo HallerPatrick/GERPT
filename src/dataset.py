@@ -1,11 +1,9 @@
 import string
 import hashlib
-from itertools import zip_longest, repeat
+from itertools import zip_longest
 from pathlib import Path
 from typing import List, Tuple
-from datasets.arrow_dataset import concatenate_datasets
 from flair.embeddings.token import FlairEmbeddings
-from multiprocessing import Pool
 import nltk
 
 import pytorch_lightning as pl

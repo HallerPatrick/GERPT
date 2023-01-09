@@ -5,14 +5,13 @@ from typing import Any, Callable, Optional
 import pytorch_lightning as pl
 import torch
 from torch import Tensor
+
 import torch.nn.functional as F
+
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
-# Lazy load wildcard, takes some time
-from sympy import *
-from sympy.solvers import solve
 
 def pack(integer_list):
     """Pack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
@@ -50,7 +49,7 @@ def unpack_tensor(tensor: Tensor) -> Tensor:
 
 def unpack_batched_tensor(tensor: Tensor) -> Tensor:
 
-    assert len(tensor.shape) == 2
+    assert len(tensor.shape) == 2, f"But dim is {tensor.shape}"
 
     # Expect batch dimension second
     ts = [unpack_tensor(tensor[:, batch_i]).unsqueeze(-1) for batch_i in range(tensor.size(1))]
@@ -122,6 +121,12 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int,
 
     """
 
+    # Lazy load wildcard, takes some time
+    from sympy import Symbol
+    from sympy.solvers import solve
+
+
+
     hid = Symbol("hid")
 
     result = solve(
@@ -167,6 +172,11 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     h: hidden size
 
     """
+
+
+    from sympy import Symbol
+    from sympy.solvers import solve
+
 
     encoder_size = d * e + e
     lstm_size = (

@@ -4,8 +4,14 @@ import torch
 
 from src import utils
 from src.dictionary import Dictionary
-from src.models.ngme import n_hot
+from src.models.ngme import n_hot as python_n_hot
 from src.models.ngme import NGramsEmbedding
+
+from ngme_cpp import n_hot as cpp_n_hot
+from ngme_cpp import pack_tensor as cpp_pack_tensor
+from ngme_cpp import unpack_tensor as cpp_unpack_tensor
+from ngme_cpp import unpack_batched_tensor as cpp_unpack_batched_tensor
+
 
 
 class TestNGME(unittest.TestCase):
@@ -108,6 +114,61 @@ class TestNGME(unittest.TestCase):
         embedded_packed = emb(packed_inp)
 
         self.assertTrue(torch.equal(embedded_unpacked, embedded_packed))
+
+    def test_pack_tensor(self):
+        result_py = utils.pack_tensor(torch.ones((4, 10), dtype=torch.int64))
+        result_cpp = cpp_pack_tensor(torch.ones((4, 10), dtype=torch.int64))
+
+        self.assertTrue(torch.equal(result_py, result_cpp))
+
+    def test_unpack_tensor(self):
+
+        # packed_t = utils.pack_tensor(torch.ones((4, 100), dtype=torch.int64))
+        packed_ones = 281479271743489
+        result_py = utils.unpack_tensor(torch.tensor([packed_ones] * 4))
+        result_cpp = cpp_unpack_tensor(torch.tensor([packed_ones] * 4))
+
+        self.assertTrue(torch.equal(result_py, result_cpp))
+
+    def test_unpack_batched_tensor(self):
+
+        packed_batched_tensor = utils.pack_tensor(torch.ones((4, 10), dtype=torch.int64)).unsqueeze(-1)
+        
+        result_py = utils.unpack_batched_tensor(packed_batched_tensor)
+
+        packed_batched_tensor = utils.pack_tensor(torch.ones((4, 10), dtype=torch.int64)).unsqueeze(-1)
+        result_cpp = cpp_unpack_batched_tensor(packed_batched_tensor)
+
+        self.assertTrue(torch.equal(result_py, result_cpp))
+
+
+
+class TestNHot(unittest.TestCase):
+
+
+    def test_n_hot_unpacked(self):
+
+        t = torch.randint(0, 10, (4, 10, 10))
+        
+        # Check if python and C++ implementation yield same results
+        self.assertTrue(torch.equal(python_n_hot(t, 10, False), cpp_n_hot(t, 10, False)))
+
+    def test_n_hot_packed(self):
+
+        packed_t = utils.pack_tensor(torch.tensor([[1, 2, 3, 4], [1, 2, 3, 4]]).t().contiguous()).unsqueeze(-1)
+        
+        result_py = python_n_hot(packed_t, 87, True)
+
+        packed_t = utils.pack_tensor(torch.tensor([[1, 2, 3, 4], [1, 2, 3, 4]]).t().contiguous()).unsqueeze(-1)
+        result_cpp = cpp_n_hot(packed_t, 87, True)
+
+        self.assertTrue(torch.equal(result_py, result_cpp))
+
+
+
+
+
+
 
         
 

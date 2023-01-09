@@ -8,6 +8,8 @@ from torch import Tensor, nn
 
 from src import utils
 
+from ngme_cpp import n_hot as cpp_n_hot
+
 n_dists = {
     0: [1],
     1: [0.4, 0.6],
@@ -116,3 +118,44 @@ class NGramsEmbedding(nn.Embedding):
 
     def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
         return F.linear(n_hot, self.weight.t())
+
+class NGramsEmbeddingFast(nn.Embedding):
+    """N-Hot encoder"""
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        padding_idx: Optional[int] = None,
+        max_norm: Optional[float] = None,
+        norm_type: float = 2,
+        scale_grad_by_freq: bool = False,
+        sparse: bool = False,
+        _weight: Optional[Tensor] = None,
+        device=None,
+        dtype=None,
+        packed=False
+    ) -> None:
+        super().__init__(
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
+            max_norm=max_norm,
+            norm_type=norm_type,
+            scale_grad_by_freq=scale_grad_by_freq,
+            sparse=sparse,
+            _weight=_weight,
+            device=device,
+            dtype=dtype,
+        )
+
+        # self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.num_classes = num_embeddings
+        self.packed = packed
+
+    def forward(self, input: torch.Tensor, **kwargs):
+        return self._forward(cpp_n_hot(input, self.num_classes, self.packed))
+
+    def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
+        return F.linear(n_hot.float(), self.weight.t())
+
