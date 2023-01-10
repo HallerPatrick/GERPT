@@ -38,11 +38,11 @@ def timeit_packed(device_ctx: str):
         print("Packed")
         print(t0.timeit())
 
-def timeit_embed():
+def timeit_embed(device="cpu"):
 
     # ========================================================================================
-    input_unpacked = torch.randint(1, 100, (4, 10, 4))
-    embedding_py_unpacked = NGramsEmbedding(100, 64, packed=False)
+    input_unpacked = torch.randint(1, 100, (4, 10, 4)).to(device)
+    embedding_py_unpacked = NGramsEmbedding(100, 64, packed=False).to(device)
 
     t0 = bm.Timer(
         stmt="embedding_py_unpacked(input_unpacked)",
@@ -51,8 +51,8 @@ def timeit_embed():
     time_py_unpacked = t0.timeit()
 
     # ========================================================================================
-    input_packed = torch.randint(1, 100, (10, 10))
-    embedding_py_packed = NGramsEmbedding(100, 64, packed=True)
+    input_packed = torch.randint(1, 100, (10, 10)).to(device)
+    embedding_py_packed = NGramsEmbedding(100, 64, packed=True).to(device)
 
     t0 = bm.Timer(
         stmt="embedding_py_packed(input_packed)",
@@ -61,8 +61,8 @@ def timeit_embed():
     time_py_packed = t0.timeit()
 
     # ========================================================================================
-    input_unpacked = torch.randint(1, 100, (4, 10, 4), dtype=torch.int64)
-    embedding_cpp_unpacked = NGramsEmbeddingFast(100, 64, False)
+    input_unpacked = torch.randint(1, 100, (4, 10, 4), dtype=torch.int64).to(device)
+    embedding_cpp_unpacked = NGramsEmbeddingFast(100, 64, False).to(device)
 
     t0 = bm.Timer(
         stmt="embedding_cpp_unpacked(input_unpacked)",
@@ -71,8 +71,8 @@ def timeit_embed():
     time_cpp_unpacked = t0.timeit()
     
     # ========================================================================================
-    input_packed = torch.randint(1, 100, (10, 10), dtype=torch.int64)
-    embedding_cpp_packed = NGramsEmbeddingFast(100, 64, True)
+    input_packed = torch.randint(1, 100, (10, 10), dtype=torch.int64).to(device)
+    embedding_cpp_packed = NGramsEmbeddingFast(100, 64, True).to(device)
 
     t0 = bm.Timer(
         stmt="embedding_cpp_packed(input_packed)",

@@ -143,6 +143,8 @@ class TestNGME(unittest.TestCase):
 
 
 
+# TODO: Cpp n_hot outputs float32, python version int64.
+# TODO: Which one is needed or correct?
 class TestNHot(unittest.TestCase):
 
 
@@ -151,16 +153,16 @@ class TestNHot(unittest.TestCase):
         t = torch.randint(0, 10, (4, 10, 10))
         
         # Check if python and C++ implementation yield same results
-        self.assertTrue(torch.equal(python_n_hot(t, 10, False), cpp_n_hot(t, 10, False)))
+        self.assertTrue(torch.equal(python_n_hot(t, 10, False).to(torch.int64), cpp_n_hot(t, 10, False).to(torch.int64)))
 
     def test_n_hot_packed(self):
 
         packed_t = utils.pack_tensor(torch.tensor([[1, 2, 3, 4], [1, 2, 3, 4]]).t().contiguous()).unsqueeze(-1)
         
-        result_py = python_n_hot(packed_t, 87, True)
+        result_py = python_n_hot(packed_t, 87, True).to(torch.int64)
 
         packed_t = utils.pack_tensor(torch.tensor([[1, 2, 3, 4], [1, 2, 3, 4]]).t().contiguous()).unsqueeze(-1)
-        result_cpp = cpp_n_hot(packed_t, 87, True)
+        result_cpp = cpp_n_hot(packed_t, 87, True).to(torch.int64)
 
         self.assertTrue(torch.equal(result_py, result_cpp))
 

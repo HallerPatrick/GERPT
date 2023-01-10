@@ -116,8 +116,14 @@ Note: Higher numbers more diverges
 
 ### Embedding Layer function (1 000 000 Iterations)
 
-
-
++--------------------+----------------+------------+
+|      Function      | Implementation | Time (sec) |
++--------------------+----------------+------------+
+| Embedding Unpacked |     Python     |   44.66    |
+|  Embedding Packed  |     Python     |   520.91   |
+| Embedding Unpacked |      C++       |   43.62    |
+|  Embedding Packed  |      C++       |   42.72    |
++--------------------+----------------+------------+
 
 
 

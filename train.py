@@ -169,6 +169,7 @@ if __name__ == "__main__":
     try:
         # Save wandb run id in config for fine tuning run
         if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
+            assert wandb.run is not None
             write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
     except:
         print("Could not write wandb RUN ID to flair config file")
@@ -176,5 +177,6 @@ if __name__ == "__main__":
     # Auto downstream training
     if hasattr(args, "downstream") and args.downstream:
         assert args.fine_tune_configs is not None
+        assert wandb.run is not None
         fine_tune_args = read_config(args.fine_tune_configs)
         train_ds(fine_tune_args, wandb.run.path)
