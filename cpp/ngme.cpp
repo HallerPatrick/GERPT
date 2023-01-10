@@ -122,7 +122,7 @@ torch::Tensor pack_tensor(const torch::Tensor &self) {
 
   auto seq_len = self.size(1);
 
-  std::vector<long long> packed_vec;
+  std::vector<int64_t> packed_vec;
 
   for(int i = 0; i < seq_len; ++i) {
     // Index column to get n-grams of timestep
@@ -130,9 +130,7 @@ torch::Tensor pack_tensor(const torch::Tensor &self) {
   
     uint64_t packed_int = pack_t(col);
   
-    // Cast to double long, uints are not supported in pytorch
-    double long packed_signed_int = static_cast<double long>(packed_int);
-
+    // Implicit cast to iint64_t, no unsigned types allows in torch :(
     packed_vec.push_back(packed_int);
   }
 
@@ -153,9 +151,11 @@ torch::Tensor unpack_tensor(const torch::Tensor &self) {
   
   std::vector<torch::Tensor> unpacked_vecs;
 
+  int64_t *data_self = self.data_ptr<int64_t>();
+
   for (int i = 0; i < self.size(0); ++i) {
 
-    uint64_t packed_i = self[i].item<long long>();
+    uint64_t packed_i = data_self[i];
     
     auto unpacked_vec = unpack(packed_i);
     
