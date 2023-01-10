@@ -21,6 +21,22 @@ uint64_t pack_4_gram(const std::vector<uint16_t> &integer_list) {
   return packed_integer;
 }
 
+uint64_t pack_4_gram(const torch::Tensor &integer_list) {
+  TORCH_CHECK(integer_list.size(0) == 4, "Four integers required");
+
+  int64_t *data = integer_list.data_ptr<int64_t>();
+
+  uint64_t packed_integer = 0;
+
+  packed_integer |= static_cast<uint64_t>(data[0]) << 0;
+
+  packed_integer |= static_cast<uint64_t>(data[1]) << 16;
+  packed_integer |= static_cast<uint64_t>(data[2]) << 32;
+  packed_integer |= static_cast<uint64_t>(data[3]) << 48;
+
+  return packed_integer;
+}
+
 /**
  * Unpack integer into exactly 4 integers
  *
@@ -58,6 +74,25 @@ uint64_t pack(const std::vector<uint16_t> &integer_list) {
   return packed_integer;
 }
 
+uint64_t pack_t(const torch::Tensor &integer_list) {
+  auto ngram = integer_list.size(0);
+
+  TORCH_CHECK(ngram <= 4, "Only support for 4 integers");
+
+  if (ngram == 4) {
+    return pack_4_gram(integer_list);
+  }
+
+  int64_t *data = integer_list.data_ptr<int64_t>();
+
+  uint64_t packed_integer = 0;
+  for (std::size_t i = 0; i < (std::size_t)integer_list.size(0); ++i) {
+    packed_integer |= static_cast<uint64_t>(data[i]) << (16 * i);
+  }
+  return packed_integer;
+
+}
+
 /**
  * Unpack integer into up to 4 integers
  *
@@ -92,19 +127,13 @@ torch::Tensor pack_tensor(const torch::Tensor &self) {
   for(int i = 0; i < seq_len; ++i) {
     // Index column to get n-grams of timestep
     torch::Tensor col = self.index({torch::indexing::Slice(), i}).contiguous();
-
-    auto tensor_lenght = col.sizes()[0];
-
-    std::vector<uint16_t> col_vec(tensor_lenght);
-
-    for (int j=0; j < tensor_lenght; ++j) {
-        col_vec[j] = col[j].item<int>();
-    }
   
-    // TODO: What type do we actually want in the end?
-    auto packed_int = pack(col_vec);
+    uint64_t packed_int = pack_t(col);
+  
+    // Cast to double long, uints are not supported in pytorch
+    double long packed_signed_int = static_cast<double long>(packed_int);
 
-    packed_vec.push_back(static_cast<long long>(packed_int));
+    packed_vec.push_back(packed_int);
   }
 
   return torch::tensor(packed_vec).to(torch::kInt64);
@@ -237,7 +266,6 @@ torch::Tensor n_hot(const torch::Tensor &p_self, int64_t num_classes, bool packe
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("n_hot", &n_hot, "N-Gram Multihot Encoding");
   m.def("pack", &pack, "Pack list");
-  m.def("pack_4_gram", &pack_4_gram, "Pack 4 gram tensor");
   m.def("pack_tensor", &pack_tensor, "Pack tensor");
   m.def("unpack", &unpack, "Unpack list");
   m.def("unpack_tensor", &unpack_tensor, "Unpack tensor");
