@@ -18,7 +18,7 @@ from src import utils
 
 class Dictionary:
     def __init__(
-            self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str, packed: bool = False
+            self, ngram: int, max_dict_size: int, unk_threshold: int, fallback: bool, ngme: str, packed: bool
     ):
         self._marker_tokens = {}
         self.ngram_indexes = defaultdict(list)
@@ -81,7 +81,7 @@ class Dictionary:
             )
         )
 
-        dictionary = Dictionary(self.ngram, self.max_dict_size, self.unk_threshold, self.fallback, self.ngme)
+        dictionary = Dictionary(self.ngram, self.max_dict_size, self.unk_threshold, self.fallback, self.ngme, self.packed)
 
         for ngram in self.ngram2idx2word.keys():
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
@@ -211,7 +211,7 @@ class Dictionary:
         
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
-
+        
         if self.packed:
             sequence = utils.pack_tensor(sequence)
             target = utils.pack_tensor(target)

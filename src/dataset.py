@@ -219,6 +219,7 @@ def load_tokenized_dataset(
     )
 
     print("Tokenize dataset...")
+    print(dictionary.packed)
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(x["text"], check_special_tokens=True),
         load_from_cache_file=USE_CACHE,
@@ -248,7 +249,7 @@ def load_dictionary_from_hf(
     unk_threshold: int,
     fallback: bool,
     num_workers: int,
-    packed: bool = False
+    packed: bool
 ) -> Dictionary:
 
     # Hash the combination of dataset and configs

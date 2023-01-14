@@ -18,7 +18,7 @@ from src.loss import CrossEntropyLossSoft
 
 # from src.utils import display_text
 
-from .ngme import NGramsEmbedding, soft_n_hot
+from .ngme import NGramsEmbedding, soft_n_hot, NGramsEmbeddingFast
 
 
 def repackage_hidden(h):
@@ -59,7 +59,8 @@ class RNNModel(pl.LightningModule):
 
         self.ntokens = len(dictionary)
 
-        self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
+        self.encoder = NGramsEmbeddingFast(len(dictionary), embedding_size, packed=packed)
+        # self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
         self.ngrams = ngrams
         self.unk_t = unk_t
         self.dictionary = dictionary
@@ -341,9 +342,6 @@ class RNNModel(pl.LightningModule):
             output, hidden = self.rnn(emb, hidden)
         else:
             emb = torch.transpose(emb, 0, 1).contiguous()
-            print(emb.size())
-            print(hidden[0].size())
-            print(hidden[1].size())
             output, hidden = self.rnn(emb, hidden)
 
         decoded = self.decoder(output)

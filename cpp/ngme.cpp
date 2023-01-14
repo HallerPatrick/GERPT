@@ -1,5 +1,9 @@
+#include <cstdint>
+#include <limits>
+
 #include <torch/extension.h>
 
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), "Tensor must be contiguous")
 
 /**
  * Pack a vector of exactly 4 integers into one
@@ -89,6 +93,9 @@ uint64_t pack_t(const torch::Tensor &integer_list) {
   for (std::size_t i = 0; i < (std::size_t)integer_list.size(0); ++i) {
     packed_integer |= static_cast<uint64_t>(data[i]) << (16 * i);
   }
+
+
+  TORCH_CHECK(packed_integer <= std::numeric_limits<int64_t>::max(), "Overflowing unsigned int");
   return packed_integer;
 
 }
@@ -134,7 +141,9 @@ torch::Tensor pack_tensor(const torch::Tensor &self) {
     packed_vec.push_back(packed_int);
   }
 
-  return torch::tensor(packed_vec).to(torch::kInt64);
+  auto opts = torch::TensorOptions().device(self.device()).dtype(torch::kInt64);
+
+  return torch::tensor(packed_vec, opts);
 }
 
 /**
@@ -144,28 +153,37 @@ torch::Tensor pack_tensor(const torch::Tensor &self) {
  * @param packed tensor of 1D
  * @returns tensor with dim [ngram, seq]
  */
-torch::Tensor unpack_tensor(const torch::Tensor &self) {
+torch::Tensor unpack_tensor(const torch::Tensor &self_tensor) {
+
+  torch::Tensor self;
+
+  if (self_tensor.device() != torch::kCUDA) {
+    self = self_tensor.to(torch::kCPU);
+  } else {
+    self = self_tensor;
+  }
 
   TORCH_CHECK(self.dim() == 1, "Tensor is not 1 dimensional");
-
+  TORCH_CHECK(self.dtype() == torch::kInt64, "Tensor has to be long type");
+  CHECK_CONTIGUOUS(self);
   
-  std::vector<torch::Tensor> unpacked_vecs;
+  auto *data_self = self.data_ptr<int64_t>(); 
 
-  int64_t *data_self = self.data_ptr<int64_t>();
+  std::vector<torch::Tensor> unpacked_vecs;
 
   for (int i = 0; i < self.size(0); ++i) {
 
-    uint64_t packed_i = data_self[i];
-    
+    auto packed_i = *data_self++;
+
     auto unpacked_vec = unpack(packed_i);
     
     // TODO: Do we need to "cast" vector to double?
     std::vector<double> unpacked_int_vec(unpacked_vec.begin(), unpacked_vec.end());
+
     auto t = torch::tensor(unpacked_int_vec).unsqueeze(0);
     unpacked_vecs.push_back(t);
   }
-
-  return torch::cat(unpacked_vecs).t().to(torch::kI64);
+  return torch::cat(unpacked_vecs).t().to(self_tensor.device()).to(torch::kInt64);
 }
 
 /**
@@ -180,19 +198,20 @@ torch::Tensor unpack_batched_tensor(const torch::Tensor &self) {
   // Expect 2 dimensions [sequence, batch]
   TORCH_CHECK(self.dim() == 2, "Tensor is not 2 dimensional");
 
-  auto batch = self.size(1);
+  auto batch_dim = self.size(1);
 
   std::vector<torch::Tensor> unpacked_ts;
 
-  for(int i = 0; i < batch; ++i) {
+  for(int i = 0; i < batch_dim; ++i) {
     // Index column to get n-grams of timestep
     torch::Tensor col = self.index({torch::indexing::Slice(), i}).contiguous();
 
-    unpacked_ts.push_back(unpack_tensor(col).unsqueeze(-1));
+    auto unpacked_t = unpack_tensor(col).unsqueeze(-1);
+    unpacked_ts.push_back(unpacked_t);
   }
 
-  // Concat all sequence tensors on batch dimension
-  return torch::cat(unpacked_ts, -1);
+  // Concat all sequence tensors at batch dimension
+  return torch::cat(unpacked_ts, -1).to(self.device());
 }
 
 
@@ -211,8 +230,9 @@ torch::Tensor n_hot(const torch::Tensor &p_self, int64_t num_classes, bool packe
               "ngme is only applicable to index tensor.");
   
   torch::Tensor self;
+
   if (packed) {
-    self = unpack_batched_tensor(p_self);
+    self = unpack_batched_tensor(p_self).to(p_self.device());
   } else {
     self = p_self;
   }
@@ -254,11 +274,10 @@ torch::Tensor n_hot(const torch::Tensor &p_self, int64_t num_classes, bool packe
   shape.push_back(num_classes);
 
   torch::Tensor ret = torch::zeros(shape, self.options());
-  
+
   for(int i = 0; i < self.size(0); ++i) {
     ret.scatter_(-1, self[i].unsqueeze(-1), 1);
   }
-
   return ret;
 }
 
@@ -266,6 +285,7 @@ torch::Tensor n_hot(const torch::Tensor &p_self, int64_t num_classes, bool packe
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("n_hot", &n_hot, "N-Gram Multihot Encoding");
   m.def("pack", &pack, "Pack list");
+  m.def("pack_t", &pack_t, "Pack list");
   m.def("pack_tensor", &pack_tensor, "Pack tensor");
   m.def("unpack", &unpack, "Unpack list");
   m.def("unpack_tensor", &unpack_tensor, "Unpack tensor");
