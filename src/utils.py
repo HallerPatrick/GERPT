@@ -276,3 +276,18 @@ def count_parameters(model):
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
+def shard_array(inlist, shard_size):
+    # inlist = 150-element list
+    # shard_size = 40
+    num_shards = len(inlist) / shard_size
+    # num_shards == 3
+
+    shards = []
+    for i in range(num_shards):
+        # i == 0
+        start = shard_size * i  # start == 0, then 40, then 80...
+        end = shard_size * (i + 1) - 1  # end == 39, then 79, then 119...
+        shards.append(inlist[start:end])
+
+    return shards

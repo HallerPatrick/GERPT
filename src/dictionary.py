@@ -172,6 +172,7 @@ class Dictionary:
         ngram_target_sequences = []
         min_length = sys.maxsize
 
+
         for n in range(1, self.ngram + 1):
 
             # Adding start offsets for all ngrams
@@ -344,4 +345,18 @@ class Dictionary:
                 return n
 
         return 0
+
+    def print_sequence(self, seq, ngram):
+        """docstring for print_sequence"""
+        
+        collected_tokens = []
+
+        for token in seq:
+            if not isinstance(token, int):
+                token = token.item()
+            collected_tokens.append(self.ngram2idx2word[ngram][token])
+
+        print(f"[{', '.join(collected_tokens)}]")
+
+        
 

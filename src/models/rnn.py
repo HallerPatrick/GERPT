@@ -152,18 +152,20 @@ class RNNModel(pl.LightningModule):
         ]
 
     def _step(self, batch):
+        
+        source, target = batch[0], batch[1]
 
-        batch_size = batch["source"].size()[-1]
+        batch_size = source.size()[-1]
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-        decoded, hidden = self.forward(batch["source"], self.hidden)
+        decoded, hidden = self.forward(source, self.hidden)
         self.hidden = repackage_hidden(hidden)
 
         if self.unigram_ppl:
             target = soft_n_hot(
-                batch["target"],
+                target,
                 len(self.dictionary.ngram2idx2word[1]),
                 self.strategy,
                 self.weighted_labels,
@@ -173,7 +175,7 @@ class RNNModel(pl.LightningModule):
             target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
         else:
             target = soft_n_hot(
-                batch["target"],
+                target,
                 self.ntokens,
                 self.strategy,
                 self.weighted_labels,
@@ -251,9 +253,9 @@ class RNNModel(pl.LightningModule):
         generated_output = self.dictionary.get_item_for_index(idx.item())
         sample_text = self.dictionary.get_item_for_index(idx.item())
 
-        inp = inp.detach().numpy().flatten().tolist()
+        # inp = inp.detach().numpy().flatten().tolist()
 
-        inp = torch.tensor([utils.pack(inp)]).unsqueeze(-1)
+        # inp = torch.tensor([utils.pack(inp)]).unsqueeze(-1)
 
         with torch.no_grad():
             self.eval()
@@ -308,9 +310,10 @@ class RNNModel(pl.LightningModule):
                     self.dictionary.tokenize_line(
                         list(generated_output[-200:]), id_type=torch.int64
                     )["source"]
-                    .unsqueeze(dim=1)
+                    .unsqueeze(dim=2)
                     .to(self.device)
                 )
+                print(inp.size())
 
             self.train()
         try:

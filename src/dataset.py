@@ -8,11 +8,13 @@ import nltk
 
 import pytorch_lightning as pl
 import torch
+import numpy as np
 from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from datasets.fingerprint import Hasher
+
 # from datasets.load import load_from_disk
 
 # from nltk import ngrams as ngram_tokenizer
@@ -24,7 +26,7 @@ from humanfriendly import format_timespan
 
 from . import HF_CACHE_DICTIONARIES, HF_CACHE_TOKENIZED, USE_CACHE
 from .dictionary import Dictionary
-from .data import batchify, local_dataset_mapper
+from .data import batchify, local_dataset_mapper, prepare_data
 
 all_tokens = string.printable
 
@@ -32,47 +34,99 @@ all_tokens = string.printable
 def zero():
     pass
 
+
 def batch_collate(batch):
+    print(len(batch))
     # [ngram, seq_len, batch_size]
-    source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
-    target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
-    return dict(source=source, target=target)
+    return torch.stack(batch[0], dim=2), torch.stack(batch[1], dim=2)
+
+
+class TextDataset(Dataset):
+    def __init__(self, text, batch_size, bptt_size, device="cpu"):
+        self.bptt = bptt_size
+        self.batch_size = batch_size
+        self.inputs = batchify(text, batch_size, bptt_size)
+        print(self.inputs.size())
+        exit()
+
+    def __len__(self):
+        return len(self.inputs)
+
+    def __getitem__(self, idx):
+
+        batch_index = idx // self.batch_size
+
+        offset = idx % self.batch_size
+
+        print(f"Batch idx: {idx}")
+        print(f"Access current batch: {batch_index}")
+        print(f"Offset: {offset}")
+
+        source = self.inputs[batch_index][
+            :,
+            : self.bptt,
+            offset
+        ]
+        print(source.size())
+
+        target = self.inputs[batch_index][
+            :,
+            1 : self.bptt + 1,
+            offset
+        ]
+
+
+        return source, target
+
 
 class GenericDataModule(pl.LightningDataModule):
-    def __init__(self, dataset, batch_size, cpus=1):
+    def __init__(self, dataset, batch_size, bptt_size, cpus=1):
         super().__init__()
+        self.bptt_size = bptt_size
         self.dataset = dataset
         self.batch_size = batch_size
         self.cpus = cpus
 
+    def prepare_data(self) -> None:
+        self.train_ds = TextDataset(
+            self.dataset["train"]["source"], self.batch_size, self.bptt_size
+        )
+        self.val_ds = TextDataset(
+            self.dataset["validation"]["source"], self.batch_size, self.bptt_size
+        )
+        self.test_ds = TextDataset(
+            self.dataset["test"]["source"], self.batch_size, self.bptt_size
+        )
+
     def train_dataloader(self):
+
         return DataLoader(
-            self.dataset["train"],
+            self.train_ds,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus,
-            pin_memory=True
+            # num_workers=self.cpus,
+            # pin_memory=True,
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.dataset["validation"],
+            self.val_ds,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus,
-            pin_memory=True
+            # num_workers=self.cpus,
+            # pin_memory=True,
         )
 
     def test_dataloader(self):
         return DataLoader(
-            self.dataset["test"],
+            self.test_ds,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
-            num_workers=self.cpus,
-            pin_memory=True
+            # num_workers=self.cpus,
+            # pin_memory=True,
         )
 
 
@@ -112,7 +166,7 @@ def load_tokenized_dataset(
     ngme: str,
     bptt: int,
     ngram: int,
-    model_type: str, 
+    model_type: str,
     batch_size: int,
     max_dict_size: int,
     unk_threshold: int,
@@ -143,15 +197,15 @@ def load_tokenized_dataset(
             test = []
             valid = []
 
-            wiki206 = 120000 # For english about 2x wiki103
+            wiki206 = 120000  # For english about 2x wiki103
 
             for row in tqdm(dataset["train"]["text"][:wiki206]):
                 train.append(row)
 
-            for row in tqdm(dataset["train"]["text"][wiki206+1:wiki206+1000]):
+            for row in tqdm(dataset["train"]["text"][wiki206 + 1 : wiki206 + 1000]):
                 test.append(row)
 
-            for row in tqdm(dataset["train"]["text"][wiki206+1001:wiki206+2000]):
+            for row in tqdm(dataset["train"]["text"][wiki206 + 1001 : wiki206 + 2000]):
                 valid.append(row)
         else:
             train = []
@@ -164,13 +218,23 @@ def load_tokenized_dataset(
                 test = []
 
             if "validation" in dataset:
-                valid = process_map(get_text, dataset["validation"], max_workers=num_proc)
+                valid = process_map(
+                    get_text, dataset["validation"], max_workers=num_proc
+                )
             else:
                 valid = []
-    
+
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
-            ngme, train, ngram, model_type, max_dict_size, unk_threshold, fallback, num_proc, packed=packed
+            ngme,
+            train,
+            ngram,
+            model_type,
+            max_dict_size,
+            unk_threshold,
+            fallback,
+            num_proc,
+            packed=packed,
         )
 
     sample = 1
@@ -180,11 +244,11 @@ def load_tokenized_dataset(
             print(f"Subsample to {sample}...")
             train = train[0 : int(len(train) * sample)]
 
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        print("Join all text rows...")
-        train = "\n".join(train)
-        test = "\n".join(test)
-        valid = "\n".join(valid)
+    # with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #     print("Join all text rows...")
+    #     train = "\n".join(train)
+    #     test = "\n".join(test)
+    #     valid = "\n".join(valid)
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         if not is_forward:
@@ -192,31 +256,32 @@ def load_tokenized_dataset(
             train = train[::-1]
             test = test[::-1]
             valid = valid[::-1]
-        
+
     # Split into batch size
-    train = batchify(train, batch_size, bptt)
-    test = batchify(test, batch_size, bptt)
-    valid = batchify(valid, batch_size, bptt)
-
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        print("Split in bptt")
-        split_seq: List[str] = []
-
-        for i in tqdm(range(0, len(train), bptt)):
-            split_seq.append(train[i : i + bptt])
-
-        if len(split_seq[-1]) != bptt:
-            split_seq[-1] = split_seq[-1].ljust(bptt, " ")
+    # train = batchify(train, batch_size, bptt)
+    # test = batchify(test, batch_size, bptt)
+    # valid = batchify(valid, batch_size, bptt)
+    #
+    # with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #     print("Split in bptt")
+    #     split_seq: List[str] = []
+    #
+    #     for i in tqdm(range(0, len(train), bptt)):
+    #         split_seq.append(train[i : i + bptt])
+    #
+    #     if len(split_seq[-1]) != bptt:
+    #         split_seq[-1] = split_seq[-1].ljust(bptt, " ")
 
     dataset = DatasetDict(
         {
-            "train": HfDataset.from_dict({"text": split_seq}),
-            "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
-            "validation": HfDataset.from_dict(
-                {"text": list(grouper(valid, bptt, " "))}
-            ),
+            "train": HfDataset.from_dict({"text": train}),
+            "test": HfDataset.from_dict({"text": test}),
+            "validation": HfDataset.from_dict({"text": valid}),
         }
     )
+
+    # shards = 1 if len(dataset["train"]["text"]) < num_proc else num_proc
+    # dataset = dataset.shard(num_shards=shards)
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
@@ -234,8 +299,6 @@ def load_tokenized_dataset(
         except OSError:
             print("Failed to save... 😢")
 
-
-
     return tokenized_dataset, dictionary
 
 
@@ -248,7 +311,7 @@ def load_dictionary_from_hf(
     unk_threshold: int,
     fallback: bool,
     num_workers: int,
-    packed: bool = False
+    packed: bool = False,
 ) -> Dictionary:
 
     # Hash the combination of dataset and configs
@@ -262,25 +325,26 @@ def load_dictionary_from_hf(
         print(f"Loading cached processed dictionary at {hash_file.resolve()}")
         return torch.load(hash_file)
 
-    dictionary = Dictionary(ngrams, max_dict_size, unk_threshold, fallback, ngme, packed=packed)
+    dictionary = Dictionary(
+        ngrams, max_dict_size, unk_threshold, fallback, ngme, packed=packed
+    )
 
-    
     if ngme == "sparse":
         populate_sparse_dict(dictionary, ngrams, model_type)
     elif ngme == "dense":
         populate_dense_dict(dictionary, ngrams, source, num_workers)
     else:
         raise ValueError("NGME approach not known")
-    
+
     if dictionary.max_dict_size > 0:
         dictionary = dictionary.unking()
-    
+
     if ngme == "dense":
         for n_gram in range(2, dictionary.ngram + 1):
             start_idx = dictionary.add_ngram("<start>", n_gram)
             pad_idx = dictionary.add_ngram("<pad>", n_gram)
             unk_idx = dictionary.add_ngram("<unk>", n_gram)
-            dictionary.add_ngram(" "*n_gram, n_gram)
+            dictionary.add_ngram(" " * n_gram, n_gram)
 
             if model_type == "transformer":
                 eod_idx = dictionary.add_ngram("<eod>", n_gram)
@@ -288,12 +352,15 @@ def load_dictionary_from_hf(
             if n_gram not in dictionary._marker_tokens:
                 dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
 
-    # Check if all unigrams were indexed first and all idx are consecutive    
-    assert list(dictionary.ngram2idx2word[1].keys()) == list(range(0, len(dictionary.ngram2idx2word[1])))
+    # Check if all unigrams were indexed first and all idx are consecutive
+    assert list(dictionary.ngram2idx2word[1].keys()) == list(
+        range(0, len(dictionary.ngram2idx2word[1]))
+    )
     print(f"Saving dictionary at {hash_file}...")
     torch.save(dictionary, hash_file)
 
     return dictionary
+
 
 def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
     """Build dictionary based on Akbik et. al character LM dict"""
@@ -314,7 +381,6 @@ def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
             eod_idx = dictionary.add_ngram("<eod>", n_gram)
 
 
-
 def collect_ngrams(line, n, dictionary):
 
     ngrams = []
@@ -329,14 +395,16 @@ def collect_ngrams(line, n, dictionary):
     return ngrams
 
 
-def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int):
+def populate_dense_dict(
+    dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int
+):
 
     dictionary.ngme = "dense"
 
     e = FlairEmbeddings("news-forward")
-    
+
     # Guarantee that all unigram tokens are indexed first
-    # Uni-gram tokens 
+    # Uni-gram tokens
     for token in e.lm.dictionary.item2idx_not_encoded:
         dictionary.add_ngram(token, 1)
 
@@ -349,7 +417,7 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], 
         dictionary._marker_tokens[1] = [start_idx, pad_idx, unk_idx]
 
     # Add new n-gram token only if all uni-gram parts exist
-    for n in range(1, ngrams+1):
+    for n in range(1, ngrams + 1):
 
         if n == 1:
             for line in source:
