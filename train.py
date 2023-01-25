@@ -74,7 +74,7 @@ if __name__ == "__main__":
     )
 
     # Init PL data module
-    data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.cpus)
+    data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
     # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpointCallback(

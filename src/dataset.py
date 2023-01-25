@@ -8,6 +8,7 @@ import nltk
 
 import pytorch_lightning as pl
 import torch
+import numpy as np
 from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
@@ -33,21 +34,100 @@ def zero():
     pass
 
 def batch_collate(batch):
-    # [ngram, seq_len, batch_size]
-    source = torch.cat([torch.tensor(t["source"]).unsqueeze(-1) for t in batch], dim=-1)
-    target = torch.cat([torch.tensor(t["target"]).unsqueeze(-1) for t in batch], dim=-1)
-    return dict(source=source, target=target)
+    # TODO: Little akward that we get two lists where each list contains 2xbatch for source and target
+        
+    source = []
+    target = []
+    for mini_batch in batch:
+        source.append(mini_batch[0])
+        target.append(mini_batch[1])
+
+    source_tensor = torch.tensor(np.stack(source, axis=2))
+    target_tensor = torch.tensor(np.stack(target, axis=2))
+    return source_tensor, target_tensor
+
+class TextDataset(Dataset):
+
+    def __init__(self, ds, batch_size, bptt_size, pad_tokens) -> None:
+        self.bptt = bptt_size
+        self.batch_size = batch_size
+        self.inputs, self.nbatch = batchify(ds["source"], batch_size, bptt_size)
+        self.target, self.nbatch = batchify(ds["target"], batch_size, bptt_size)
+        self.current_batch = 0
+        self.pad_tokens = pad_tokens
+
+    def __len__(self) -> int:
+        return self.nbatch
+
+    def __getitem__(self, idx):
+
+        idx = idx // self.batch_size
+        start_idx = idx * self.bptt
+        end_idx = (idx + 1) * self.bptt
+        source = self.inputs[:, start_idx: end_idx, self.current_batch]
+
+        # Targets already shifted 
+        target = self.target[:, start_idx: end_idx, self.current_batch]
+    
+
+        # We dont need it?
+        # target = self._pad_target(target)
+
+        self.current_batch += 1
+
+        if self.current_batch == self.inputs.shape[2]:
+            self.current_batch = 0
+
+        return source, target
+
+    def _pad_target(self, array: np.ndarray):
+        """Pad n+1 ngram sequences at the end."""
+        ngram = array.shape[0]
+
+        if ngram == 1:
+            return array
+        
+        for n_dim in range(2, ngram+1):
+            for shift in range(1, n_dim+1):
+                array[n_dim-1][-shift] = self.pad_tokens[n_dim]
+
+        return array
+
+
 
 class GenericDataModule(pl.LightningDataModule):
-    def __init__(self, dataset, batch_size, cpus=1):
+    def __init__(self, dataset, batch_size, bptt_size, pad_tokens, cpus=1):
         super().__init__()
         self.dataset = dataset
         self.batch_size = batch_size
+        self.bptt_size = bptt_size
         self.cpus = cpus
+        self.pad_tokens = pad_tokens
+
+    def prepare_data(self):
+        self.train = TextDataset(
+            self.dataset["train"],
+            self.batch_size,
+            self.bptt_size,
+            self.pad_tokens
+        )
+        self.test = TextDataset(
+            self.dataset["test"],
+            self.batch_size,
+            self.bptt_size,
+            self.pad_tokens
+        )
+
+        self.valid = TextDataset(
+            self.dataset["validation"],
+            self.batch_size,
+            self.bptt_size,
+            self.pad_tokens
+        )
 
     def train_dataloader(self):
         return DataLoader(
-            self.dataset["train"],
+            self.train,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
@@ -57,7 +137,7 @@ class GenericDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(
-            self.dataset["validation"],
+            self.valid,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
@@ -67,7 +147,7 @@ class GenericDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            self.dataset["test"],
+            self.test,
             batch_size=self.batch_size,
             collate_fn=batch_collate,
             drop_last=True,
@@ -181,39 +261,18 @@ def load_tokenized_dataset(
             train = train[0 : int(len(train) * sample)]
 
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        print("Join all text rows...")
-        train = "\n".join(train)
-        test = "\n".join(test)
-        valid = "\n".join(valid)
-
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         if not is_forward:
             print("Revert text sequence...")
             train = train[::-1]
             test = test[::-1]
             valid = valid[::-1]
         
-    # Split into batch size
-    train = batchify(train, batch_size, bptt)
-    test = batchify(test, batch_size, bptt)
-    valid = batchify(valid, batch_size, bptt)
-
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        print("Split in bptt")
-        split_seq: List[str] = []
-
-        for i in tqdm(range(0, len(train), bptt)):
-            split_seq.append(train[i : i + bptt])
-
-        if len(split_seq[-1]) != bptt:
-            split_seq[-1] = split_seq[-1].ljust(bptt, " ")
-
     dataset = DatasetDict(
         {
-            "train": HfDataset.from_dict({"text": split_seq}),
-            "test": HfDataset.from_dict({"text": list(grouper(test, bptt, " "))}),
+            "train": HfDataset.from_dict({"text": train}),
+            "test": HfDataset.from_dict({"text": test}),
             "validation": HfDataset.from_dict(
-                {"text": list(grouper(valid, bptt, " "))}
+                {"text": valid}
             ),
         }
     )
@@ -279,6 +338,7 @@ def load_dictionary_from_hf(
         for n_gram in range(2, dictionary.ngram + 1):
             start_idx = dictionary.add_ngram("<start>", n_gram)
             pad_idx = dictionary.add_ngram("<pad>", n_gram)
+            dictionary.pad_tokens[n_gram] = pad_idx
             unk_idx = dictionary.add_ngram("<unk>", n_gram)
             dictionary.add_ngram(" "*n_gram, n_gram)
 
@@ -363,11 +423,3 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str], 
                     dictionary.add_ngram(ngram, n)
 
 
-def remove_marker_tokens(token, dictionary):
-    """Due to some str length comparison to determine what n-gram the token
-    is. We replace the marker tokens, with a single char, for easy comparison
-    """
-    for marker in dictionary.get_marker_tokens():
-        token = token.replace(marker, "i")
-
-    return token

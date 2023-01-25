@@ -27,7 +27,7 @@ class Dictionary:
         self.unk_threshold = unk_threshold
         self.fallback = fallback
         self.frequencies: Counter = Counter()
-        self._pad_token = None
+        self.pad_tokens = {}
 
         self.ngram2word2idx = {}
         self.ngram2idx2word = {}
@@ -35,16 +35,6 @@ class Dictionary:
         self.current_max_idx = 0
         self.ngme = ngme
         self.packed = packed
-
-    @property
-    def pad_token(self):
-        if not self._pad_token:
-            raise ValueError("No pad token set")
-        return self._pad_token
-
-    def set_pad_token(self, pad_token="<pad>"):
-        self._pad_token = self.current_max_idx
-        self.current_max_idx += 1
 
     def get_all_tokens(self):
         for ngram in range(1, self.ngram+1):
@@ -285,8 +275,6 @@ class Dictionary:
             ]
         )
         
-        # print(line)
-
 
         return {"source": sequence, "target": target}
 
@@ -303,12 +291,13 @@ class Dictionary:
         """
         if isinstance(t, list):
             t = torch.tensor(t)
-
+        
+        # Roll sequences now
         st = torch.roll(t, -shifts, 1)
-
-        # st[0][-1] = self.ngram2word2idx[1]["<pad>"]
-        for i in range(1, shifts + 1):
-            st[0][-i] = self.ngram2word2idx[i]["<pad>"]
+        
+        # Apply padding later!
+        # for i in range(1, shifts + 1):
+        #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
         return st
 
     def create_weight_tensor(self, unigram_ppl: bool, weighted_loss: bool = True) -> torch.Tensor:
@@ -345,3 +334,14 @@ class Dictionary:
 
         return 0
 
+    def print_sequence(self, seq, ngram):
+        """docstring for print_sequence"""
+        
+        collected_tokens = []
+
+        for token in seq:
+            if not isinstance(token, int):
+                token = token.item()
+            collected_tokens.append(self.ngram2idx2word[ngram][token])
+
+        print(f"[{', '.join(collected_tokens)}]")
