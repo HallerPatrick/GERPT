@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 
 from src.args import parse_args
@@ -10,10 +12,8 @@ def main():
 
     tokenized_dataset, dictionary = load_tokenized_dataset(
         args.ngme,
-        args.bptt,
         args.ngram,
         args.model,
-        args.batch_size,
         args.max_dict_size,
         args.unk_threshold,
         args.fallback,
@@ -22,8 +22,13 @@ def main():
         args.packed,
         *args.data.split("/")
     )
+    
+    # torch.saved does not overwrite file for some reason
+    if (path := Path(args.saved_data)).exists():
+        print(f"Delete existing tokenized dataset: {args.saved_data}")
+        path.unlink()
 
-    tokenized_dataset.save_to_disk(args.saved_data)
+    torch.save(tokenized_dataset, args.saved_data)
     torch.save(dictionary, args.saved_dict)
 
     print(dictionary.ngram2idx2word)

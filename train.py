@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     if args.saved_dict and args.saved_data:
         print("Load preprocessed dataset from disk...")
-        tokenized_dataset = load_from_disk(args.saved_data)
+        tokenized_dataset = torch.load(args.saved_data)
         dictionary = torch.load(args.saved_dict)
     else:
         # --- Dataloading & Tokenization ---

@@ -28,12 +28,7 @@ local_dataset_mapper = {
 }
 
 
-def grouped(iterable, n):
-    # s -> (s0,s1,s2,...sn-1), (sn,sn+1,sn+2,...s2n-1), (s2n,s2n+1,s2n+2,...s3n-1), ...
-    return zip(*[iter(iterable)] * n)
-
-
-def batchify(text_list: str, batch_size: int, bptt: int):
+def batchify(text: np.ndarray, batch_size: int, bptt: int):
     """Splits text into batches of size batch_size and bptt.
     Parameters
     ----------
@@ -45,11 +40,7 @@ def batchify(text_list: str, batch_size: int, bptt: int):
         Number of tokens per batch
     """
 
-    tokens = np.concatenate(
-        [np.array(sublist) for sublist in text_list if len(sublist) != 0], axis=1
-    )
-
-    text: np.ndarray = tokens
+    assert len(text.shape) == 2
 
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     nbatch = text.shape[1] // (batch_size * bptt)
