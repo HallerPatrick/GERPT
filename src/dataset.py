@@ -44,7 +44,7 @@ class TextDataset(Dataset):
         self.bptt = bptt_size
         self.batch_size = batch_size
         self.inputs, self.nbatch = batchify(ds["source"], batch_size, bptt_size)
-        self.target, self.nbatch = batchify(ds["target"], batch_size, bptt_size)
+        self.target, _ = batchify(ds["target"], batch_size, bptt_size)
         self.current_batch = 0
         self.pad_tokens = pad_tokens
 
@@ -94,7 +94,7 @@ class GenericDataModule(pl.LightningDataModule):
         self.cpus = cpus
         self.pad_tokens = pad_tokens
 
-    def prepare_data(self):
+    def setup(self, stage):
         self.train = TextDataset(
             self.dataset["train"], self.batch_size, self.bptt_size, self.pad_tokens
         )
