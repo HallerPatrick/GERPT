@@ -1,3 +1,5 @@
+import shutil
+
 from pathlib import Path
 
 import torch
@@ -24,9 +26,9 @@ def main():
     )
     
     # torch.saved does not overwrite file for some reason
-    if (path := Path(args.saved_data)).exists():
+    if Path(args.saved_data).exists():
         print(f"Delete existing tokenized dataset: {args.saved_data}")
-        path.unlink()
+        shutil.rmtree(args.saved_data)
 
     torch.save(tokenized_dataset, args.saved_data)
     torch.save(dictionary, args.saved_dict)

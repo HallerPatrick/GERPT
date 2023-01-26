@@ -1,4 +1,5 @@
 from typing import List, Tuple
+import flair
 from flair.embeddings.token import FlairEmbeddings
 import nltk
 
@@ -326,6 +327,10 @@ def load_dictionary_from_hf(
 
 def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
     """Build dictionary based on Akbik et. al character LM dict"""
+    
+    # Keep everything on the cpu
+    flair_device = flair.device 
+    flair.device = "cpu"
     e = FlairEmbeddings("news-forward")
 
     dictionary.ngme = "sparse"
@@ -341,6 +346,9 @@ def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
 
         if model_type == "transformer":
             eod_idx = dictionary.add_ngram("<eod>", n_gram)
+
+    del e
+    flair.device = flair_device
 
 
 def collect_ngrams(line, n, dictionary):
@@ -363,6 +371,8 @@ def populate_dense_dict(
 
     dictionary.ngme = "dense"
         
+    flair_device = flair.device 
+    flair.device = "cpu"
     # Using unigrams from flair as base
     e = FlairEmbeddings("news-forward")
 
@@ -392,3 +402,7 @@ def populate_dense_dict(
                 ngram_lists = collect_ngrams(line, n, dictionary)
                 for ngram in ngram_lists:
                     dictionary.add_ngram(ngram, n)
+
+
+    del e
+    flair.device = flair_device
