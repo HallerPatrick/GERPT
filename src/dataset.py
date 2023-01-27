@@ -6,6 +6,7 @@ import nltk
 import pytorch_lightning as pl
 import torch
 import numpy as np
+import dask.array  as da
 from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
@@ -249,14 +250,14 @@ def load_tokenized_dataset(
 
     print("Concat rows to whole sequence")
     print("Train...")
-    train_source = concat_dataset(tokenized_dataset["train"]["source"])
-    train_target = concat_dataset(tokenized_dataset["train"]["target"])
+    train_source = concat_dataset_dask(tokenized_dataset["train"]["source"]).compute()
+    train_target = concat_dataset_dask(tokenized_dataset["train"]["target"]).compute()
     print("Test...")
-    test_source = concat_dataset(tokenized_dataset["test"]["source"])
-    test_target = concat_dataset(tokenized_dataset["test"]["target"])
+    test_source = concat_dataset_dask(tokenized_dataset["test"]["source"]).compute()
+    test_target = concat_dataset_dask(tokenized_dataset["test"]["target"]).compute()
     print("Valid...")
-    valid_source = concat_dataset(tokenized_dataset["validation"]["source"])
-    valid_target = concat_dataset(tokenized_dataset["validation"]["target"])
+    valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"]).compute()
+    valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"]).compute()
 
     dataset = {
         "train": {"text": train, "source": train_source, "target": train_target},
@@ -267,7 +268,11 @@ def load_tokenized_dataset(
     return dataset, dictionary
 
 
-def concat_dataset(rows):
+def concat_dataset_dask(rows: List[List[List[int]]]):
+    sublists = [da.from_array(sublist, chunks=(len(sublist), len(sublist[0]))) for sublist in rows if len(sublist) != 0]
+    return da.concatenate(sublists, axis=1)
+
+def concat_dataset(rows: List[List[List[int]]]):
     return np.concatenate(
         [np.array(sublist) for sublist in rows if len(sublist) != 0],
         axis=1,
