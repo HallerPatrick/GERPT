@@ -231,16 +231,6 @@ class Dictionary:
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
 
-            if check_special_tokens:
-
-                if isinstance(line, list):
-                    line = "".join(line)
-
-                line = line.replace("<eod>", "Ġ")
-                words.extend(list(line))
-                words[words.index("Ġ")] = "<eod>"
-            else:
-                words.extend(list(line))
             words.extend(list(line))
 
             ids = []
