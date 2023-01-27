@@ -1,4 +1,6 @@
 from typing import List, Tuple
+from multiprocessing import Pool
+
 import flair
 from flair.embeddings.token import FlairEmbeddings
 import nltk
@@ -192,22 +194,25 @@ def load_tokenized_dataset(
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
+
+    print("Remove empty rows...")
+    tokenized_dataset.filter(lambda x: len(x) == 0, num_proc=num_proc)
+
     tokenized_dataset.cleanup_cache_files()
     
     dask.config.set(num_workers=num_proc)
 
-
     print("Concat rows to whole sequence")
-    print("Train...")
     with ProgressBar():
-        train_source = concat_dataset_dask(tokenized_dataset["train"]["source"]).compute()
-        train_target = concat_dataset_dask(tokenized_dataset["train"]["target"]).compute()
+        print("Train...")
+        train_source = concat_dataset_dask(tokenized_dataset["train"]["source"])
+        train_target = concat_dataset_dask(tokenized_dataset["train"]["target"])
         print("Test...")
-        test_source = concat_dataset_dask(tokenized_dataset["test"]["source"]).compute()
-        test_target = concat_dataset_dask(tokenized_dataset["test"]["target"]).compute()
+        test_source = concat_dataset_dask(tokenized_dataset["test"]["source"])
+        test_target = concat_dataset_dask(tokenized_dataset["test"]["target"])
         print("Valid...")
-        valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"]).compute()
-        valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"]).compute()
+        valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"])
+        valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"])
 
     dataset = {
         # "train": {"text": train, "source": train_source, "target": train_target},
@@ -218,77 +223,21 @@ def load_tokenized_dataset(
 
     return dataset, dictionary
 
-def preprocess(dataset):
-    # print("Preprocess dataset...")
-    # with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-    # 
-        # # TODO: Refactor
-        # if args[0].startswith("wikipedia"):
-        #     train = []
-        #     test = []
-        #     valid = []
-        #
-        #     wiki206 = 120000  # For english about 2x wiki103
-        #
-        #     for row in tqdm(dataset["train"]["text"][:wiki206]):
-        #         train.append(row)
-        #
-        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1 : wiki206 + 1000]):
-        #         test.append(row)
-        #
-        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1001 : wiki206 + 2000]):
-        #         valid.append(row)
-        # else:
-        #     train = []
-        #     for row in tqdm(dataset["train"]):
-        #         train.append(row["text"])
-        #
-        #     if "test" in dataset:
-        #         test = process_map(get_text, dataset["test"], max_workers=num_proc)
-        #     else:
-        #         test = []
-        #
-        #     if "validation" in dataset:
-        #         valid = process_map(
-        #             get_text, dataset["validation"], max_workers=num_proc
-        #         )
-        #     else:
-        #         valid = []
-        # dataset.set_format(type="numpy")
-        # print(dataset)
-        # exit()
-    # sample = 1
-    #
-    # if sample != 1.0:
-    #     print(f"Subsample to {sample}...")
-    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-    #         train = train[0 : int(len(train) * sample)]
-    #
-    # if not is_forward:
-    #     print("Revert text sequence...")
-    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-    #             train = train[::-1]
-    #             test = test[::-1]
-    #             valid = valid[::-1]
-    
-    # We basically use HF datasets here used for the multiprocessing feature for the tokenization
-    # dataset = DatasetDict(
-    #     {
-    #         "train": HfDataset.from_dict({"text": train}),
-    #         "test": HfDataset.from_dict({"text": test}),
-    #         "validation": HfDataset.from_dict({"text": valid}),
-    #     }
-    # )
-
 def concat_dataset_dask(rows: List[List[List[int]]]):
-    sublists = [da.from_array(sublist, chunks=(len(sublist), len(sublist[0]))) for sublist in rows if len(sublist) != 0]
-    return dask.delayed(da.concatenate(sublists, axis=1))
 
-def concat_dataset(rows: List[List[List[int]]]):
-    return np.concatenate(
-        [np.array(sublist) for sublist in rows if len(sublist) != 0],
-        axis=1,
-    )
+    sublists = []
+    for sublist in tqdm(rows):
+        if len(sublist) != 0:
+            sublists.append(da.from_array(sublist, chunks=(len(sublist), len(sublist[0]))))
+
+    return da.concatenate(sublists, axis=1).compute()
+
+
+def concat_dataset(rows: List[List[List[int]]], num_workers):
+    with Pool(num_workers) as pool:
+        sublists = pool.map(np.array, rows)
+
+    return np.concatenate(sublists, axis=1)
 
 
 def load_dictionary_from_hf(
@@ -336,8 +285,6 @@ def load_dictionary_from_hf(
         range(0, len(dictionary.ngram2idx2word[1]))
     )
 
-    # print(f"Saving dictionary at {hash_file}...")
-    # torch.save(dictionary, hash_file)
 
     return dictionary
 
@@ -423,3 +370,68 @@ def populate_dense_dict(
 
     del e
     flair.device = flair_device
+
+
+def preprocess(dataset):
+    # print("Preprocess dataset...")
+    # with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    # 
+        # # TODO: Refactor
+        # if args[0].startswith("wikipedia"):
+        #     train = []
+        #     test = []
+        #     valid = []
+        #
+        #     wiki206 = 120000  # For english about 2x wiki103
+        #
+        #     for row in tqdm(dataset["train"]["text"][:wiki206]):
+        #         train.append(row)
+        #
+        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1 : wiki206 + 1000]):
+        #         test.append(row)
+        #
+        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1001 : wiki206 + 2000]):
+        #         valid.append(row)
+        # else:
+        #     train = []
+        #     for row in tqdm(dataset["train"]):
+        #         train.append(row["text"])
+        #
+        #     if "test" in dataset:
+        #         test = process_map(get_text, dataset["test"], max_workers=num_proc)
+        #     else:
+        #         test = []
+        #
+        #     if "validation" in dataset:
+        #         valid = process_map(
+        #             get_text, dataset["validation"], max_workers=num_proc
+        #         )
+        #     else:
+        #         valid = []
+        # dataset.set_format(type="numpy")
+        # print(dataset)
+        # exit()
+    # sample = 1
+    #
+    # if sample != 1.0:
+    #     print(f"Subsample to {sample}...")
+    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #         train = train[0 : int(len(train) * sample)]
+    #
+    # if not is_forward:
+    #     print("Revert text sequence...")
+    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #             train = train[::-1]
+    #             test = test[::-1]
+    #             valid = valid[::-1]
+    
+    # We basically use HF datasets here used for the multiprocessing feature for the tokenization
+    # dataset = DatasetDict(
+    #     {
+    #         "train": HfDataset.from_dict({"text": train}),
+    #         "test": HfDataset.from_dict({"text": test}),
+    #         "validation": HfDataset.from_dict({"text": valid}),
+    #     }
+    # )
+    pass
+
