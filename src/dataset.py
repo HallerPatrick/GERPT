@@ -6,7 +6,10 @@ import nltk
 import pytorch_lightning as pl
 import torch
 import numpy as np
+import dask
 import dask.array  as da
+from dask.diagnostics import ProgressBar
+
 from codetiming import Timer
 from datasets import Dataset as HfDataset
 from datasets import load_dataset as ld
@@ -247,17 +250,21 @@ def load_tokenized_dataset(
         num_proc=num_proc,
     )
     tokenized_dataset.cleanup_cache_files()
+    
+    dask.config.set(num_workers=num_proc)
+
 
     print("Concat rows to whole sequence")
     print("Train...")
-    train_source = concat_dataset_dask(tokenized_dataset["train"]["source"]).compute()
-    train_target = concat_dataset_dask(tokenized_dataset["train"]["target"]).compute()
-    print("Test...")
-    test_source = concat_dataset_dask(tokenized_dataset["test"]["source"]).compute()
-    test_target = concat_dataset_dask(tokenized_dataset["test"]["target"]).compute()
-    print("Valid...")
-    valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"]).compute()
-    valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"]).compute()
+    with ProgressBar():
+        train_source = concat_dataset_dask(tokenized_dataset["train"]["source"]).compute()
+        train_target = concat_dataset_dask(tokenized_dataset["train"]["target"]).compute()
+        print("Test...")
+        test_source = concat_dataset_dask(tokenized_dataset["test"]["source"]).compute()
+        test_target = concat_dataset_dask(tokenized_dataset["test"]["target"]).compute()
+        print("Valid...")
+        valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"]).compute()
+        valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"]).compute()
 
     dataset = {
         "train": {"text": train, "source": train_source, "target": train_target},
@@ -270,7 +277,7 @@ def load_tokenized_dataset(
 
 def concat_dataset_dask(rows: List[List[List[int]]]):
     sublists = [da.from_array(sublist, chunks=(len(sublist), len(sublist[0]))) for sublist in rows if len(sublist) != 0]
-    return da.concatenate(sublists, axis=1)
+    return dask.delayed(da.concatenate(sublists, axis=1))
 
 def concat_dataset(rows: List[List[List[int]]]):
     return np.concatenate(
