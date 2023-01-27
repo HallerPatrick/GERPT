@@ -167,51 +167,17 @@ def load_tokenized_dataset(
         dataset = ld(*local_dataset_mapper[args[0]]["args"])
     else:
         # Load the datasets from huggingface
-        print(args, kwargs)
         dataset = ld(*args, **kwargs)
-
-    print("Preprocess dataset...")
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
     
-        # TODO: Refactor
-        if args[0].startswith("wikipedia"):
-            train = []
-            test = []
-            valid = []
-
-            wiki206 = 120000  # For english about 2x wiki103
-
-            for row in tqdm(dataset["train"]["text"][:wiki206]):
-                train.append(row)
-
-            for row in tqdm(dataset["train"]["text"][wiki206 + 1 : wiki206 + 1000]):
-                test.append(row)
-
-            for row in tqdm(dataset["train"]["text"][wiki206 + 1001 : wiki206 + 2000]):
-                valid.append(row)
-        else:
-            train = []
-            for row in tqdm(dataset["train"]):
-                train.append(row["text"])
-
-            if "test" in dataset:
-                test = process_map(get_text, dataset["test"], max_workers=num_proc)
-            else:
-                test = []
-
-            if "validation" in dataset:
-                valid = process_map(
-                    get_text, dataset["validation"], max_workers=num_proc
-                )
-            else:
-                valid = []
+    # TODO: What do we need from this?
+    # dataset = preprocess(dataset)
     
     # TODO: Allow for pretrained dict
     print("Collecting dictionary...")
     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
         dictionary = load_dictionary_from_hf(
             ngme,
-            train,
+            dataset["train"],
             ngram,
             model_type,
             max_dict_size,
@@ -219,29 +185,6 @@ def load_tokenized_dataset(
             fallback,
             packed=packed,
         )
-
-    sample = 1
-
-    if sample != 1.0:
-        print(f"Subsample to {sample}...")
-        with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-            train = train[0 : int(len(train) * sample)]
-
-    if not is_forward:
-        print("Revert text sequence...")
-        with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-                train = train[::-1]
-                test = test[::-1]
-                valid = valid[::-1]
-    
-    # We basically use HF datasets here used for the multiprocessing feature for the tokenization
-    dataset = DatasetDict(
-        {
-            "train": HfDataset.from_dict({"text": train}),
-            "test": HfDataset.from_dict({"text": test}),
-            "validation": HfDataset.from_dict({"text": valid}),
-        }
-    )
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
@@ -267,13 +210,75 @@ def load_tokenized_dataset(
         valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"]).compute()
 
     dataset = {
-        "train": {"text": train, "source": train_source, "target": train_target},
-        "test": {"text": test, "source": test_source, "target": test_target},
-        "validation": {"text": valid, "source": valid_source, "target": valid_target}
+        # "train": {"text": train, "source": train_source, "target": train_target},
+        "train": {"source": train_source, "target": train_target},
+        "test": {"source": test_source, "target": test_target},
+        "validation": {"source": valid_source, "target": valid_target}
     }
 
     return dataset, dictionary
 
+def preprocess(dataset):
+    # print("Preprocess dataset...")
+    # with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    # 
+        # # TODO: Refactor
+        # if args[0].startswith("wikipedia"):
+        #     train = []
+        #     test = []
+        #     valid = []
+        #
+        #     wiki206 = 120000  # For english about 2x wiki103
+        #
+        #     for row in tqdm(dataset["train"]["text"][:wiki206]):
+        #         train.append(row)
+        #
+        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1 : wiki206 + 1000]):
+        #         test.append(row)
+        #
+        #     for row in tqdm(dataset["train"]["text"][wiki206 + 1001 : wiki206 + 2000]):
+        #         valid.append(row)
+        # else:
+        #     train = []
+        #     for row in tqdm(dataset["train"]):
+        #         train.append(row["text"])
+        #
+        #     if "test" in dataset:
+        #         test = process_map(get_text, dataset["test"], max_workers=num_proc)
+        #     else:
+        #         test = []
+        #
+        #     if "validation" in dataset:
+        #         valid = process_map(
+        #             get_text, dataset["validation"], max_workers=num_proc
+        #         )
+        #     else:
+        #         valid = []
+        # dataset.set_format(type="numpy")
+        # print(dataset)
+        # exit()
+    # sample = 1
+    #
+    # if sample != 1.0:
+    #     print(f"Subsample to {sample}...")
+    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #         train = train[0 : int(len(train) * sample)]
+    #
+    # if not is_forward:
+    #     print("Revert text sequence...")
+    #     with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
+    #             train = train[::-1]
+    #             test = test[::-1]
+    #             valid = valid[::-1]
+    
+    # We basically use HF datasets here used for the multiprocessing feature for the tokenization
+    # dataset = DatasetDict(
+    #     {
+    #         "train": HfDataset.from_dict({"text": train}),
+    #         "test": HfDataset.from_dict({"text": test}),
+    #         "validation": HfDataset.from_dict({"text": valid}),
+    #     }
+    # )
 
 def concat_dataset_dask(rows: List[List[List[int]]]):
     sublists = [da.from_array(sublist, chunks=(len(sublist), len(sublist[0]))) for sublist in rows if len(sublist) != 0]
