@@ -144,11 +144,11 @@ class Dictionary:
                     index += 1
         return vocab_file
 
-    def tokenize_line(self, line: Union[str, List[str]], id_type=torch.int16, check_special_tokens: bool = False) -> dict:
+    def tokenize_line(self, line: Union[str, List[str]], id_type=torch.int16) -> dict:
         if self.ngme == "dense":
-            return self._tokenize_line_dense(line, id_type, check_special_tokens)
+            return self._tokenize_line_dense(line, id_type)
         elif self.ngme == "sparse":
-            return self._tokenize_line_sparse(line, id_type, check_special_tokens)
+            return self._tokenize_line_sparse(line, id_type)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
     
@@ -157,7 +157,7 @@ class Dictionary:
         return [self.ngram2idx2word[1][special_token_id] for special_token_id in self._marker_tokens[1]]
 
 
-    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, check_special_tokens: bool = False):
+    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -209,7 +209,7 @@ class Dictionary:
 
         return {"text": line, "source": sequence, "target": target}
 
-    def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type, check_special_tokens: bool = False):
+    def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type):
         """
 
         line: List of chars
