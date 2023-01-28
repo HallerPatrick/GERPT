@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import List, Tuple
 from multiprocessing import Pool
 
@@ -27,7 +28,7 @@ from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 from humanfriendly import format_timespan
 
-from . import USE_CACHE
+from . import SERVER_CACHE, USE_CACHE
 from .dictionary import Dictionary
 from .data import batchify, local_dataset_mapper
 
@@ -196,8 +197,7 @@ def load_tokenized_dataset(
     )
 
     print("Remove empty rows...")
-    tokenized_dataset.filter(lambda x: len(x) == 0, num_proc=num_proc)
-
+    tokenized_dataset = tokenized_dataset.filter(lambda x: len(x["source"]) > 0, num_proc=num_proc)
     tokenized_dataset.cleanup_cache_files()
     
     dask.config.set(num_workers=num_proc)
@@ -205,14 +205,15 @@ def load_tokenized_dataset(
     print("Concat rows to whole sequence")
     with ProgressBar():
         print("Train...")
-        train_source = concat_dataset_dask(tokenized_dataset["train"]["source"])
-        train_target = concat_dataset_dask(tokenized_dataset["train"]["target"])
+
+        train_source = concat_dataset_dask(tokenized_dataset["train"]["source"], num_proc)
+        train_target = concat_dataset_dask(tokenized_dataset["train"]["target"], num_proc)
         print("Test...")
-        test_source = concat_dataset_dask(tokenized_dataset["test"]["source"])
-        test_target = concat_dataset_dask(tokenized_dataset["test"]["target"])
+        test_source = concat_dataset_dask(tokenized_dataset["test"]["source"], num_proc)
+        test_target = concat_dataset_dask(tokenized_dataset["test"]["target"], num_proc)
         print("Valid...")
-        valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"])
-        valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"])
+        valid_source = concat_dataset_dask(tokenized_dataset["validation"]["source"], num_proc)
+        valid_target = concat_dataset_dask(tokenized_dataset["validation"]["target"], num_proc)
 
     dataset = {
         # "train": {"text": train, "source": train_source, "target": train_target},
@@ -223,7 +224,19 @@ def load_tokenized_dataset(
 
     return dataset, dictionary
 
-def concat_dataset_dask(rows: List[List[List[int]]]):
+def np_array(x):
+    # print(x)
+    a = np.array(x)
+    # print(a)
+    return a
+
+def chunksize(iterable, num_workers):
+    chunksize, extra = divmod(len(iterable), num_workers * 4)
+    if extra:
+        chunksize += 1
+    return chunksize
+
+def _concat_dataset_dask(rows: List[List[List[int]]]):
 
     sublists = []
     for sublist in tqdm(rows):
@@ -233,10 +246,10 @@ def concat_dataset_dask(rows: List[List[List[int]]]):
     return da.concatenate(sublists, axis=1).compute()
 
 
-def concat_dataset(rows: List[List[List[int]]], num_workers):
-    with Pool(num_workers) as pool:
-        sublists = pool.map(np.array, rows)
-
+def concat_dataset_dask(rows: List[List[List[int]]], num_workers):
+    # with Pool(num_workers) as pool:
+    sublists = process_map(np_array, rows, max_workers=num_workers, chunksize=chunksize(rows, num_workers))
+    
     return np.concatenate(sublists, axis=1)
 
 
