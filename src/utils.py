@@ -1,10 +1,13 @@
 import timeit
 from datetime import timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, List
 
 import pytorch_lightning as pl
 import torch
 from torch import Tensor
+
+import numpy as np
+from numba import jit
 
 import torch.nn.functional as F
 
@@ -276,3 +279,18 @@ def count_parameters(model):
     print(table)
     print(f"Total Trainable Params: {total_params}")
     return total_params
+
+
+def concat_dataset(rows: List[List[List[int]]]):
+    # chunksize = calc_chunksize(rows, num_workers)
+    # chunksize = 10000
+    # print(f"Chunksize: {chunksize}")
+
+    # with Pool(num_workers) as pool:
+    # sublists = process_map(np_array, rows, max_workers=num_workers, chunksize=chunksize)
+    
+    return np.concatenate((rows), axis=1, dtype=np.int16)
+
+@jit(parallel=True, nopython=True)
+def numba_concat_dataset(rows: List[List[List[int]]]):
+    return np.concatenate(rows, axis=1) #, dtype=np.int16)

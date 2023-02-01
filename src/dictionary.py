@@ -207,7 +207,7 @@ class Dictionary:
             target = utils.pack_tensor(target)
 
 
-        return {"text": line, "source": sequence, "target": target}
+        return {"text": line, "source": sequence.numpy(), "target": target.numpy()}
 
     def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type):
         """

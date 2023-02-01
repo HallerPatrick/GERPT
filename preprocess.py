@@ -34,7 +34,7 @@ def main():
         except NotADirectoryError:
             os.remove(args.saved_data)
 
-    torch.save(tokenized_dataset, args.saved_data)
+    torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)
     torch.save(dictionary, args.saved_dict)
 
     print(dictionary.ngram2idx2word)

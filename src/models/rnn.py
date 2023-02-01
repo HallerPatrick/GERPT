@@ -6,6 +6,9 @@ from typing import List, Optional, Union
 import flair
 import numpy as np
 import pytorch_lightning as pl
+from pytorch_lightning.utilities import rank_zero
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -96,9 +99,6 @@ class RNNModel(pl.LightningModule):
             # TODO: No Support for bidirectional and layers yet
             # TODO: Good amount of iterations for mog?
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
-
-
-
 
 
         self.drop = nn.Dropout(dropout)
@@ -245,6 +245,7 @@ class RNNModel(pl.LightningModule):
         # Reset hidden after each epoch
         self.hidden = None
 
+    @rank_zero.rank_zero_only
     def generate_text(self) -> str:
 
         inp = torch.randint(

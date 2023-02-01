@@ -1,5 +1,31 @@
 import numpy as np
 
+babylm_files = [
+    "aochildes",
+    "bnc_spoken",
+    "cbt",
+    "children_stories",
+    "gutenberg",
+    "open_subtitles",
+    "qed",
+    "simple_wikipedia",
+    "switchboard",
+    "wikipedia",
+]
+
+
+def baby_lm_train(size_path):
+    return [f"data/babylm_data/{size_path}/{file}.train" for file in babylm_files]
+
+
+def baby_lm_dev():
+    return [f"data/babylm_data/babylm_dev/{file}.dev" for file in babylm_files]
+
+
+def baby_lm_test():
+    return [f"data/babylm_data/babylm_test/{file}.test" for file in babylm_files]
+
+
 local_dataset_mapper = {
     "hp": {
         "train": "data/hp/train.txt",
@@ -24,7 +50,22 @@ local_dataset_mapper = {
     },
     "wikipedia_en": {"args": ["wikipedia", "20220301.en"]},
     "wikipedia_de": {"args": ["wikipedia", "20220301.de"]},
-    "obw_news": {"train": "data/obw_news/train.txt"},
+    "obw_news": {
+        "train": "data/obw_news/train.txt",
+        "test": "data/obw_news/test.txt",
+        "validation": "data/obw_news/valid.txt",
+    },
+    "babylm10M": {
+        "train": baby_lm_train("babylm_10M"),
+        "test": baby_lm_test(),
+        # For the pipeline, which expects a validation set
+        "validation": baby_lm_dev(),
+    },
+    "babylm100M": {
+        "train": baby_lm_train("babylm_100M"),
+        "test": baby_lm_test(),
+        "validation": baby_lm_dev(),
+    },
 }
 
 
@@ -45,6 +86,8 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     nbatch = text.shape[1] // (batch_size * bptt)
     text = text[:, : nbatch * batch_size * bptt]
+
     text = text.reshape((text.shape[0], batch_size, -1)).transpose((0, 2, 1))
 
+    # text: [ngram, seq, batch_size]
     return text, nbatch
