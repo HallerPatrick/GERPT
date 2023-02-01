@@ -112,8 +112,8 @@ class GenericDataModule(pl.LightningDataModule):
         return DataLoader(
             self.train,
             batch_size=self.batch_size,
-            collate_fn=batch_collate,
-            drop_last=True,
+            # collate_fn=batch_collate,
+            drop_last=False,
             num_workers=self.cpus,
             pin_memory=True,
         )
@@ -122,8 +122,8 @@ class GenericDataModule(pl.LightningDataModule):
         return DataLoader(
             self.valid,
             batch_size=self.batch_size,
-            collate_fn=batch_collate,
-            drop_last=True,
+            # collate_fn=batch_collate,
+            drop_last=False,
             num_workers=self.cpus,
             pin_memory=True,
         )
@@ -132,8 +132,8 @@ class GenericDataModule(pl.LightningDataModule):
         return DataLoader(
             self.test,
             batch_size=self.batch_size,
-            collate_fn=batch_collate,
-            drop_last=True,
+            # collate_fn=batch_collate,
+            drop_last=False,
             num_workers=self.cpus,
             pin_memory=True,
         )
@@ -190,7 +190,7 @@ def load_tokenized_dataset(
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
-        lambda x: dictionary.tokenize_line(x["text"]),
+        lambda x: dictionary.tokenize_line(x["text"], id_type=torch.int16, return_tensor="np"),
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
@@ -199,9 +199,6 @@ def load_tokenized_dataset(
     tokenized_dataset = tokenized_dataset.filter(filter_empty_row, num_proc=num_proc)
     tokenized_dataset.cleanup_cache_files()
 
-    os.system("clear")
-
-    dask.config.set(num_workers=num_proc)
 
     print("Concat rows to whole sequence")
     with ProgressBar():
@@ -238,11 +235,12 @@ def np_array(x):
 
 
 def concat_dataset(rows: List[List[List[int]]]):
-    return np.concatenate(rows, axis=1, dtype=np.int16)
+    # Numpy casts lists to float64, we therefore cannot safely donwscast to int16
+    return np.concatenate(rows, axis=1, dtype=np.int16, casting="unsafe")
 
 
-@jit(nopython=True)
-def numba_concat_dataset(rows: List[List[List[int]]]):
+@jit(parallel=True)
+def _concat_dataset(rows: List[List[List[int]]]):
     return np.concatenate(rows, axis=1, dtype=np.int16)
 
 

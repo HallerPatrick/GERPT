@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 babylm_files = [
@@ -83,11 +84,14 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
 
     assert len(text.shape) == 2
 
+    text: torch.Tensor = torch.from_numpy(text)
+
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    nbatch = text.shape[1] // (batch_size * bptt)
+    nbatch = text.size(1) // (batch_size * bptt)
     text = text[:, : nbatch * batch_size * bptt]
 
-    text = text.reshape((text.shape[0], batch_size, -1)).transpose((0, 2, 1))
+    # text = text.reshape((text.shape[0], batch_size, -1)).transpose((0, 2, 1))
+    text = text.view((text.size(0), batch_size, -1)).permute((0, 2, 1)).contiguous().to(torch.int64)
 
     # text: [ngram, seq, batch_size]
     return text, nbatch

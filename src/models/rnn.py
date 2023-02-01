@@ -154,7 +154,7 @@ class RNNModel(pl.LightningModule):
     def _step(self, batch):
 
         # batch_size = batch["source"].size()[-1]
-        source, target = batch[0], batch[1]
+        source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
         batch_size = source.size(2)
 
@@ -240,7 +240,10 @@ class RNNModel(pl.LightningModule):
         self.epoch += 1
 
         if self.generate:
-            print(Panel(self.generate_text(), title="[green]Generated text"))
+            # Only rank zero gives output
+            result= self.generate_text()
+            if result:
+                print(Panel(result, title="[green]Generated text"))
             self.train()
         # Reset hidden after each epoch
         self.hidden = None
@@ -307,7 +310,8 @@ class RNNModel(pl.LightningModule):
                 
                 inp = (
                     self.dictionary.tokenize_line(
-                        list(generated_output[-200:]), id_type=torch.int64
+                        list(generated_output[-200:]), id_type=torch.int64,
+                        return_tensor="pt"
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)

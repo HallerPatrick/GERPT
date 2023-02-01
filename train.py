@@ -13,6 +13,8 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
+from pytorch_lightning.profiler import PyTorchProfiler
+from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 
 import wandb
 from src import USE_CACHE
@@ -96,6 +98,7 @@ if __name__ == "__main__":
     plugins = []
 
     if torch.cuda.is_available():
+        strategy = DeepSpeedStrategy(args.batch_size),
         strategy = "deepspeed_stage_2"
     else:
         strategy = None
@@ -118,7 +121,7 @@ if __name__ == "__main__":
         ],
         # Disable validation during training
         limit_val_batches=0.0,
-        # profiler="simple",
+        profiler=PyTorchProfiler(),
         fast_dev_run=False,
     )
 

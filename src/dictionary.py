@@ -3,9 +3,10 @@ import itertools
 import os
 import sys
 import copy
-
-import nltk
 from pathlib import Path
+
+import numpy as np
+import nltk
 from typing import Optional, List, Union, Iterator
 from collections import defaultdict, Counter
 
@@ -144,11 +145,11 @@ class Dictionary:
                     index += 1
         return vocab_file
 
-    def tokenize_line(self, line: Union[str, List[str]], id_type=torch.int16) -> dict:
+    def tokenize_line(self, line: Union[str, List[str]], id_type=torch.int64, return_tensor: Optional[str]=None) -> dict:
         if self.ngme == "dense":
-            return self._tokenize_line_dense(line, id_type)
+            return self._tokenize_line_dense(line, id_type, return_tensor)
         elif self.ngme == "sparse":
-            return self._tokenize_line_sparse(line, id_type)
+            return self._tokenize_line_sparse(line, id_type, return_tensor)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
     
@@ -157,7 +158,7 @@ class Dictionary:
         return [self.ngram2idx2word[1][special_token_id] for special_token_id in self._marker_tokens[1]]
 
 
-    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type):
+    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -206,10 +207,14 @@ class Dictionary:
             sequence = utils.pack_tensor(sequence)
             target = utils.pack_tensor(target)
 
+        
+        if return_tensor:
+            sequence = self._to_tensor(sequence, return_tensor)
+            target = self._to_tensor(target, return_tensor)
 
-        return {"text": line, "source": sequence.numpy(), "target": target.numpy()}
+        return {"text": line, "source": sequence, "target": target}
 
-    def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type):
+    def _tokenize_line_sparse(self, line: Union[str, List[str]], id_type, return_tensor):
         """
 
         line: List of chars
@@ -265,6 +270,9 @@ class Dictionary:
             ]
         )
         
+        if return_tensor:
+            sequence = self._to_tensor(sequence, return_tensor)
+            target = self._to_tensor(target, return_tensor)
 
         return {"source": sequence, "target": target}
 
@@ -335,3 +343,12 @@ class Dictionary:
             collected_tokens.append(self.ngram2idx2word[ngram][token])
 
         print(f"[{', '.join(collected_tokens)}]")
+    
+    @staticmethod
+    def _to_tensor(tensor, t_type):
+        if t_type == "np":
+            return np.array(tensor)
+        if t_type == "pt":
+            return torch.tensor(tensor)
+
+        return tensor
