@@ -183,7 +183,7 @@ class Dictionary:
 
                 length += 1
 
-            seq = torch.tensor(ids).type(torch.int64).unsqueeze(dim=0)
+            seq = torch.tensor(ids).type(id_type).unsqueeze(dim=0)
 
             # length = len(seq)
             length = seq.size(1)
@@ -208,7 +208,7 @@ class Dictionary:
             target = utils.pack_tensor(target)
 
         
-        if return_tensor:
+        if return_tensor and return_tensor != "pt":
             sequence = self._to_tensor(sequence, return_tensor)
             target = self._to_tensor(target, return_tensor)
 
@@ -289,10 +289,10 @@ class Dictionary:
         """
         if isinstance(t, list):
             t = torch.tensor(t)
-        
+
         # Roll sequences now
         st = torch.roll(t, -shifts, 1)
-        
+
         # Apply padding later!
         # for i in range(1, shifts + 1):
         #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
@@ -351,4 +351,4 @@ class Dictionary:
         if t_type == "pt":
             return torch.tensor(tensor)
 
-        return tensor
+        return list(tensor)

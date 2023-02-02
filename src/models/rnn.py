@@ -197,28 +197,28 @@ class RNNModel(pl.LightningModule):
         except:
             pass
 
-        # Unigram output
-        output = torch.index_select(
-            decoded,
-            1,
-            torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
-                self.device
-            ),
-        )
-        targets = torch.index_select(
-            target,
-            1,
-            torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
-                self.device
-            ),
-        )
-        # Back to simple one hot encoding
-        targets[targets != 0] = 1
+        if self.unigram_ppl:
+            # Unigram output
+            output = torch.index_select(
+                decoded,
+                1,
+                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                    self.device
+                ),
+            )
+            targets = torch.index_select(
+                target,
+                1,
+                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                    self.device
+                ),
+            )
+            # Back to simple one hot encoding
+            targets[targets != 0] = 1
 
-        unigram_loss = self.criterion.unigram_loss(output, targets)
-
-        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
-        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
+            unigram_loss = self.criterion.unigram_loss(output, targets)
+            self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+            self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
@@ -307,7 +307,7 @@ class RNNModel(pl.LightningModule):
                 sample_text = sample_text + "·" + word
 
                 # Use last 200 chars as sequence for new input
-                
+
                 inp = (
                     self.dictionary.tokenize_line(
                         list(generated_output[-200:]), id_type=torch.int64,
@@ -326,7 +326,6 @@ class RNNModel(pl.LightningModule):
             )
         except:
             pass
-        # wandb.log({"train/text": generated_output})
 
         return sample_text
 
@@ -340,7 +339,7 @@ class RNNModel(pl.LightningModule):
         # [#ngram, #seq_len, #batch_size]
         emb = self.encoder(input)
         emb = self.drop(emb)
-        
+
         if isinstance(self.rnn, nn.LSTM):
             self.rnn.flatten_parameters()
             output, hidden = self.rnn(emb, hidden)

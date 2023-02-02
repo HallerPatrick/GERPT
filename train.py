@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
     if torch.cuda.is_available():
         strategy = DeepSpeedStrategy(args.batch_size),
-        strategy = "deepspeed_stage_2"
+        # strategy = "deepspeed_stage_2"
     else:
         strategy = None
 
