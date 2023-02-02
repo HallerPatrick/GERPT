@@ -1,7 +1,6 @@
 import math
-import itertools
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List,  Union
 
 import flair
 import numpy as np

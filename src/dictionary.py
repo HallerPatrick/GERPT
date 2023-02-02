@@ -1,8 +1,6 @@
-import os
 import sys
 from collections import Counter, OrderedDict, defaultdict
 from functools import lru_cache
-from pathlib import Path
 from typing import Iterator, List, Optional, Union
 
 import nltk
@@ -121,7 +119,15 @@ class Dictionary:
 
         for ngram in self.ngram2idx2word.keys():
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
-                if token in candidates or ngram == 1:
+                # Add token if:
+                # 1. Token occurs often enough
+                # 2. Is a marker token
+                # 3. Is unigram
+                if (
+                    token in candidates
+                    or ngram_idx in dictionary._marker_tokens[ngram]
+                    or ngram == 1
+                ):
                     dictionary.add_ngram(token, ngram)
 
         dictionary.frequencies = self.frequencies
@@ -142,18 +148,10 @@ class Dictionary:
                 return idxs[idx]
         return None
 
-    def save(self, savefile):
-        import pickle
-
-        with open(savefile, "wb") as f:
-            mappings = {"idx2item": self.idx2word, "item2idx": self.word2idx}
-            pickle.dump(mappings, f)
-
     def save_vocabulary(
         self,
         vocab_file: str,
         ngram: int,
-        filename_prefix: Optional[str] = None,
     ) -> str:
 
         index = 0

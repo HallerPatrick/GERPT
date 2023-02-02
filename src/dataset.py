@@ -1,8 +1,6 @@
 import gc
-import os
 from typing import List, Optional, Tuple
 
-import dask
 import flair
 import nltk
 import numpy as np
@@ -16,9 +14,8 @@ from humanfriendly import format_timespan
 from numba import jit
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
-from tqdm.contrib.concurrent import process_map
 
-from . import SERVER_CACHE, USE_CACHE
+from . import USE_CACHE
 from .data import batchify, local_dataset_mapper
 from .dictionary import Dictionary
 
@@ -269,29 +266,18 @@ def load_dictionary_from_hf(
     )
 
     if ngme == "sparse":
-        populate_sparse_dict(dictionary, ngrams, model_type)
+        populate_sparse_dict(dictionary, ngrams)
     elif ngme == "dense":
         populate_dense_dict(dictionary, ngrams, source)
     else:
         raise ValueError("NGME approach not known")
 
-    if dictionary.max_dict_size > 0:
-        dictionary = dictionary.unking()
-
+    if dictionary.max_dict_size == 0:
+        dictionary.max_dict_size = len(dictionary)
+    
+    # TODO: No unking with sparse?
     if ngme == "dense":
-        for n_gram in range(2, dictionary.ngram + 1):
-            start_idx = dictionary.add_ngram("<start>", n_gram)
-            pad_idx = dictionary.add_ngram("<pad>", n_gram)
-            dictionary.pad_tokens[n_gram] = pad_idx
-            unk_idx = dictionary.add_ngram("<unk>", n_gram)
-            dictionary.add_ngram(" " * n_gram, n_gram)
-
-            if model_type == "transformer":
-                # TODO: Needed?
-                eod_idx = dictionary.add_ngram("<eod>", n_gram)
-
-            if n_gram not in dictionary._marker_tokens:
-                dictionary._marker_tokens[n_gram] = [start_idx, pad_idx, unk_idx]
+        dictionary = dictionary.unking()
 
     # Check if all unigrams were indexed first and all idx are consecutive
     assert list(dictionary.ngram2idx2word[1].keys()) == list(
@@ -301,31 +287,22 @@ def load_dictionary_from_hf(
     return dictionary
 
 
-def populate_sparse_dict(dictionary, ngrams: int, model_type: str):
-    """Build dictionary based on Akbik et. al character LM dict"""
+def populate_sparse_dict(dictionary, ngrams: int):
+    """Build dictionary based on Flair character LM dict"""
 
-    # Keep everything on the cpu
-    flair_device = flair.device
-    flair.device = "cpu"
-    e = FlairEmbeddings("news-forward")
-
-    dictionary.ngme = "sparse"
-
-    for token in e.lm.dictionary.item2idx_not_encoded:
-        for n_gram in range(1, ngrams + 1):
-            dictionary.add_ngram(token, n_gram)
-
+    unigram_tokens = get_unigram_tokens()
     for n_gram in range(1, ngrams + 1):
         dictionary.add_ngram("<start>", n_gram)
         dictionary.add_ngram("<pad>", n_gram)
         dictionary.add_ngram("<unk>", n_gram)
 
-        if model_type == "transformer":
-            _ = dictionary.add_ngram("<eod>", n_gram)
+        for token in unigram_tokens:
+                dictionary.add_ngram(token, n_gram)
 
-    del e
-    flair.device = flair_device
-
+    # for n_gram in range(1, ngrams + 1):
+    #     if model_type == "transformer":
+    #         _ = dictionary.add_ngram("<eod>", n_gram)
+    #
 
 def collect_ngrams(line, n, dictionary):
 
@@ -345,40 +322,33 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str]):
 
     dictionary.ngme = "dense"
 
+    # Guarantee that all unigram tokens are indexed first
+    # Uni-gram tokens
+    for token in get_unigram_tokens():
+        dictionary.add_ngram(token, 1)
+
+    # Add new n-gram token only if all uni-gram parts exist
+    source = source["text"]
+    for n in range(1, ngrams + 1):
+
+        start_idx = dictionary.add_ngram("<start>", n)
+        pad_idx = dictionary.add_ngram("<pad>", n)
+        unk_idx = dictionary.add_ngram("<unk>", n)
+        dictionary.add_ngram(" "*n, n)
+        dictionary._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
+
+        for line in source:
+            ngram_lists = collect_ngrams(line, n, dictionary)
+            for ngram in ngram_lists:
+                dictionary.add_ngram(ngram, n)
+
+def get_unigram_tokens() -> List[str]:
     flair_device = flair.device
     flair.device = "cpu"
     # Using unigrams from flair as base
     e = FlairEmbeddings("news-forward")
-
-    # Guarantee that all unigram tokens are indexed first
-    # Uni-gram tokens
-    for token in e.lm.dictionary.item2idx_not_encoded:
-        dictionary.add_ngram(token, 1)
-
-    start_idx = dictionary.add_ngram("<start>", 1)
-    pad_idx = dictionary.add_ngram("<pad>", 1)
-    unk_idx = dictionary.add_ngram("<unk>", 1)
-    dictionary.add_ngram(" ", 1)
-
-    if 1 not in dictionary._marker_tokens:
-        dictionary._marker_tokens[1] = [start_idx, pad_idx, unk_idx]
-
-    # Add new n-gram token only if all uni-gram parts exist
-    for n in range(1, ngrams + 1):
-
-        if n == 1:
-            for line in source:
-                for c in line:
-                    if c in dictionary.ngram2word2idx[1]:
-                        dictionary.frequencies.update({c: 1})
-        else:
-            for line in source:
-                ngram_lists = collect_ngrams(line, n, dictionary)
-                for ngram in ngram_lists:
-                    dictionary.add_ngram(ngram, n)
-
-    del e
     flair.device = flair_device
+    return list(e.lm.dictionary.item2idx_not_encoded.keys())
 
 
 # def preprocess(dataset):
