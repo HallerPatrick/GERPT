@@ -8,10 +8,14 @@ model: lstm
 # data: "wikitext/wikitext-2-raw-v1"
 
 # Load from disk in the ./data/ folder
+# data: "text/babylm10M" # -> ./data/cash
 data: "text/cash" # -> ./data/cash
 
 saved_data: "data/tokenized_data"
 saved_dict: "data/dict_data"
+
+# Reuse following dict, instead of populating a new one from dataset
+reuse_dict: "dicts/dict_data.dict"
 
 # LSTM model will save a custom "flair_<save-file>" file for downstream
 save: model_backward.pt
@@ -21,11 +25,11 @@ epochs: 2
 wdecay: 1.2e-6
 lr: 0.1
 
-ngme: dense
-packed: true
+ngme: sparse
+packed: false
 
 # Dictionary
-ngram: 2
+ngram: 1
 unk_threshold: 0
 max_dict_size: 0
 fallback: True

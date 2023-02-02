@@ -65,6 +65,7 @@ local_dataset_mapper = {
     "babylm100M": {
         "train": baby_lm_train("babylm_100M"),
         "test": baby_lm_test(),
+        # For the pipeline, which expects a validation set
         "validation": baby_lm_dev(),
     },
 }

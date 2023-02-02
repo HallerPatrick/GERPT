@@ -72,6 +72,7 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(
         project="gerpt",
         offline=True,
+        group=args.group,
         config={**vars(args), "dict_size": len(dictionary)},
     )
 
@@ -98,7 +99,10 @@ if __name__ == "__main__":
     plugins = []
 
     if torch.cuda.is_available():
-        strategy = DeepSpeedStrategy(args.batch_size),
+        strategy = DeepSpeedStrategy(
+            accelerator="auto",
+            logging_batch_size_per_gpu=args.batch_size
+        )
         # strategy = "deepspeed_stage_2"
     else:
         strategy = None
@@ -107,7 +111,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         logger=wandb_logger,
         max_epochs=args.epochs,
-        accelerator="auto",
+        # accelerator="auto",
         strategy=strategy,
         plugins=plugins,
         devices=args.gpus,
@@ -141,7 +145,7 @@ if __name__ == "__main__":
     # Combine sharded model checkpoints into one for future loading
     if (
         strategy
-        and "deepspeed_stage_" in strategy
+        and "deepspeed_stage_" in strategy.strategy_name
         and hasattr(checkpoint_callback, "save_path")
     ):
         ckpt_path = checkpoint_callback.save_path

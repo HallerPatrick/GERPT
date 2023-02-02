@@ -91,6 +91,14 @@ def argparser_train() -> argparse.Namespace:
         default="",
         help="Configration file (YAML) for all arguments, if empty, use command lines arguments",
     )
+
+    parser.add_argument(
+        "--group",
+        type=str,
+        default=None,
+        help="Wandb group name (optional)",
+    )
+
     parser.add_argument(
         "--data",
         type=str,

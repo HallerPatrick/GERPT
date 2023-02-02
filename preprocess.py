@@ -23,6 +23,7 @@ def main():
         args.cpus,
         args.is_forward,
         args.packed,
+        args.reuse_dict,
         *args.data.split("/")
     )
     
@@ -33,6 +34,17 @@ def main():
             shutil.rmtree(args.saved_data)
         except NotADirectoryError:
             os.remove(args.saved_data)
+    
+    # Save dict, but dont overwrite
+    if not args.reuse_dict:
+
+        if not Path("dicts").exists():
+            os.mkdir("dicts")
+
+        # args.saved_dict is most likely a complete path, just take the file name
+        dict_stem = Path(args.saved_dict).stem
+
+        dictionary.save_vocabulary("dicts/" + dict_stem + ".dict", args.ngram)
 
     torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)
     torch.save(dictionary, args.saved_dict)

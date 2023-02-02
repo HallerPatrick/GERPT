@@ -1,4 +1,3 @@
-import collections
 import os
 import string
 import sys
@@ -9,42 +8,12 @@ from pathlib import Path
 from nltk import ngrams as ngram_tokenizer
 from tokenizers import AddedToken
 from transformers import PreTrainedTokenizer
+from transformers.models.bert.tokenization_bert import load_vocab
 from transformers.tokenization_utils_base import BatchEncoding, EncodedInput
 from transformers.utils.generic import PaddingStrategy, TensorType, to_py_obj
 
 
 all_tokens = string.printable
-
-
-def load_vocab(vocab_file):
-    """Loads a vocabulary file into a dictionary."""
-    vocab = collections.OrderedDict()
-    with open(vocab_file, "r", encoding="utf-8") as reader:
-        tokens = iter(reader.readlines())
-
-    try:
-
-        ngrams, ngme_type = next(tokens).strip().split(" ")
-        ngrams = int(ngrams)
-    except:
-        print("Could not determine ngram of tokenizer in vocab file")
-        exit(-1)
-
-    for index, token in enumerate(tokens):
-        token = token.rstrip("\n")
-
-        ngram = int(token[0])
-        token = token[2:]
-
-        if "\\n" in token:
-            token = token.replace("\\n", "\n")
-
-        if ngram not in vocab:
-            vocab[ngram] = {token: index}
-        else:
-            vocab[ngram][token] = index
-
-    return ngrams, ngme_type, vocab
 
 
 class NGMETokenizer(PreTrainedTokenizer):
@@ -90,13 +59,12 @@ class NGMETokenizer(PreTrainedTokenizer):
         # self.add_special_tokens({"pad_token": "<pad>"})
 
         # self.pad_token_id = 0
-    
+
     @property
     def eod_id(self):
         print(self.vocab[1])
         if "<eod>" in self.vocab[1]:
             return self.vocab[1]["<eod>"]
-
 
     @property
     def vocab_size(self):
@@ -118,9 +86,8 @@ class NGMETokenizer(PreTrainedTokenizer):
         for n in range(1, self.ngrams + 1):
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(text))
-            
-            if "check_special_tokens" in kwargs and kwargs["check_special_tokens"]:
 
+            if "check_special_tokens" in kwargs and kwargs["check_special_tokens"]:
 
                 if isinstance(text, list):
                     text = "".join(text)
@@ -130,7 +97,6 @@ class NGMETokenizer(PreTrainedTokenizer):
                 words[words.index("Ġ")] = "<eod>"
             else:
                 words.extend(list(text))
-
 
             tokens = []
 
@@ -161,7 +127,7 @@ class NGMETokenizer(PreTrainedTokenizer):
             else:
                 words.extend(list(text))
 
-            words = words[:len(text)]
+            words = words[: len(text)]
             ngram_sequences.append(words)
 
         return ngram_sequences
