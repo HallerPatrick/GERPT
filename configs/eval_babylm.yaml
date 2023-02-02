@@ -1,0 +1,11 @@
+
+model: checkpoints/model_backward.pt.ckpt
+dict: data/dict_data
+dataset: data/tokenized_data
+
+gpus: 1
+
+epochs: 1
+batch_size: 1
+bptt: 30
+cpus: 8

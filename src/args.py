@@ -95,7 +95,7 @@ def argparser_train() -> argparse.Namespace:
     parser.add_argument(
         "--group",
         type=str,
-        default=None,
+        default=False,
         help="Wandb group name (optional)",
     )
 
@@ -217,3 +217,40 @@ def argparse_generate():
 
     parser.add_argument("--num", type=int, default=1)
     return parser.parse_args()
+
+
+def argparse_babylm():
+    """Argparser for standalone generator"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=str
+    )
+    parser.add_argument(
+        "--model",
+        type=str
+    )
+
+    parser.add_argument(
+        "--dict",
+        type=str
+    )
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        # choices=["small", "big"]
+    )
+
+    args = parser.parse_args()
+
+    if not args.config:
+        return args
+
+    yaml_args = read_config(args.config)
+
+    for key, value in args.__dict__.items():
+        if value:
+            yaml_args.__dict__.update({key: value})
+
+    return yaml_args
