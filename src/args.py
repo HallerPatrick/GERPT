@@ -220,7 +220,7 @@ def argparse_generate():
 
 
 def argparse_babylm():
-    """Argparser for standalone generator"""
+    """Argparser for eval babylm"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
@@ -254,3 +254,40 @@ def argparse_babylm():
             yaml_args.__dict__.update({key: value})
 
     return yaml_args
+
+
+def argparse_build_dict():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=str
+    )
+    parser.add_argument(
+        "--dataset",
+        type=str
+    )
+
+    parser.add_argument(
+        "--ngrams",
+        type=int
+    )
+
+    parser.add_argument(
+        "--max-dict-size",
+        type=str,
+        # choices=["small", "big"]
+    )
+
+    args = parser.parse_args()
+    
+    if args.config:
+        yaml_args = read_config(args.config)
+
+        for key, value in args.__dict__.items():
+            if value:
+                yaml_args.__dict__.update({key: value})
+
+        return yaml_args
+    return args
+

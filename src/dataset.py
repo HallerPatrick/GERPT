@@ -1,5 +1,6 @@
 import gc
 from typing import List, Optional, Tuple
+from datasets.dataset_dict import DatasetDict
 
 import flair
 import nltk
@@ -23,14 +24,15 @@ from .dictionary import Dictionary
 class TextDataset(Dataset):
     """
     Notes: We dealing with some data leaks on the cpu which results in OOM for sufficiently long training.
-    https://github.com/pytorch/pytorch/issues/13246 discusses the topic. Problem might not be a memory 
-    leak, but just ref counting of obects in lists (or np.arrays with objects types). We use torch.tensor 
+    https://github.com/pytorch/pytorch/issues/13246 discusses the topic. Problem might not be a memory
+    leak, but just ref counting of obects in lists (or np.arrays with objects types). We use torch.tensor
     or np.array, which are contiguous and therefore act as one object. No Copy-on-read of forked cpython objects....
 
     Things to try:
     * [] Manual garbage collection
     * [] Deep copying batches (copy.deepcopy)
     """
+
     def __init__(self, ds, batch_size, bptt_size, pad_tokens) -> None:
         self.bptt = bptt_size
         self.batch_size = batch_size
@@ -66,7 +68,6 @@ class TextDataset(Dataset):
 
             # TODO: Is this to often?
             gc.collect()
-
 
         assert isinstance(source, torch.Tensor)
         assert isinstance(target, torch.Tensor)
@@ -144,7 +145,37 @@ def filter_empty_row(example) -> bool:
     return len(example["source"]) > 0
 
 
+def load_dataset_from_source(ds_path: str) -> DatasetDict:
+    """We using the HF dataset path convenientself.
+    Usually:
+    <dataset>/<subset>
+
+    For loading local datset, use:
+    text/<dataset-path>
+
+    We map <dataset-path> to dict of target files.
+    """
+
+    prefix, subset = ds_path.split("/")
+
+    print(prefix, subset)
+
+    # Check if we have a local config for local dataset
+    if prefix == "text" and subset in local_dataset_mapper:
+        dataset = ld("text", data_files=local_dataset_mapper[subset])
+    elif prefix.startswith("wikipedia"):
+        dataset = ld(*local_dataset_mapper[prefix]["args"])
+    else:
+        # Load the datasets from huggingface
+        dataset = ld(*ds_path.split("/"))
+
+    assert isinstance(dataset, DatasetDict)
+
+    return dataset
+
+
 def load_tokenized_dataset(
+    dataset_path: str,
     ngme: str,
     ngram: int,
     model_type: str,
@@ -155,52 +186,41 @@ def load_tokenized_dataset(
     is_forward: bool,
     packed: bool,
     dict_file_name: Optional[str] = None,
-    *args,
     **kwargs,
 ) -> Tuple[dict, Dictionary]:
     """🤗"""
 
-    # Check if we have a local config for local dataset
-    if args[0] == "text" and args[1] in local_dataset_mapper:
-        dataset = ld("text", data_files=local_dataset_mapper[args[1]])
-    elif args[0].startswith("wikipedia"):
-        dataset = ld(*local_dataset_mapper[args[0]]["args"])
-    else:
-        # Load the datasets from huggingface
-        dataset = ld(*args, **kwargs)
+    dataset = load_dataset_from_source(dataset_path)
 
     # TODO: What do we need from this?
     # dataset = preprocess(dataset)
 
-    # TODO: Allow for pretrained dict
     print("Collecting dictionary...")
-    with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
-        if dict_file_name:
-            print(f"Reusing dict: {dict_file_name}")
-            dictionary = load_dictionary_from_file(dict_file_name)
-        else:
+    if dict_file_name:
+        print(f"Reusing dict: {dict_file_name}")
+        dictionary = load_dictionary_from_file(dict_file_name)
+    else:
+        with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
             dictionary = load_dictionary_from_hf(
                 ngme,
                 dataset["train"],
                 ngram,
                 model_type,
                 max_dict_size,
-                unk_threshold,
-                fallback,
                 packed=packed,
             )
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
-        lambda x: dictionary.tokenize_line(x["text"], id_type=torch.int16, return_tensor="np"),
+        lambda x: dictionary.tokenize_line(
+            x["text"], id_type=torch.int16, return_tensor="np"
+        ),
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
 
     print("Remove empty rows...")
     tokenized_dataset = tokenized_dataset.filter(filter_empty_row, num_proc=num_proc)
-    tokenized_dataset.cleanup_cache_files()
-
 
     print("Concat rows to whole sequence")
     with ProgressBar():
@@ -245,10 +265,10 @@ def concat_dataset(rows: List[List[List[int]]]):
 def _concat_dataset(rows: List[List[List[int]]]):
     return np.concatenate(rows, axis=1, dtype=np.int16)
 
-def load_dictionary_from_file(
-    dict_file_name: str
-    ):
+
+def load_dictionary_from_file(dict_file_name: str):
     return Dictionary.load_from_file(dict_file_name)
+
 
 def load_dictionary_from_hf(
     ngme: str,
@@ -256,14 +276,10 @@ def load_dictionary_from_hf(
     ngrams: int,
     model_type: str,
     max_dict_size: int,
-    unk_threshold: int,
-    fallback: bool,
     packed: bool = False,
 ) -> Dictionary:
 
-    dictionary = Dictionary(
-        ngrams, max_dict_size, unk_threshold, fallback, ngme, packed=packed
-    )
+    dictionary = Dictionary(ngrams, max_dict_size, ngme)
 
     if ngme == "sparse":
         populate_sparse_dict(dictionary, ngrams)
@@ -274,7 +290,7 @@ def load_dictionary_from_hf(
 
     if dictionary.max_dict_size == 0:
         dictionary.max_dict_size = len(dictionary)
-    
+
     # TODO: No unking with sparse?
     if ngme == "dense":
         dictionary = dictionary.unking()
@@ -297,12 +313,13 @@ def populate_sparse_dict(dictionary, ngrams: int):
         dictionary.add_ngram("<unk>", n_gram)
 
         for token in unigram_tokens:
-                dictionary.add_ngram(token, n_gram)
+            dictionary.add_ngram(token, n_gram)
 
     # for n_gram in range(1, ngrams + 1):
     #     if model_type == "transformer":
     #         _ = dictionary.add_ngram("<eod>", n_gram)
     #
+
 
 def collect_ngrams(line, n, dictionary):
 
@@ -334,13 +351,15 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str]):
         start_idx = dictionary.add_ngram("<start>", n)
         pad_idx = dictionary.add_ngram("<pad>", n)
         unk_idx = dictionary.add_ngram("<unk>", n)
-        dictionary.add_ngram(" "*n, n)
+        dictionary.add_ngram(" " * n, n)
         dictionary._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
 
         for line in source:
             ngram_lists = collect_ngrams(line, n, dictionary)
             for ngram in ngram_lists:
                 dictionary.add_ngram(ngram, n)
+    
+    return dictionary
 
 def get_unigram_tokens() -> List[str]:
     flair_device = flair.device

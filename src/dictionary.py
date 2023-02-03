@@ -2,6 +2,7 @@ import sys
 from collections import Counter, OrderedDict, defaultdict
 from functools import lru_cache
 from typing import Iterator, List, Optional, Union
+from matplotlib.widgets import EllipseSelector
 
 import nltk
 import numpy as np
@@ -46,8 +47,6 @@ class Dictionary:
         self,
         ngram: int,
         max_dict_size: int,
-        unk_threshold: int,
-        fallback: bool,
         ngme: str,
         packed: bool = False,
     ):
@@ -55,8 +54,6 @@ class Dictionary:
         self.ngram_indexes = defaultdict(list)
         self.ngram = ngram
         self.max_dict_size = max_dict_size
-        self.unk_threshold = unk_threshold
-        self.fallback = fallback
         self.frequencies: Counter = Counter()
         self.pad_tokens = {}
 
@@ -72,7 +69,7 @@ class Dictionary:
         ngram, ngme_type, vocab = load_vocab(filename)
 
         # TODO: Not sufficient, save more meta data in dict file
-        dictionary = cls(ngram, 0, 0, False, ngme_type, False)
+        dictionary = cls(ngram, 0, ngme_type, False)
 
         for ngram in vocab:
             for token in vocab[ngram]:
@@ -107,15 +104,32 @@ class Dictionary:
 
         return self.ngram2word2idx[ngram][word]
 
-    def unking(self):
+    def unking(
+        self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
+    ):
+        """Trim the dictionary size to `new_max_dict_size` or self.max_dict_size.
 
-        candidates = list(
-            map(lambda x: x[0], self.frequencies.most_common(self.max_dict_size))
-        )
+        If `ngram` is set, apply unking after subsetting ngram vocabs up to argument.
+        """
 
-        dictionary = Dictionary(
-            self.ngram, self.max_dict_size, self.unk_threshold, self.fallback, self.ngme
-        )
+        max_dict_size = new_max_dict_size if new_max_dict_size else self.max_dict_size
+
+        if ngrams:
+            sub_frequencies = {}
+            for token, freq in self.frequencies.items():
+                n_order = self.token_to_n_order(token)
+
+                if n_order <= ngrams:
+                    sub_frequencies.update({token: freq})
+
+            frequencies = Counter(sub_frequencies)
+        else:
+            frequencies = self.frequencies
+            ngrams = self.ngram
+
+        candidates = list(map(lambda x: x[0], frequencies.most_common(max_dict_size)))
+
+        dictionary = Dictionary(ngrams, max_dict_size, self.ngme)
 
         for ngram in self.ngram2idx2word.keys():
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
@@ -125,12 +139,12 @@ class Dictionary:
                 # 3. Is unigram
                 if (
                     token in candidates
-                    or ngram_idx in dictionary._marker_tokens[ngram]
-                    or ngram == 1
+                    or ngram_idx in self._marker_tokens[ngram]
+                    # or ngram == 1 TODO: Do we really need to ensure all unigrams are in?
                 ):
                     dictionary.add_ngram(token, ngram)
 
-        dictionary.frequencies = self.frequencies
+        dictionary.frequencies = frequencies
 
         return dictionary
 

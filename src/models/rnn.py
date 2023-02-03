@@ -143,7 +143,7 @@ class RNNModel(pl.LightningModule):
             verbose=True,
             min_lr=1.25,
             threshold=1e-6,
-            patience=10000,
+            patience=30000,
             threshold_mode="abs",
         )
         return [optimizer], [
