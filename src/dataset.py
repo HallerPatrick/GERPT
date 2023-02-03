@@ -180,8 +180,6 @@ def load_tokenized_dataset(
     ngram: int,
     model_type: str,
     max_dict_size: int,
-    unk_threshold: int,
-    fallback: bool,
     num_proc: int,
     is_forward: bool,
     packed: bool,

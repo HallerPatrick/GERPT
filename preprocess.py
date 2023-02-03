@@ -14,6 +14,7 @@ def main():
     args = parse_args()
 
     tokenized_dataset, dictionary = load_tokenized_dataset(
+        args.data,
         args.ngme,
         args.ngram,
         args.model,
@@ -24,7 +25,6 @@ def main():
         args.is_forward,
         args.packed,
         args.reuse_dict,
-        *args.data.split("/")
     )
     
     # torch.saved does not overwrite file for some reason
