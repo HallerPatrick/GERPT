@@ -19,8 +19,6 @@ def main():
         args.ngram,
         args.model,
         args.max_dict_size,
-        args.unk_threshold,
-        args.fallback,
         args.cpus,
         args.is_forward,
         args.packed,
