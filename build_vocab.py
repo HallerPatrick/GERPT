@@ -5,7 +5,7 @@ rom scratch during preprocessingself.
 This only makes sense for explicit encoding.
 """
 
-
+import json
 
 from src.args import argparse_build_dict
 from src.dataset import load_dataset_from_source, populate_dense_dict
@@ -29,6 +29,15 @@ def main():
 
     # new_dictionary.save_vocabulary("", new_ngram)
 
+def diff_bpe():
+
+    vocab = json.load(open("./dicts/gpt2-vocab.json"))
+
+    space = "Ġ"
+
+    tokens = [token.replace(space, " ") for token in vocab.keys()]
+    print(tokens)
+    print(len(tokens))
 
 
 if __name__ == '__main__':
