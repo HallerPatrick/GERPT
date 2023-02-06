@@ -211,8 +211,10 @@ def load_tokenized_dataset(
                 packed=packed,
                 num_workers=num_proc,
             )
-        exit()
 
+            print(dictionary.ngram2word2idx)
+            exit(
+                    )
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         lambda x: dictionary.tokenize_line(
@@ -352,36 +354,36 @@ def populate_dense_dict(
 
     # Add new n-gram token only if all uni-gram parts exist
     for n in range(1, ngrams + 1):
-
         start_idx = dictionary.add_ngram("<start>", n)
         pad_idx = dictionary.add_ngram("<pad>", n)
         unk_idx = dictionary.add_ngram("<unk>", n)
         dictionary.add_ngram(" " * n, n)
         dictionary._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
 
-        if num_workers > 1:
-            print(f"Run dictionary collection with {num_workers} workers")
-            with multiprocessing.Pool(num_workers) as pool:
-                for ngram_tokens in tqdm(
-                    pool.map(
-                        partial(add_ngrams_from_text, ngram=n),
-                        source,
-                        chunksize=25,
-                    ),
-                    desc=f"Procesing {n}-gram tokens",
-                ):
-                    for ngram_token in ngram_tokens:
-                        dictionary.add_ngram(ngram_token, n)
 
-        else:
-            for line in source:
-                add_ngrams_from_text(line, n)
+    ngram_list = list(range(1, ngrams + 1))
+    if num_workers > 1:
+        print(f"Run dictionary collection with {num_workers} workers")
+        with multiprocessing.Pool(num_workers) as pool:
+            for ngram_tokens in tqdm(
+                pool.map(
+                    partial(add_ngrams_from_text, ngrams=ngram_list),
+                    source,
+                    chunksize=25,
+                )
+            ):
+                for n, tokens in ngram_tokens.items():
+                    dictionary.add_ngrams(tokens, n)
+
+    else:
+        for line in source:
+            add_ngrams_from_text(line, ngram_list)
 
     return dictionary
 
 
-def add_ngrams_from_text(text: str, ngram: int):
-    return collect_ngrams(text, ngram)
+def add_ngrams_from_text(text: str, ngrams: List[int]):
+    return {ngram: collect_ngrams(text, ngram) for ngram in ngrams}
 
 
 def get_unigram_tokens() -> List[str]:

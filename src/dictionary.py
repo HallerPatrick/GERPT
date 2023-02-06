@@ -104,6 +104,24 @@ class Dictionary:
 
         return self.ngram2word2idx[ngram][word]
 
+    def add_ngrams(self, words: List[str], ngram: int):
+
+        self.frequencies.update(Counter(words))
+
+        for word in words:
+            if ngram not in self.ngram2idx2word:
+                self.ngram2idx2word[ngram] = {self.current_max_idx: word}
+                self.ngram2word2idx[ngram] = {word: self.current_max_idx}
+                self.current_max_idx += 1
+            else:
+                if word not in self.ngram2word2idx[ngram]:
+                    self.ngram2idx2word[ngram][self.current_max_idx] = word
+                    self.ngram2word2idx[ngram][word] = self.current_max_idx
+                    self.current_max_idx += 1
+
+
+
+
     def unking(
         self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
     ):
