@@ -1,4 +1,6 @@
+from functools import partial
 import gc
+import multiprocessing
 from typing import List, Optional, Tuple
 from datasets.dataset_dict import DatasetDict
 
@@ -15,6 +17,7 @@ from humanfriendly import format_timespan
 from numba import jit
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
+from tqdm import tqdm
 
 from . import USE_CACHE
 from .data import batchify, local_dataset_mapper
@@ -201,12 +204,14 @@ def load_tokenized_dataset(
         with Timer(text=lambda secs: f"Elapsed time: {format_timespan(secs)}"):
             dictionary = load_dictionary_from_hf(
                 ngme,
-                dataset["train"],
+                dataset["train"]["text"],
                 ngram,
                 model_type,
                 max_dict_size,
                 packed=packed,
+                num_workers=num_proc,
             )
+        exit()
 
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
@@ -275,6 +280,7 @@ def load_dictionary_from_hf(
     model_type: str,
     max_dict_size: int,
     packed: bool = False,
+    num_workers: int = 1,
 ) -> Dictionary:
 
     dictionary = Dictionary(ngrams, max_dict_size, ngme)
@@ -282,7 +288,7 @@ def load_dictionary_from_hf(
     if ngme == "sparse":
         populate_sparse_dict(dictionary, ngrams)
     elif ngme == "dense":
-        populate_dense_dict(dictionary, ngrams, source)
+        populate_dense_dict(dictionary, ngrams, source, num_workers)
     else:
         raise ValueError("NGME approach not known")
 
@@ -333,7 +339,9 @@ def collect_ngrams(line, n, dictionary):
     return ngrams
 
 
-def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str]):
+def populate_dense_dict(
+    dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int = 1
+):
 
     dictionary.ngme = "dense"
 
@@ -343,7 +351,6 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str]):
         dictionary.add_ngram(token, 1)
 
     # Add new n-gram token only if all uni-gram parts exist
-    source = source["text"]
     for n in range(1, ngrams + 1):
 
         start_idx = dictionary.add_ngram("<start>", n)
@@ -352,16 +359,35 @@ def populate_dense_dict(dictionary: Dictionary, ngrams: int, source: List[str]):
         dictionary.add_ngram(" " * n, n)
         dictionary._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
 
-        for line in source:
-            ngram_lists = collect_ngrams(line, n, dictionary)
-            for ngram in ngram_lists:
-                dictionary.add_ngram(ngram, n)
-    
+        if num_workers > 1:
+            print(f"Run dictionary collection with {num_workers} workers")
+            with multiprocessing.Pool(num_workers) as pool:
+                for ngram_tokens in tqdm(
+                    pool.map(
+                        partial(add_ngrams_from_text, dictionary=dictionary, ngram=n),
+                        source,
+                        chunksize=25,
+                    ),
+                    desc=f"Procesing {n}-gram tokens",
+                ):
+                    for ngram_token in ngram_tokens:
+                        dictionary.add_ngram(ngram_token, n)
+
+        else:
+            for line in source:
+                add_ngrams_from_text(line, dictionary, n)
+
     return dictionary
+
+
+def add_ngrams_from_text(text: str, dictionary: Dictionary, ngram: int):
+    return collect_ngrams(text, ngram, dictionary)
+
 
 def get_unigram_tokens() -> List[str]:
     flair_device = flair.device
     flair.device = "cpu"
+
     # Using unigrams from flair as base
     e = FlairEmbeddings("news-forward")
     flair.device = flair_device
