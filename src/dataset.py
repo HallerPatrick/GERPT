@@ -325,19 +325,19 @@ def populate_sparse_dict(dictionary, ngrams: int):
     #
 
 
-def collect_ngrams(line, n, dictionary):
+def collect_ngrams(line, n):
 
-    ngrams = []
+    return ["".join(ngram) for ngram in nltk.ngrams(line, n)]
 
-    for n_gram in nltk.ngrams(line, n):
-        for c in n_gram:
-            if not c in dictionary.ngram2word2idx[1]:
-                break
-        else:
-            ngrams.append("".join(n_gram))
-
-    return ngrams
-
+    # for n_gram in :
+    #     for c in n_gram:
+    #         if not c in dictionary.ngram2word2idx[1]:
+    #             break
+    #     else:
+    #         ngrams.append("".join(n_gram))
+    #
+    # return ngrams
+    #
 
 def populate_dense_dict(
     dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int = 1
@@ -364,7 +364,7 @@ def populate_dense_dict(
             with multiprocessing.Pool(num_workers) as pool:
                 for ngram_tokens in tqdm(
                     pool.map(
-                        partial(add_ngrams_from_text, dictionary=dictionary, ngram=n),
+                        partial(add_ngrams_from_text, ngram=n),
                         source,
                         chunksize=25,
                     ),
@@ -375,13 +375,13 @@ def populate_dense_dict(
 
         else:
             for line in source:
-                add_ngrams_from_text(line, dictionary, n)
+                add_ngrams_from_text(line, n)
 
     return dictionary
 
 
-def add_ngrams_from_text(text: str, dictionary: Dictionary, ngram: int):
-    return collect_ngrams(text, ngram, dictionary)
+def add_ngrams_from_text(text: str, ngram: int):
+    return collect_ngrams(text, ngram)
 
 
 def get_unigram_tokens() -> List[str]:
