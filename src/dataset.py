@@ -297,8 +297,8 @@ def load_dictionary_from_hf(
     if dictionary.max_dict_size == 0:
         dictionary.max_dict_size = len(dictionary)
 
-    # TODO: No unking with sparse?
     if ngme == "dense":
+        print("Apply unking...")
         dictionary = dictionary.unking()
 
     # Check if all unigrams were indexed first and all idx are consecutive

@@ -119,9 +119,6 @@ class Dictionary:
                     self.ngram2word2idx[ngram][word] = self.current_max_idx
                     self.current_max_idx += 1
 
-
-
-
     def unking(
         self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
     ):

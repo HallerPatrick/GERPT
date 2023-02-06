@@ -51,18 +51,14 @@ if __name__ == "__main__":
     else:
         # --- Dataloading & Tokenization ---
         tokenized_dataset, dictionary = load_tokenized_dataset(
+            args.data,
             args.ngme,
-            args.bptt,
             args.ngram,
-            args.batch_size,
+            args.model,
             args.max_dict_size,
-            args.unk_threshold,
-            args.fallback,
             args.cpus,
             args.is_forward,
             args.packed,
-            *args.data.split("/"),
-            # cache_dir="/home/tmp/halerpat/datasets"
         )
 
     # To avoid locks during distributed training
