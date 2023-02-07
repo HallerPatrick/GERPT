@@ -210,11 +210,12 @@ class Dictionary:
         line: Union[str, List[str]],
         id_type=torch.int64,
         return_tensor: Optional[str] = None,
+        with_text: bool = True
     ) -> dict:
         if self.ngme == "dense":
-            return self._tokenize_line_dense(line, id_type, return_tensor)
+            return self._tokenize_line_dense(line, id_type, return_tensor, with_text)
         elif self.ngme == "sparse":
-            return self._tokenize_line_sparse(line, id_type, return_tensor)
+            return self._tokenize_line_sparse(line, id_type, return_tensor, with_text)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
 
@@ -225,7 +226,7 @@ class Dictionary:
             for special_token_id in self._marker_tokens[1]
         ]
 
-    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor):
+    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor, with_text=True):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -276,11 +277,18 @@ class Dictionary:
         if return_tensor and return_tensor != "pt":
             sequence = self._to_tensor(sequence, return_tensor)
             target = self._to_tensor(target, return_tensor)
+        else:
+            sequence = sequence.tolist()
+            target = target.tolist()
 
-        return {"text": line, "source": sequence, "target": target}
+        
+        if with_text:
+            return {"text": line, "source": sequence, "target": target, "len": len(line)}
+
+        return {"source": sequence, "target": target}
 
     def _tokenize_line_sparse(
-        self, line: Union[str, List[str]], id_type, return_tensor
+        self, line: Union[str, List[str]], id_type, return_tensor, with_text=True
     ):
         """
 
@@ -340,6 +348,8 @@ class Dictionary:
         # if return_tensor:
         #     sequence = self._to_tensor(sequence, return_tensor)
         #     target = self._to_tensor(target, return_tensor)
+        if with_text:
+            return {"text": line, "source": sequence, "target": target}
 
         return {"source": sequence, "target": target}
 

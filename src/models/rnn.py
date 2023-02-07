@@ -230,9 +230,19 @@ class RNNModel(pl.LightningModule):
 
     def test_step(self, batch, _):
         loss, _, _ = self._step(batch)
-
         self.log("test/loss", loss)
         self.log("test/ppl", math.exp(loss), prog_bar=True)
+
+        # --- Calculate Bits-per-Byte ---
+        # 1. Reconstruct original text
+        # 2. Count number of UTF-8 bytes
+        # 3. Counter number of tokens (TODO: What tokens to pick?!)
+        # 4. Forumlar: BPB = (L_T / T_B) * log_2(e**l)
+        #    where: L_T, number of tokens, L_B number of UTF-8 encoded bytes, l = NLL
+        # source = batch[0] 
+        # num_tokens = source.size(1)
+        # num_bytes = None
+        # print(batch.size())
 
     def training_epoch_end(self, _) -> None:
 

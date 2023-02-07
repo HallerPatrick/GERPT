@@ -9,8 +9,14 @@ import nltk
 import numpy as np
 import pytorch_lightning as pl
 import torch
+
+import mr4mp
+
+
 from codetiming import Timer
 from dask.diagnostics import ProgressBar
+import dask.array as da
+
 from datasets import load_dataset as ld
 from flair.embeddings.token import FlairEmbeddings
 from humanfriendly import format_timespan
@@ -52,7 +58,6 @@ class TextDataset(Dataset):
         return self.nbatch * self.batch_size
 
     def __getitem__(self, idx):
-
         idx = idx // self.batch_size
         start_idx = idx * self.bptt
         end_idx = (idx + 1) * self.bptt
@@ -176,7 +181,6 @@ def load_dataset_from_source(ds_path: str) -> DatasetDict:
 
     return dataset
 
-
 def load_tokenized_dataset(
     dataset_path: str,
     ngme: str,
@@ -211,34 +215,33 @@ def load_tokenized_dataset(
                 packed=packed,
                 num_workers=num_proc,
             )
+    
+    def tokenize(x):
+        result = dictionary.tokenize_line(
+            x["text"], id_type=torch.int16, return_tensor="np"
+        )
+        return result
 
-            print(dictionary.ngram2word2idx)
-            exit(
-                    )
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
-        lambda x: dictionary.tokenize_line(
-            x["text"], id_type=torch.int16, return_tensor="np"
-        ),
+        tokenize,
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
 
     print("Remove empty rows...")
     tokenized_dataset = tokenized_dataset.filter(filter_empty_row, num_proc=num_proc)
+    
 
     print("Concat rows to whole sequence")
     with ProgressBar():
         print("Train...")
-        train_source = concat_dataset(tokenized_dataset["train"]["source"])
-        train_target = concat_dataset(tokenized_dataset["train"]["target"])
+        train_source, train_target = concat_from_split(tokenized_dataset["train"])
         print("Test...")
-        test_source = concat_dataset(tokenized_dataset["test"]["source"])
-        test_target = concat_dataset(tokenized_dataset["test"]["target"])
+        test_source, test_target = concat_from_split(tokenized_dataset["test"])
         print("Valid...")
-        valid_source = concat_dataset(tokenized_dataset["validation"]["source"])
-        valid_target = concat_dataset(tokenized_dataset["validation"]["target"])
-
+        valid_source, valid_target = concat_from_split(tokenized_dataset["validation"])
+    
     dataset = {
         # "train": {"text": train, "source": train_source, "target": train_target},
         "train": {"source": train_source, "target": train_target},
@@ -260,8 +263,26 @@ def calc_chunksize(iterable, num_workers):
 def np_array(x):
     return np.array(x, dtype=np.int16)
 
+def concat_from_split(split):
+    source = split["source"]
+    target = split["target"]
+    seq_len = sum(split["len"])
+    
+    source_array = concat_dataset(source)
+    target_array = concat_dataset(target)
 
-def concat_dataset(rows: List[List[List[int]]]):
+    return source_array, target_array
+
+def concat_dataset(lst):
+    sublists = []
+
+    for sublist in tqdm(lst):
+        sublists.append(da.from_array(sublist, chunks=(len(sublist[0]), len(sublist))))
+    
+    return da.concatenate(sublists, axis=1).compute()
+                   
+
+def _concat_dataset(rows: List[List[List[int]]]):
     # Numpy casts lists to float64, we therefore cannot safely donwscast to int16
     return np.concatenate(rows, axis=1, dtype=np.int16, casting="unsafe")
 
@@ -284,7 +305,6 @@ def load_dictionary_from_hf(
     packed: bool = False,
     num_workers: int = 1,
 ) -> Dictionary:
-
     dictionary = Dictionary(ngrams, max_dict_size, ngme)
 
     if ngme == "sparse":
@@ -328,7 +348,6 @@ def populate_sparse_dict(dictionary, ngrams: int):
 
 
 def collect_ngrams(line, n):
-
     return ["".join(ngram) for ngram in nltk.ngrams(line, n)]
 
     # for n_gram in :
@@ -341,10 +360,10 @@ def collect_ngrams(line, n):
     # return ngrams
     #
 
+
 def populate_dense_dict(
     dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int = 1
 ):
-
     dictionary.ngme = "dense"
 
     # Guarantee that all unigram tokens are indexed first
@@ -359,7 +378,6 @@ def populate_dense_dict(
         unk_idx = dictionary.add_ngram("<unk>", n)
         dictionary.add_ngram(" " * n, n)
         dictionary._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
-
 
     ngram_list = list(range(1, ngrams + 1))
     if num_workers > 1:
