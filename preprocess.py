@@ -35,24 +35,6 @@ def main():
         except NotADirectoryError:
             os.remove(args.saved_data)
     
-    # os.mkdir(args.saved_data)
-
-    # # TODO: Handle yields now!
-    # for i, (tokenized_dataset, dictionary) in enumerate(process_tokenized_dataset(
-    #     args.data,
-    #     args.ngme,
-    #     args.ngram,
-    #     args.model,
-    #     args.max_dict_size,
-    #     args.cpus,
-    #     args.is_forward,
-    #     args.packed,
-    #     args.reuse_dict,
-    #     10000
-    #     )):
-    #
-    #     save_splits(tokenized_dataset, i, Path(args.saved_data))
-    
     ds_iterator = process_tokenized_dataset(
         args.data,
         args.ngme,

@@ -56,6 +56,7 @@ if __name__ == "__main__":
 
     print("Load preprocessed dataset from disk...")
     tokenized_dataset = load_tokenized_dataset(args.saved_data)
+
     dictionary = torch.load(args.saved_dict)
 
     # To avoid locks during distributed training

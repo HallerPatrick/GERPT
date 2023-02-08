@@ -14,4 +14,4 @@ pandas
 sympy
 codetiming
 humanfriendly
-dask
+webdataset

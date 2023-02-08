@@ -1,51 +1,34 @@
-from functools import partial
-from collections import Iterable
 import gc
 import multiprocessing
 import pathlib
+from collections import Iterable
+from functools import partial
 from typing import List, Optional, Tuple
-from datasets.dataset_dict import DatasetDict
 
+import dask.array as da
 import flair
 import nltk
 import numpy as np
 import pytorch_lightning as pl
 import torch
-
-import mr4mp
-
-
+import webdataset as wds
 from codetiming import Timer
-import dask.array as da
-
 from datasets import load_dataset as ld
+from datasets.dataset_dict import DatasetDict
 from flair.embeddings.token import FlairEmbeddings
 from humanfriendly import format_timespan
 from numba import jit
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.data.dataset import Dataset
+from torch.utils.data.dataset import ConcatDataset, Dataset
 from tqdm import tqdm
-import webdataset as wds
-
-from src.utils import split_range
 
 from . import USE_CACHE
 from .data import batchify, local_dataset_mapper
 from .dictionary import Dictionary
+from .utils import split_range
 
 
 class TextDataset(Dataset):
-    """
-    Notes: We dealing with some data leaks on the cpu which results in OOM for sufficiently long training.
-    https://github.com/pytorch/pytorch/issues/13246 discusses the topic. Problem might not be a memory
-    leak, but just ref counting of obects in lists (or np.arrays with objects types). We use torch.tensor
-    or np.array, which are contiguous and therefore act as one object. No Copy-on-read of forked cpython objects....
-
-    Things to try:
-    * [] Manual garbage collection
-    * [] Deep copying batches (copy.deepcopy)
-    """
-
     def __init__(self, ds, batch_size, bptt_size, pad_tokens) -> None:
         self.bptt = bptt_size
         self.batch_size = batch_size
@@ -110,15 +93,23 @@ class GenericDataModule(pl.LightningDataModule):
         self.pad_tokens = pad_tokens
 
     def setup(self, stage):
-        self.train = TextDataset(
-            self.dataset["train"], self.batch_size, self.bptt_size, self.pad_tokens
+        self.train = ConcatDataset(
+            [
+                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+                for data in self.dataset["train"]
+            ]
         )
-        self.test = TextDataset(
-            self.dataset["test"], self.batch_size, self.bptt_size, self.pad_tokens
+        self.test = ConcatDataset(
+            [
+                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+                for data in self.dataset["test"]
+            ]
         )
-
-        self.valid = TextDataset(
-            self.dataset["validation"], self.batch_size, self.bptt_size, self.pad_tokens
+        self.valid = ConcatDataset(
+            [
+                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+                for data in self.dataset["validation"]
+            ]
         )
 
     def train_dataloader(self):
@@ -185,6 +176,7 @@ def load_dataset_from_source(ds_path: str) -> DatasetDict:
 
     return dataset
 
+
 def process_tokenized_dataset(
     dataset_path: str,
     ngme: str,
@@ -195,7 +187,7 @@ def process_tokenized_dataset(
     is_forward: bool,
     packed: bool,
     dict_file_name: Optional[str] = None,
-    rows_threshold: int =  50_000_000,
+    rows_threshold: int = 50_000_000,
     **kwargs,
 ) -> Iterable[Tuple[dict, Dictionary]]:
     """🤗"""
@@ -220,7 +212,7 @@ def process_tokenized_dataset(
                 packed=packed,
                 num_workers=num_proc,
             )
-    
+
     def tokenize(x):
         result = dictionary.tokenize_line(
             x["text"], id_type=torch.int16, return_tensor="np"
@@ -241,46 +233,60 @@ def process_tokenized_dataset(
     # But the concatenation is hard
     # Check here for length and split and yield datasetsubsets
     # Train is the largest and mostly only problem
-    
+
     train_len = len(tokenized_dataset["train"])
 
     if train_len > rows_threshold:
-        extra_split =  (train_len / rows_threshold) != (train_len // rows_threshold)
-        num_splits = train_len // rows_threshold 
+        extra_split = (train_len / rows_threshold) != (train_len // rows_threshold)
+        num_splits = train_len // rows_threshold
 
-        num_splits = train_len // rows_threshold 
+        num_splits = train_len // rows_threshold
 
         if extra_split:
             num_splits += 1
 
-        
-        for i in range(num_splits+1):
+        for i in range(num_splits + 1):
             print(f"Processing split {i}/{num_splits}")
-            train_start, train_end = split_range(i, tokenized_dataset["train"], num_splits)
+            train_start, train_end = split_range(
+                i, tokenized_dataset["train"], num_splits
+            )
             test_start, test_end = split_range(i, tokenized_dataset["test"], num_splits)
-            valid_start, valid_end = split_range(i, tokenized_dataset["validation"], num_splits)
+            valid_start, valid_end = split_range(
+                i, tokenized_dataset["validation"], num_splits
+            )
 
-            print(f"Taking splits:\n    \
+            print(
+                f"Taking splits:\n    \
                     Train: [{train_start}:{train_end}]\n    \
                     Test:  [{test_start}/{test_end}]\n    \
-                    Valid: [{valid_start}/{valid_end}]")
+                    Valid: [{valid_start}/{valid_end}]"
+            )
 
-            if (test_end - test_start) <= 1 or \
-               (train_end - train_start) <= 1 or \
-               (valid_end - valid_start) <= 1:
+            if (
+                (test_end - test_start) <= 1
+                or (train_end - train_start) <= 1
+                or (valid_end - valid_start) <= 1
+            ):
                 print("Skipping last spit")
                 break
 
             print("Train...")
-            train_source, train_target = concat_from_split(tokenized_dataset["train"][train_start:train_end])
+            train_source, train_target = concat_from_split(
+                tokenized_dataset["train"][train_start:train_end]
+            )
             print("Test...")
-            test_source, test_target = concat_from_split(tokenized_dataset["test"][test_start:test_end])
+            test_source, test_target = concat_from_split(
+                tokenized_dataset["test"][test_start:test_end]
+            )
             print("Valid...")
-            valid_source, valid_target = concat_from_split(tokenized_dataset["validation"][valid_start:valid_end])
-             
+            valid_source, valid_target = concat_from_split(
+                tokenized_dataset["validation"][valid_start:valid_end]
+            )
+
             # To avoid too small batches of bptt, we dont return too small datasets
             # Common batch: [100, 150] = 15_000 chars for one batch
-            # Average obw news row has 
+            # Average obw news row has
+            print(f"train len: {train_source.shape}")
             dataset = {
                 "train": {"source": train_source, "target": train_target},
                 "test": {"source": test_source, "target": test_target},
@@ -295,13 +301,14 @@ def process_tokenized_dataset(
         test_source, test_target = concat_from_split(tokenized_dataset["test"])
         print("Valid...")
         valid_source, valid_target = concat_from_split(tokenized_dataset["validation"])
-    
+
         dataset = {
             "train": {"source": train_source, "target": train_target},
             "test": {"source": test_source, "target": test_target},
             "validation": {"source": valid_source, "target": valid_target},
         }
         yield dataset, dictionary
+
 
 def write_tokenized_dataset(split_iterator, path):
     shard_path = f"{path}-%0d.tar"
@@ -315,33 +322,37 @@ def write_tokenized_dataset(split_iterator, path):
                 source = ds_split["source"]
                 target = ds_split["target"]
 
-                sink.write({
-                    "__key__": f"{path}_{train_split}_{str(i)}",
-                    "source.pyd": source,
-                    "target.pyd": target,
-                    "split": train_split
-                })
+                sink.write(
+                    {
+                        "__key__": f"{path}_{train_split}_{str(i)}",
+                        "source.pyd": source,
+                        "target.pyd": target,
+                        "split": train_split,
+                    }
+                )
     return dictionary, shard_path
 
 
 def load_tokenized_dataset(path: str) -> dict:
-
     ds_dir = pathlib.Path(path)
 
     assert ds_dir.is_file(), "Tokenized dataset has to be a tar archive"
 
     dataset = wds.WebDataset(path).decode("rgb8")
-    
-    dict_dataset = {}
-    
-    for split in dataset:
 
-        dict_dataset[split["split"].decode("utf-8")] = {
-            "source": split["source.pyd"],
-            "target": split["target.pyd"]
-        }
+    dict_dataset = {"train": [], "test": [], "validation": []}
+
+    # Collect splitted dataset
+    for split in dataset:
+        dict_dataset[split["split"].decode("utf-8")].append(
+            {
+                "source": split["source.pyd"],
+                "target": split["target.pyd"],
+            }
+        )
 
     return dict_dataset
+
 
 def calc_chunksize(iterable, num_workers):
     # obw_chunk_size = 1_000_000
@@ -354,23 +365,25 @@ def calc_chunksize(iterable, num_workers):
 def np_array(x):
     return np.array(x, dtype=np.int16)
 
+
 def concat_from_split(split):
     source = split["source"]
     target = split["target"]
-    
+
     source_array = concat_dataset(source)
     target_array = concat_dataset(target)
 
     return source_array, target_array
+
 
 def concat_dataset(lst):
     sublists = []
 
     for sublist in tqdm(lst):
         sublists.append(da.from_array(sublist, chunks=(len(sublist[0]), len(sublist))))
-    
+
     return da.concatenate(sublists, axis=1).compute()
-                   
+
 
 def concat_dataset(rows: List[List[List[int]]]):
     # Numpy casts lists to float64, we therefore cannot safely donwscast to int16
