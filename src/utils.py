@@ -16,6 +16,17 @@ from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
+def split_range(i, ds_split, num_splits):
+    split_len = len(ds_split)
+    split_size = split_len // num_splits
+    start, end = (i*split_size), ((i+1)*split_size)
+    if end > split_len:
+        end = split_len
+
+    if i > 0:
+        start += 1
+
+    return start, end
 
 def pack(integer_list):
     """Pack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""

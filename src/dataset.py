@@ -1,6 +1,8 @@
 from functools import partial
+from collections import Iterable
 import gc
 import multiprocessing
+import pathlib
 from typing import List, Optional, Tuple
 from datasets.dataset_dict import DatasetDict
 
@@ -14,7 +16,6 @@ import mr4mp
 
 
 from codetiming import Timer
-from dask.diagnostics import ProgressBar
 import dask.array as da
 
 from datasets import load_dataset as ld
@@ -24,6 +25,9 @@ from numba import jit
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
+import webdataset as wds
+
+from src.utils import split_range
 
 from . import USE_CACHE
 from .data import batchify, local_dataset_mapper
@@ -150,7 +154,7 @@ def get_text(x):
 
 
 def filter_empty_row(example) -> bool:
-    return len(example["source"]) > 0
+    return len(example["text"]) > 0
 
 
 def load_dataset_from_source(ds_path: str) -> DatasetDict:
@@ -181,7 +185,7 @@ def load_dataset_from_source(ds_path: str) -> DatasetDict:
 
     return dataset
 
-def load_tokenized_dataset(
+def process_tokenized_dataset(
     dataset_path: str,
     ngme: str,
     ngram: int,
@@ -191,8 +195,9 @@ def load_tokenized_dataset(
     is_forward: bool,
     packed: bool,
     dict_file_name: Optional[str] = None,
+    rows_threshold: int =  50_000_000,
     **kwargs,
-) -> Tuple[dict, Dictionary]:
+) -> Iterable[Tuple[dict, Dictionary]]:
     """🤗"""
 
     dataset = load_dataset_from_source(dataset_path)
@@ -222,6 +227,9 @@ def load_tokenized_dataset(
         )
         return result
 
+    print("Remove empty rows...")
+    dataset = dataset.filter(filter_empty_row, num_proc=num_proc)
+
     print("Tokenize dataset...")
     tokenized_dataset = dataset.map(
         tokenize,
@@ -229,12 +237,58 @@ def load_tokenized_dataset(
         num_proc=num_proc,
     )
 
-    print("Remove empty rows...")
-    tokenized_dataset = tokenized_dataset.filter(filter_empty_row, num_proc=num_proc)
+    # Until this point big datasets can all be processed efficiently
+    # But the concatenation is hard
+    # Check here for length and split and yield datasetsubsets
+    # Train is the largest and mostly only problem
     
+    train_len = len(tokenized_dataset["train"])
 
-    print("Concat rows to whole sequence")
-    with ProgressBar():
+    if train_len > rows_threshold:
+        extra_split =  (train_len / rows_threshold) != (train_len // rows_threshold)
+        num_splits = train_len // rows_threshold 
+
+        num_splits = train_len // rows_threshold 
+
+        if extra_split:
+            num_splits += 1
+
+        
+        for i in range(num_splits+1):
+            print(f"Processing split {i}/{num_splits}")
+            train_start, train_end = split_range(i, tokenized_dataset["train"], num_splits)
+            test_start, test_end = split_range(i, tokenized_dataset["test"], num_splits)
+            valid_start, valid_end = split_range(i, tokenized_dataset["validation"], num_splits)
+
+            print(f"Taking splits:\n    \
+                    Train: [{train_start}:{train_end}]\n    \
+                    Test:  [{test_start}/{test_end}]\n    \
+                    Valid: [{valid_start}/{valid_end}]")
+
+            if (test_end - test_start) <= 1 or \
+               (train_end - train_start) <= 1 or \
+               (valid_end - valid_start) <= 1:
+                print("Skipping last spit")
+                break
+
+            print("Train...")
+            train_source, train_target = concat_from_split(tokenized_dataset["train"][train_start:train_end])
+            print("Test...")
+            test_source, test_target = concat_from_split(tokenized_dataset["test"][test_start:test_end])
+            print("Valid...")
+            valid_source, valid_target = concat_from_split(tokenized_dataset["validation"][valid_start:valid_end])
+             
+            # To avoid too small batches of bptt, we dont return too small datasets
+            # Common batch: [100, 150] = 15_000 chars for one batch
+            # Average obw news row has 
+            dataset = {
+                "train": {"source": train_source, "target": train_target},
+                "test": {"source": test_source, "target": test_target},
+                "validation": {"source": valid_source, "target": valid_target},
+            }
+
+            yield dataset, dictionary
+    else:
         print("Train...")
         train_source, train_target = concat_from_split(tokenized_dataset["train"])
         print("Test...")
@@ -242,15 +296,52 @@ def load_tokenized_dataset(
         print("Valid...")
         valid_source, valid_target = concat_from_split(tokenized_dataset["validation"])
     
-    dataset = {
-        # "train": {"text": train, "source": train_source, "target": train_target},
-        "train": {"source": train_source, "target": train_target},
-        "test": {"source": test_source, "target": test_target},
-        "validation": {"source": valid_source, "target": valid_target},
-    }
+        dataset = {
+            "train": {"source": train_source, "target": train_target},
+            "test": {"source": test_source, "target": test_target},
+            "validation": {"source": valid_source, "target": valid_target},
+        }
+        yield dataset, dictionary
 
-    return dataset, dictionary
+def write_tokenized_dataset(split_iterator, path):
+    shard_path = f"{path}-%0d.tar"
+    with wds.ShardWriter(shard_path) as sink:
+        for i, (ds, dictionary) in enumerate(split_iterator):
+            for train_split in ["train", "test", "validation"]:
+                if train_split not in ds:
+                    print(f"Split {train_split} not found. Skipping.")
 
+                ds_split = ds[train_split]
+                source = ds_split["source"]
+                target = ds_split["target"]
+
+                sink.write({
+                    "__key__": f"{path}_{train_split}_{str(i)}",
+                    "source.pyd": source,
+                    "target.pyd": target,
+                    "split": train_split
+                })
+    return dictionary, shard_path
+
+
+def load_tokenized_dataset(path: str) -> dict:
+
+    ds_dir = pathlib.Path(path)
+
+    assert ds_dir.is_file(), "Tokenized dataset has to be a tar archive"
+
+    dataset = wds.WebDataset(path).decode("rgb8")
+    
+    dict_dataset = {}
+    
+    for split in dataset:
+
+        dict_dataset[split["split"].decode("utf-8")] = {
+            "source": split["source.pyd"],
+            "target": split["target.pyd"]
+        }
+
+    return dict_dataset
 
 def calc_chunksize(iterable, num_workers):
     # obw_chunk_size = 1_000_000
@@ -266,7 +357,6 @@ def np_array(x):
 def concat_from_split(split):
     source = split["source"]
     target = split["target"]
-    seq_len = sum(split["len"])
     
     source_array = concat_dataset(source)
     target_array = concat_dataset(target)
@@ -282,13 +372,13 @@ def concat_dataset(lst):
     return da.concatenate(sublists, axis=1).compute()
                    
 
-def _concat_dataset(rows: List[List[List[int]]]):
+def concat_dataset(rows: List[List[List[int]]]):
     # Numpy casts lists to float64, we therefore cannot safely donwscast to int16
     return np.concatenate(rows, axis=1, dtype=np.int16, casting="unsafe")
 
 
 @jit(parallel=True)
-def _concat_dataset(rows: List[List[List[int]]]):
+def _concat_dataset_(rows: List[List[List[int]]]):
     return np.concatenate(rows, axis=1, dtype=np.int16)
 
 

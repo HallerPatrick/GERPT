@@ -6,24 +6,26 @@ from pathlib import Path
 import torch
 
 from src.args import parse_args
-from src.dataset import load_tokenized_dataset
+from src.dataset import process_tokenized_dataset, write_tokenized_dataset
+
+
+def save_splits(ds, idx, path: Path):
+
+    for split in ["train", "test", "validation"]:
+        if split not in ds:
+            print(f"Split {split} not found. Skipping.")
+
+        ds_split = ds[split]
+        source = ds_split["source"]
+        target = ds_split["target"]
+
+        source.tofile(path / f"{split}_source_{idx}.bin")
+        target.tofile(path / f"{split}_target_{idx}.bin")
 
 
 def main():
 
     args = parse_args()
-
-    tokenized_dataset, dictionary = load_tokenized_dataset(
-        args.data,
-        args.ngme,
-        args.ngram,
-        args.model,
-        args.max_dict_size,
-        args.cpus,
-        args.is_forward,
-        args.packed,
-        args.reuse_dict,
-    )
     
     # torch.saved does not overwrite file for some reason
     if Path(args.saved_data).exists():
@@ -33,6 +35,41 @@ def main():
         except NotADirectoryError:
             os.remove(args.saved_data)
     
+    # os.mkdir(args.saved_data)
+
+    # # TODO: Handle yields now!
+    # for i, (tokenized_dataset, dictionary) in enumerate(process_tokenized_dataset(
+    #     args.data,
+    #     args.ngme,
+    #     args.ngram,
+    #     args.model,
+    #     args.max_dict_size,
+    #     args.cpus,
+    #     args.is_forward,
+    #     args.packed,
+    #     args.reuse_dict,
+    #     10000
+    #     )):
+    #
+    #     save_splits(tokenized_dataset, i, Path(args.saved_data))
+    
+    ds_iterator = process_tokenized_dataset(
+        args.data,
+        args.ngme,
+        args.ngram,
+        args.model,
+        args.max_dict_size,
+        args.cpus,
+        args.is_forward,
+        args.packed,
+        args.reuse_dict,
+        10000
+    )
+    
+    dictionary, shard_path = write_tokenized_dataset(ds_iterator, args.saved_data)
+
+    print(f"Saved dictionary to: {shard_path}")
+
     # Save dict, but dont overwrite
     if not args.reuse_dict:
 
@@ -44,10 +81,9 @@ def main():
 
         dictionary.save_vocabulary("dicts/" + dict_stem + ".dict", args.ngram)
 
-    torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)
+    # torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)
     torch.save(dictionary, args.saved_dict)
 
-    print(dictionary.ngram2idx2word)
 
 
 if __name__ == "__main__":

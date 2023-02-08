@@ -1,5 +1,6 @@
 """The main entry script for the pre-training tasks for LSTMs and Transformer"""
 
+import os
 from pathlib import Path
 
 
@@ -19,19 +20,20 @@ from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 import wandb
 from src import USE_CACHE
 from src.args import parse_args, print_args, read_config, write_to_yaml
-from src.dataset import GenericDataModule, load_tokenized_dataset
+from src.dataset import GenericDataModule, load_tokenized_dataset, process_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.utils import (
     ModelCheckpointCallback,
     TimePerEpochCallback,
     count_parameters,
-    get_encoder_params,
 )
 
 
 
 from train_ds import train_ds
+
+TEST = True
 
 if __name__ == "__main__":
 
@@ -44,22 +46,17 @@ if __name__ == "__main__":
     # Set seed
     torch.manual_seed(args.seed)
 
+    tar_file = args.saved_data + "-0.tar"
+
+    if os.path.isfile(tar_file):
+        args.saved_data = tar_file
+
     if args.saved_dict and args.saved_data:
-        print("Load preprocessed dataset from disk...")
-        tokenized_dataset = torch.load(args.saved_data)
-        dictionary = torch.load(args.saved_dict)
-    else:
-        # --- Dataloading & Tokenization ---
-        tokenized_dataset, dictionary = load_tokenized_dataset(
-            args.data,
-            args.ngme,
-            args.ngram,
-            args.model,
-            args.max_dict_size,
-            args.cpus,
-            args.is_forward,
-            args.packed,
-        )
+        print("saved_dict and saved_data not defined in config")
+
+    print("Load preprocessed dataset from disk...")
+    tokenized_dataset = load_tokenized_dataset(args.saved_data)
+    dictionary = torch.load(args.saved_dict)
 
     # To avoid locks during distributed training
     wandb.require(experiment="service")
@@ -121,7 +118,7 @@ if __name__ == "__main__":
         ],
         # Disable validation during training
         limit_val_batches=0.0,
-        profiler=PyTorchProfiler(),
+        # profiler=PyTorchProfiler(),
         fast_dev_run=False,
     )
 
@@ -137,6 +134,9 @@ if __name__ == "__main__":
 
     # TRAIN!
     trainer.fit(model, data_module)
+    
+    if TEST:
+        trainer.test(model, data_module)
 
     # Combine sharded model checkpoints into one for future loading
     if (

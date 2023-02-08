@@ -6,6 +6,7 @@ from matplotlib.widgets import EllipseSelector
 
 import nltk
 import numpy as np
+import pyarrow
 import torch
 
 from src import utils
@@ -226,7 +227,7 @@ class Dictionary:
             for special_token_id in self._marker_tokens[1]
         ]
 
-    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor, with_text=True):
+    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor: str = "list", with_text=True):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
@@ -274,18 +275,47 @@ class Dictionary:
             sequence = utils.pack_tensor(sequence)
             target = utils.pack_tensor(target)
 
-        if return_tensor and return_tensor != "pt":
-            sequence = self._to_tensor(sequence, return_tensor)
-            target = self._to_tensor(target, return_tensor)
-        else:
-            sequence = sequence.tolist()
-            target = target.tolist()
-
-        
         if with_text:
-            return {"text": line, "source": sequence, "target": target, "len": len(line)}
+            return_value = {"text": line, "source": sequence, "target": target}
+        else:
+            return_value = {"source": sequence, "target": target}
+        
+        return self.convert_return_value(return_value, return_tensor)
 
-        return {"source": sequence, "target": target}
+    @staticmethod
+    def convert_return_value(return_dict, return_tensor):
+        if return_tensor == "pt":
+            return return_dict
+
+        # Return per default list
+        if not return_tensor:
+            return_dict["source"] = return_dict["source"].tolist()
+            return_dict["target"] = return_dict["target"].tolist()
+            return return_dict
+
+        return_dict["source"] = Dictionary._to_tensor(return_dict["source"], return_tensor)
+        return_dict["target"] = Dictionary._to_tensor(return_dict["target"], return_tensor)
+
+        if return_tensor == "arrow":
+            if "text" in return_dict:
+                del return_dict["text"]
+                # return_dict["text"] = list(return_dict["text"])
+            return pyarrow.Table.from_arrays([return_dict["source"], return_dict["target"]], ["source", "target"])
+
+        return return_dict
+
+    @staticmethod
+    def _to_tensor(tensor, t_type):
+        if t_type == "list":
+            return tensor.tolist()
+        if t_type == "np":
+            return np.array(tensor)
+        if t_type == "pt":
+            return torch.tensor(tensor)
+        if t_type == "arrow":
+            return pyarrow.array(tensor.tolist())
+
+        return list(tensor)
 
     def _tokenize_line_sparse(
         self, line: Union[str, List[str]], id_type, return_tensor, with_text=True
@@ -345,13 +375,16 @@ class Dictionary:
             ]
         )
 
-        # if return_tensor:
-        #     sequence = self._to_tensor(sequence, return_tensor)
-        #     target = self._to_tensor(target, return_tensor)
         if with_text:
-            return {"text": line, "source": sequence, "target": target}
+            return_value = {"text": line, "source": sequence, "target": target}
+        else:
+            return_value = {"source": sequence, "target": target}
+        
+        if return_tensor == "arrow":
+            print("Table")
+            return pyarrow.Table.from_pydict(return_value)
 
-        return {"source": sequence, "target": target}
+        return return_value
 
     def shift_left(self, t: Union[List, torch.Tensor], shifts) -> torch.Tensor:
         """
@@ -425,11 +458,3 @@ class Dictionary:
 
         print(f"[{', '.join(collected_tokens)}]")
 
-    @staticmethod
-    def _to_tensor(tensor, t_type):
-        if t_type == "np":
-            return np.array(tensor)
-        if t_type == "pt":
-            return torch.tensor(tensor)
-
-        return list(tensor)
