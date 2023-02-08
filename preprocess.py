@@ -35,7 +35,8 @@ def main():
         except NotADirectoryError:
             os.remove(args.saved_data)
     
-    ds_iterator = process_tokenized_dataset(
+    dictionary = process_tokenized_dataset(
+        args.saved_data,
         args.data,
         args.ngme,
         args.ngram,
@@ -48,9 +49,9 @@ def main():
         10000
     )
     
-    dictionary, shard_path = write_tokenized_dataset(ds_iterator, args.saved_data)
-
-    print(f"Saved dictionary to: {shard_path}")
+    # dictionary, shard_path = write_tokenized_dataset(ds_iterator, args.saved_data)
+    #
+    # print(f"Saved dictionary to: {shard_path}")
 
     # Save dict, but dont overwrite
     if not args.reuse_dict:

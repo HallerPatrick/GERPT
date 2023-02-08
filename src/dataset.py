@@ -1,8 +1,10 @@
 import gc
+import os
 import multiprocessing
 import pathlib
 from collections import Iterable
 from functools import partial
+import shutil
 from typing import List, Optional, Tuple
 
 import dask.array as da
@@ -93,24 +95,28 @@ class GenericDataModule(pl.LightningDataModule):
         self.pad_tokens = pad_tokens
 
     def setup(self, stage):
-        self.train = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["train"]
-            ]
-        )
-        self.test = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["test"]
-            ]
-        )
-        self.valid = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["validation"]
-            ]
-        )
+        self.train = TextDataset(self.dataset["train"], self.batch_size, self.bptt_size, self.pad_tokens)
+        self.test = TextDataset(self.dataset["test"], self.batch_size, self.bptt_size, self.pad_tokens)
+        self.valid = TextDataset(self.dataset["valid"], self.batch_size, self.bptt_size, self.pad_tokens)
+
+        # self.train = ConcatDataset(
+        #     [
+        #         TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+        #         for data in self.dataset["train"]
+        #     ]
+        # )
+        # self.test = ConcatDataset(
+        #     [
+        #         TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+        #         for data in self.dataset["test"]
+        #     ]
+        # )
+        # self.valid = ConcatDataset(
+        #     [
+        #         TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+        #         for data in self.dataset["validation"]
+        #     ]
+        # )
 
     def train_dataloader(self):
         return DataLoader(
@@ -178,6 +184,7 @@ def load_dataset_from_source(ds_path: str) -> DatasetDict:
 
 
 def process_tokenized_dataset(
+    target_path,
     dataset_path: str,
     ngme: str,
     ngram: int,
@@ -228,86 +235,58 @@ def process_tokenized_dataset(
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
+    
+    new_write_tokenized_dataset(tokenized_dataset, target_path)
 
-    # Until this point big datasets can all be processed efficiently
-    # But the concatenation is hard
-    # Check here for length and split and yield datasetsubsets
-    # Train is the largest and mostly only problem
+    return dictionary
 
-    train_len = len(tokenized_dataset["train"])
+def new_write_tokenized_dataset(dataset, path):
 
-    if train_len > rows_threshold:
-        extra_split = (train_len / rows_threshold) != (train_len // rows_threshold)
-        num_splits = train_len // rows_threshold
+    os.mkdir(path)
+    
+    total_train_len = 0
 
-        num_splits = train_len // rows_threshold
+    for seq_name in ["source", "target"]:
 
-        if extra_split:
-            num_splits += 1
+        ngram = len(dataset["train"][seq_name][0])
 
-        for i in range(num_splits + 1):
-            print(f"Processing split {i}/{num_splits}")
-            train_start, train_end = split_range(
-                i, tokenized_dataset["train"], num_splits
-            )
-            test_start, test_end = split_range(i, tokenized_dataset["test"], num_splits)
-            valid_start, valid_end = split_range(
-                i, tokenized_dataset["validation"], num_splits
-            )
+        if total_train_len == 0:
+            train_len = 0
+                    
+            print("Calculate total size...")
+            for row in tqdm(dataset["train"]["source"]):
+                train_len += len(row[0])
 
-            print(
-                f"Taking splits:\n    \
-                    Train: [{train_start}:{train_end}]\n    \
-                    Test:  [{test_start}/{test_end}]\n    \
-                    Valid: [{valid_start}/{valid_end}]"
-            )
+            total_train_len = train_len
+        
+            print(f"Total size: {(ngram, train_len)}")
 
-            if (
-                (test_end - test_start) <= 1
-                or (train_end - train_start) <= 1
-                or (valid_end - valid_start) <= 1
-            ):
-                print("Skipping last spit")
-                break
+        fp_train_source = np.memmap(f"{path}/train_{seq_name}.npy", dtype='int16', mode='w+', shape=(ngram, total_train_len))
+        
+        offset = 0
+        print("Write rows to file...")
+        for row in tqdm(dataset["train"][seq_name]):
+            array = np.array(row)
+            array_len = array.shape[1]
+            fp_train_source[:, offset: (offset+array_len)] = array[:]
+            offset += array_len
 
-            print("Train...")
-            train_source, train_target = concat_from_split(
-                tokenized_dataset["train"][train_start:train_end]
-            )
-            print("Test...")
-            test_source, test_target = concat_from_split(
-                tokenized_dataset["test"][test_start:test_end]
-            )
-            print("Valid...")
-            valid_source, valid_target = concat_from_split(
-                tokenized_dataset["validation"][valid_start:valid_end]
-            )
+        fp_train_source.flush()
 
-            # To avoid too small batches of bptt, we dont return too small datasets
-            # Common batch: [100, 150] = 15_000 chars for one batch
-            # Average obw news row has
-            print(f"train len: {train_source.shape}")
-            dataset = {
-                "train": {"source": train_source, "target": train_target},
-                "test": {"source": test_source, "target": test_target},
-                "validation": {"source": valid_source, "target": valid_target},
-            }
+    with open(f"{path}/size.txt", "w") as f:
+        f.write(f"{ngram},{total_train_len}")
+    
+    source, target = concat_from_split(dataset["test"])
+    np.save(f"{path}/test_source", source)
+    np.save(f"{path}/test_target", target)
 
-            yield dataset, dictionary
-    else:
-        print("Train...")
-        train_source, train_target = concat_from_split(tokenized_dataset["train"])
-        print("Test...")
-        test_source, test_target = concat_from_split(tokenized_dataset["test"])
-        print("Valid...")
-        valid_source, valid_target = concat_from_split(tokenized_dataset["validation"])
+    source, target = concat_from_split(dataset["validation"])
+    np.save(f"{path}/valid_source", source)
+    np.save(f"{path}/valid_target", target)
 
-        dataset = {
-            "train": {"source": train_source, "target": train_target},
-            "test": {"source": test_source, "target": test_target},
-            "validation": {"source": valid_source, "target": valid_target},
-        }
-        yield dataset, dictionary
+
+    
+
 
 
 def write_tokenized_dataset(split_iterator, path):
@@ -332,8 +311,31 @@ def write_tokenized_dataset(split_iterator, path):
                 )
     return dictionary, shard_path
 
+def load_tokenized_dataset(path: str, ngram: int) -> dict:
 
-def load_tokenized_dataset(path: str) -> dict:
+    dataset = {
+        "train": {},
+        "test": {},
+        "valid": {}
+    }
+
+    ngram, train_size = open(path + "/size.txt", "r").read().strip().split(",")
+    ngram = int(ngram)
+    train_size = int(train_size)
+
+    for split in ["train", "test", "valid"]:
+        for seq_name in ["source", "target"]:
+            if split == "train":
+                array = np.memmap(f"{path}/{split}_{seq_name}.npy", shape=(ngram, train_size))
+                array = array.reshape((3, -1))
+            else:
+                array = np.load(f"{path}/{split}_{seq_name}.npy", allow_pickle=True)
+            dataset[split][seq_name] = array
+
+    return dataset
+
+
+def _load_tokenized_dataset(path: str) -> dict:
     ds_dir = pathlib.Path(path)
 
     assert ds_dir.is_file(), "Tokenized dataset has to be a tar archive"

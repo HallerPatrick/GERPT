@@ -46,16 +46,16 @@ if __name__ == "__main__":
     # Set seed
     torch.manual_seed(args.seed)
 
-    tar_file = args.saved_data + "-0.tar"
+    tar_file = args.saved_data # + "-0.tar"
 
-    if os.path.isfile(tar_file):
-        args.saved_data = tar_file
+    # if os.path.isfile(tar_file):
+    #     args.saved_data = tar_file
 
     if args.saved_dict and args.saved_data:
         print("saved_dict and saved_data not defined in config")
 
     print("Load preprocessed dataset from disk...")
-    tokenized_dataset = load_tokenized_dataset(args.saved_data)
+    tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
 
     dictionary = torch.load(args.saved_dict)
 
