@@ -224,7 +224,7 @@ def process_tokenized_dataset(
         result = dictionary.tokenize_line(
             x["text"], id_type=torch.int16, return_tensor="np"
         )
-        return result
+        return {**result, "text_len": len(x["text"])}
 
     print("Remove empty rows...")
     dataset = dataset.filter(filter_empty_row, num_proc=num_proc)
@@ -260,7 +260,8 @@ def new_write_tokenized_dataset(dataset, path):
 
         if total_train_len == 0:
             print("Calculate seq length...")
-            total_train_len = calculate_total_seq_length(dataset["train"])
+            total_train_len = sum(dataset["train"]["text_len"])
+            # total_train_len = calculate_total_seq_length(dataset["train"])
             print(f"Total size: {(ngram, total_train_len)}")
 
         fp_train_source = np.memmap(f"{path}/train_{seq_name}.npy", dtype='int16', mode='w+', shape=(ngram, total_train_len))
