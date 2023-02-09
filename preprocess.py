@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 
 from src.args import parse_args
-from src.dataset import process_tokenized_dataset, write_tokenized_dataset
+from src.dataset import process_tokenized_dataset, write_sharded_tokenized_dataset, write_tokenized_dataset
 
 
 def save_splits(ds, idx, path: Path):
@@ -35,7 +35,7 @@ def main():
         except NotADirectoryError:
             os.remove(args.saved_data)
     
-    dictionary = process_tokenized_dataset(
+    dictionary, dataset_iterator = process_tokenized_dataset(
         args.saved_data,
         args.data,
         args.ngme,
@@ -46,8 +46,13 @@ def main():
         args.is_forward,
         args.packed,
         args.reuse_dict,
-        10000
+        args.write_strategy,
+        100
     )
+
+    if dataset_iterator:
+        write_sharded_tokenized_dataset(dataset_iterator, args.saved_data)
+
     
     # dictionary, shard_path = write_tokenized_dataset(ds_iterator, args.saved_data)
     #

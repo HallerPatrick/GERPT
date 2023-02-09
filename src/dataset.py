@@ -194,6 +194,7 @@ def process_tokenized_dataset(
     is_forward: bool,
     packed: bool,
     dict_file_name: Optional[str] = None,
+    write_strategy: str = "memmap",
     rows_threshold: int = 50_000_000,
     **kwargs,
 ) -> Iterable[Tuple[dict, Dictionary]]:
@@ -235,10 +236,99 @@ def process_tokenized_dataset(
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
-    
-    new_write_tokenized_dataset(tokenized_dataset, target_path)
 
-    return dictionary
+    if write_strategy == "sharded":
+        return dictionary, process_with_shards(tokenized_dataset, rows_threshold)
+    
+    if write_strategy == "memmap":
+        new_write_tokenized_dataset(tokenized_dataset, target_path)
+
+    return tokenized_dataset, dictionary
+
+
+def process_with_shards(tokenized_dataset: DatasetDict, rows_threshold: int):
+    train_len = len(tokenized_dataset["train"])
+
+    if train_len > rows_threshold:
+        extra_split = (train_len / rows_threshold) != (train_len // rows_threshold)
+        num_splits = train_len // rows_threshold
+
+        num_splits = train_len // rows_threshold
+
+        if extra_split:
+            num_splits += 1
+
+        for i in range(num_splits + 1):
+            print(f"Processing split {i}/{num_splits}")
+            train_start, train_end = split_range(
+                i, tokenized_dataset["train"], num_splits
+            )
+            test_start, test_end = split_range(i, tokenized_dataset["test"], num_splits)
+            valid_start, valid_end = split_range(
+                i, tokenized_dataset["validation"], num_splits
+            )
+
+            print(
+                f"Taking splits:\n    \
+                    Train: [{train_start}:{train_end}]\n    \
+                    Test:  [{test_start}/{test_end}]\n    \
+                    Valid: [{valid_start}/{valid_end}]"
+            )
+
+            if (
+                (test_end - test_start) <= 1
+                or (train_end - train_start) <= 1
+                or (valid_end - valid_start) <= 1
+            ):
+                print("Skipping last spit")
+                break
+
+            print("Train...")
+            train_source, train_target = concat_from_split(
+                tokenized_dataset["train"][train_start:train_end]
+            )
+            print("Test...")
+            test_source, test_target = concat_from_split(
+                tokenized_dataset["test"][test_start:test_end]
+            )
+            print("Valid...")
+            valid_source, valid_target = concat_from_split(
+                tokenized_dataset["validation"][valid_start:valid_end]
+            )
+
+            # To avoid too small batches of bptt, we dont return too small datasets
+            # Common batch: [100, 150] = 15_000 chars for one batch
+            # Average obw news row has
+            print(f"train len: {train_source.shape}")
+            dataset = {
+                "train": {"source": train_source, "target": train_target},
+                "test": {"source": test_source, "target": test_target},
+                "validation": {"source": valid_source, "target": valid_target},
+            }
+
+            yield dataset
+
+def write_sharded_tokenized_dataset(split_iterator, path):
+    shard_path = f"{path}-%0d.tar"
+    with wds.ShardWriter(shard_path) as sink:
+        for i, ds in enumerate(split_iterator):
+            for train_split in ["train", "test", "validation"]:
+                if train_split not in ds:
+                    print(f"Split {train_split} not found. Skipping.")
+
+                ds_split = ds[train_split]
+                source = ds_split["source"]
+                target = ds_split["target"]
+
+                sink.write(
+                    {
+                        "__key__": f"{path}_{train_split}_{str(i)}",
+                        "source.pyd": source,
+                        "target.pyd": target,
+                        "split": train_split,
+                    }
+                )
+    return shard_path
 
 def len_row(row):
     return len(row[0])
@@ -286,10 +376,6 @@ def new_write_tokenized_dataset(dataset, path):
     source, target = concat_from_split(dataset["validation"])
     np.save(f"{path}/valid_source", source)
     np.save(f"{path}/valid_target", target)
-
-
-    
-
 
 
 def write_tokenized_dataset(split_iterator, path):
