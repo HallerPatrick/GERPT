@@ -240,6 +240,14 @@ def process_tokenized_dataset(
 
     return dictionary
 
+def len_row(row):
+    return len(row[0])
+
+def calculate_total_seq_length(dataset_split):
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count() // 2) as pool:
+        results = pool.map(len_row, dataset_split["source"])
+    return sum(results)
+
 def new_write_tokenized_dataset(dataset, path):
 
     os.mkdir(path)
@@ -251,15 +259,9 @@ def new_write_tokenized_dataset(dataset, path):
         ngram = len(dataset["train"][seq_name][0])
 
         if total_train_len == 0:
-            train_len = 0
-                    
-            print("Calculate total size...")
-            for row in tqdm(dataset["train"]["source"]):
-                train_len += len(row[0])
-
-            total_train_len = train_len
-        
-            print(f"Total size: {(ngram, train_len)}")
+            print("Calculate seq length...")
+            total_train_len = calculate_total_seq_length(dataset["train"])
+            print(f"Total size: {(ngram, total_train_len)}")
 
         fp_train_source = np.memmap(f"{path}/train_{seq_name}.npy", dtype='int16', mode='w+', shape=(ngram, total_train_len))
         
