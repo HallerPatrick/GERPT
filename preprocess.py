@@ -6,21 +6,7 @@ from pathlib import Path
 import torch
 
 from src.args import parse_args
-from src.dataset import process_tokenized_dataset, write_sharded_tokenized_dataset, write_tokenized_dataset
-
-
-def save_splits(ds, idx, path: Path):
-
-    for split in ["train", "test", "validation"]:
-        if split not in ds:
-            print(f"Split {split} not found. Skipping.")
-
-        ds_split = ds[split]
-        source = ds_split["source"]
-        target = ds_split["target"]
-
-        source.tofile(path / f"{split}_source_{idx}.bin")
-        target.tofile(path / f"{split}_target_{idx}.bin")
+from src.process import process_tokenized_dataset, write_sharded_tokenized_dataset
 
 
 def main():
@@ -52,11 +38,6 @@ def main():
 
     if dataset_iterator:
         write_sharded_tokenized_dataset(dataset_iterator, args.saved_data)
-
-    
-    # dictionary, shard_path = write_tokenized_dataset(ds_iterator, args.saved_data)
-    #
-    # print(f"Saved dictionary to: {shard_path}")
 
     # Save dict, but dont overwrite
     if not args.reuse_dict:

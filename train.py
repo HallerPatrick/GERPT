@@ -1,26 +1,21 @@
 """The main entry script for the pre-training tasks for LSTMs and Transformer"""
 
-import os
 from pathlib import Path
 
-
 import torch
-from datasets.load import load_from_disk
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
-from pytorch_lightning.profiler import PyTorchProfiler
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 
 import wandb
-from src import USE_CACHE
 from src.args import parse_args, print_args, read_config, write_to_yaml
-from src.dataset import GenericDataModule, load_tokenized_dataset, process_tokenized_dataset
+from src.dataset import GenericDataModule, ShardedDataModule
+from src.process import load_tokenized_dataset, load_sharded_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.utils import (
@@ -45,17 +40,17 @@ if __name__ == "__main__":
 
     # Set seed
     torch.manual_seed(args.seed)
-
-    tar_file = args.saved_data # + "-0.tar"
-
-    # if os.path.isfile(tar_file):
-    #     args.saved_data = tar_file
-
-    if args.saved_dict and args.saved_data:
+    
+    if not args.saved_dict or not args.saved_data:
         print("saved_dict and saved_data not defined in config")
+        exit()
 
     print("Load preprocessed dataset from disk...")
-    tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
+    if args.write_strategy == "sharding":
+        args.saved_data = args.saved_data + "-0.tar"
+        tokenized_dataset = load_sharded_tokenized_dataset(args.saved_data)
+    else:
+        tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
 
     dictionary = torch.load(args.saved_dict)
 
@@ -71,7 +66,10 @@ if __name__ == "__main__":
     )
 
     # Init PL data module
-    data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
+    if args.write_strategy == "sharding":
+        data_module = ShardedDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
+    else:
+        data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
     # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpointCallback(
