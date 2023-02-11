@@ -7,14 +7,19 @@ import pytorch_lightning as pl
 import torch
 from torch import Tensor
 
+import pyarrow as pa
 import numpy as np
 from numba import jit
+
+from datasets.features.features import _ArrayXDExtensionType, _is_zero_copy_only
+from datasets.formatting.formatting import _is_array_with_nulls, _unnest, Formatter, BaseArrowExtractor
 
 import torch.nn.functional as F
 
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+
 
 def split_range(i, ds_split, num_splits):
     split_len = len(ds_split)
@@ -328,3 +333,96 @@ def get_size(obj, seen=None):
     elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size(i, seen) for i in obj])
     return size
+
+
+class StackedNumpyArrowExtractor(BaseArrowExtractor[dict, np.ndarray, dict]):
+    def __init__(self, **np_array_kwargs):
+        self.np_array_kwargs = np_array_kwargs
+
+    def extract_row(self, pa_table: pa.Table) -> dict:
+        return _unnest(self.extract_batch(pa_table))
+
+    def extract_column(self, pa_table: pa.Table) -> np.ndarray:
+        return self._arrow_array_to_numpy(pa_table[pa_table.column_names[0]])
+
+    def extract_batch(self, pa_table: pa.Table) -> dict:
+        return {col: self._arrow_array_to_numpy(pa_table[col]) for col in pa_table.column_names}
+
+    def _arrow_array_to_numpy(self, pa_array: pa.Array) -> np.ndarray:
+        if isinstance(pa_array, pa.ChunkedArray):
+            if isinstance(pa_array.type, _ArrayXDExtensionType):
+                # don't call to_pylist() to preserve dtype of the fixed-size array
+                zero_copy_only = _is_zero_copy_only(pa_array.type.storage_dtype, unnest=True)
+                if pa_array.type.shape[0] is None:
+                    array: List = [
+                        row
+                        for chunk in pa_array.chunks
+                        for row in chunk.to_list_of_numpy(zero_copy_only=zero_copy_only)
+                    ]
+                else:
+                    array: List = [
+                        row for chunk in pa_array.chunks for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
+                    ]
+            else:
+                zero_copy_only = _is_zero_copy_only(pa_array.type) and all(
+                    not _is_array_with_nulls(chunk) for chunk in pa_array.chunks
+                )
+                array: List = [
+                    row for chunk in pa_array.chunks for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
+                ]
+        else:
+            if isinstance(pa_array.type, _ArrayXDExtensionType):
+                # don't call to_pylist() to preserve dtype of the fixed-size array
+                zero_copy_only = _is_zero_copy_only(pa_array.type.storage_dtype, unnest=True)
+                if pa_array.type.shape[0] is None:
+                    array: List = pa_array.to_list_of_numpy(zero_copy_only=zero_copy_only)
+                else:
+                    array: List = pa_array.to_numpy(zero_copy_only=zero_copy_only)
+            else:
+                zero_copy_only = _is_zero_copy_only(pa_array.type) and not _is_array_with_nulls(pa_array)
+                array: List = pa_array.to_numpy(zero_copy_only=zero_copy_only).tolist()
+        if len(array) > 0:
+            if any(
+                (isinstance(x, np.ndarray) and (x.dtype == object or x.shape != array[0].shape))
+                or (isinstance(x, float) and np.isnan(x))
+                for x in array
+            ):
+                if isinstance(array[0], np.ndarray):
+                    array = array[0]
+                
+                result = np.stack(np.array(array, copy=False, **{**self.np_array_kwargs, "dtype": object}))
+                return [result]
+        return np.array(array, copy=False, **self.np_array_kwargs)
+
+
+class StackedNumpyFormatter(Formatter[dict, np.ndarray, dict]):
+
+    numpy_arrow_extractor = StackedNumpyArrowExtractor
+
+    def __init__(self, features=None, decoded=True, **np_array_kwargs):
+        super().__init__(features=features, decoded=decoded)
+        self.np_array_kwargs = np_array_kwargs
+
+    def format_row(self, pa_table: pa.Table) -> dict:
+        row = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_row(pa_table)
+        if self.decoded:
+            row = self.python_features_decoder.decode_row(row)
+        return row
+
+    def format_column(self, pa_table: pa.Table) -> np.ndarray:
+        column = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_column(pa_table)
+        if self.decoded:
+            column = self.python_features_decoder.decode_column(column, pa_table.column_names[0])
+        return column
+
+    def format_batch(self, pa_table: pa.Table) -> dict:
+        batch = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_batch(pa_table)
+        if self.decoded:
+            batch = self.python_features_decoder.decode_batch(batch)
+        return batch
+
+def set_stacked_numpy_formatter():
+    from datasets.formatting import _register_formatter
+
+    _register_formatter(StackedNumpyFormatter, "stacked-numpy", aliases=["snp"])
+

@@ -60,8 +60,8 @@ class RNNModel(pl.LightningModule):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-
         self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
+        print(self.encoder)
         self.ngrams = ngrams
         self.unk_t = unk_t
         self.dictionary = dictionary
@@ -250,14 +250,16 @@ class RNNModel(pl.LightningModule):
 
         if self.generate:
             # Only rank zero gives output
+            print("Generating")
             result= self.generate_text()
+            print(result)
             if result:
                 print(Panel(result, title="[green]Generated text"))
             self.train()
         # Reset hidden after each epoch
         self.hidden = None
 
-    @rank_zero.rank_zero_only
+    # @rank_zero.rank_zero_only
     def generate_text(self) -> str:
 
         inp = torch.randint(

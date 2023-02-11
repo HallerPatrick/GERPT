@@ -17,7 +17,7 @@ import torch
 from tqdm import tqdm
 import webdataset as wds
 
-from src.utils import split_range
+from src.utils import split_range, set_stacked_numpy_formatter
 
 from . import USE_CACHE
 from src.dataset import load_dataset_from_source
@@ -37,7 +37,7 @@ def process_tokenized_dataset(
     write_strategy: str = "memmap",
     rows_threshold: int = 50_000_000,
     **kwargs,
-) -> Iterable[Tuple[dict, Dictionary]]:
+) -> Tuple[Dictionary, Optional[Iterable]]:
     """🤗"""
 
     dataset = load_dataset_from_source(dataset_path)
@@ -76,6 +76,9 @@ def process_tokenized_dataset(
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
+    tokenized_dataset = tokenized_dataset.remove_columns("text")
+    set_stacked_numpy_formatter()
+    tokenized_dataset.set_format("snp")
 
     if write_strategy == "sharding":
         return dictionary, process_with_shards(tokenized_dataset, rows_threshold)
@@ -83,7 +86,7 @@ def process_tokenized_dataset(
     if write_strategy == "memmap":
         new_write_tokenized_dataset(tokenized_dataset, target_path)
 
-    return tokenized_dataset, dictionary
+    return dictionary, None
 
 def filter_empty_row(example) -> bool:
     return len(example["text"]) > 0
@@ -220,8 +223,7 @@ def new_write_tokenized_dataset(dataset, path):
         
         offset = 0
         print("Write rows to file...")
-        for row in tqdm(dataset["train"][seq_name]):
-            array = np.array(row)
+        for array in tqdm(dataset["train"][seq_name]):
             array_len = array.shape[1]
             fp_train_source[:, offset: (offset+array_len)] = array[:]
             offset += array_len
@@ -360,7 +362,6 @@ def load_dictionary_from_hf(
         dictionary.max_dict_size = len(dictionary)
 
     if ngme == "dense":
-        print("Apply unking...")
         dictionary = dictionary.unking()
 
     # Check if all unigrams were indexed first and all idx are consecutive
@@ -437,7 +438,8 @@ def populate_dense_dict(
 
     else:
         for line in source:
-            add_ngrams_from_text(line, ngram_list)
+            for n, tokens in add_ngrams_from_text(line, ngram_list).items():
+                dictionary.add_ngrams(tokens, n)
 
     return dictionary
 

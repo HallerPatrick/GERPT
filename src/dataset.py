@@ -16,7 +16,9 @@ class TextDataset(Dataset):
     def __init__(self, ds, batch_size, bptt_size, pad_tokens) -> None:
         self.bptt = bptt_size
         self.batch_size = batch_size
+        print(ds["source"].shape)
         self.inputs, self.nbatch = batchify(ds["source"], batch_size, bptt_size)
+        # print(self.inputs)
         self.target, _ = batchify(ds["target"], batch_size, bptt_size)
 
         assert isinstance(self.inputs, torch.Tensor)
@@ -111,24 +113,29 @@ class GenericDataModule(pl.LightningDataModule):
 
 class ShardedDataModule(GenericDataModule):
     def setup(self, stage):
+
         self.train = ConcatDataset(
             [
                 TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
                 for data in self.dataset["train"]
             ]
         )
+        print(len(self.train))
         self.test = ConcatDataset(
             [
                 TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
                 for data in self.dataset["test"]
+
             ]
         )
+        print(len(self.test))
         self.valid = ConcatDataset(
             [
                 TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
                 for data in self.dataset["validation"]
             ]
         )
+        print(len(self.valid))
 
 def get_text(x):
     return x["text"]

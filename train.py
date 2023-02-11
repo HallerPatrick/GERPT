@@ -1,6 +1,7 @@
 """The main entry script for the pre-training tasks for LSTMs and Transformer"""
 
 from pathlib import Path
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 import torch
 from pytorch_lightning import Trainer
@@ -72,7 +73,7 @@ if __name__ == "__main__":
         data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
     # --- PL Callbacks ---
-    checkpoint_callback = ModelCheckpointCallback(
+    checkpoint_callback = ModelCheckpoint(
         monitor="train/loss",
         save_on_train_epoch_end=True,
         dirpath="checkpoints",
@@ -101,6 +102,7 @@ if __name__ == "__main__":
 
     # --- Training ---
     trainer = Trainer(
+        # resume_from_checkpoint=Path("checkpoints" /  Path("flair_" + args.save)),
         logger=wandb_logger,
         max_epochs=args.epochs,
         # accelerator="auto",
@@ -120,7 +122,7 @@ if __name__ == "__main__":
         # profiler=PyTorchProfiler(),
         fast_dev_run=False,
     )
-
+    
     model = load_model(dictionary, args)
 
     # Print Parameters
