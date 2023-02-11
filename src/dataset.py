@@ -4,6 +4,9 @@ import itertools
 import numpy as np
 import pytorch_lightning as pl
 import torch
+
+from tqdm import tqdm
+
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
 from torch.utils.data import ConcatDataset, IterableDataset
@@ -122,13 +125,12 @@ class ShardedDataModule(GenericDataModule):
         valid_iterator = map(partial(get_split, split="validation"), valid)
         test_iterator =  map(partial(get_split, split="test"), test)
 
-        self.train = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in train_iterator 
+        print("Concatenate datasets (train)")
+        concat_ds = []
+        for data in tqdm(train_iterator):
+            concat_ds.append(TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens))
 
-            ]
-        )
+        self.train = ConcatDataset(concat_ds)
 
         self.valid = ConcatDataset(
             [
