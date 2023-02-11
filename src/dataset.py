@@ -1,11 +1,12 @@
+from functools import partial
 import gc
-
+import itertools
 import numpy as np
 import pytorch_lightning as pl
 import torch
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
@@ -16,7 +17,6 @@ class TextDataset(Dataset):
     def __init__(self, ds, batch_size, bptt_size, pad_tokens) -> None:
         self.bptt = bptt_size
         self.batch_size = batch_size
-        print(ds["source"].shape)
         self.inputs, self.nbatch = batchify(ds["source"], batch_size, bptt_size)
         # print(self.inputs)
         self.target, _ = batchify(ds["target"], batch_size, bptt_size)
@@ -83,7 +83,6 @@ class GenericDataModule(pl.LightningDataModule):
         self.test = TextDataset(self.dataset["test"], self.batch_size, self.bptt_size, self.pad_tokens)
         self.valid = TextDataset(self.dataset["valid"], self.batch_size, self.bptt_size, self.pad_tokens)
 
-
     def train_dataloader(self):
         return DataLoader(
             self.train,
@@ -111,31 +110,42 @@ class GenericDataModule(pl.LightningDataModule):
             pin_memory=True,
         )
 
+def get_split(sample, split):
+    return sample[split]
+
 class ShardedDataModule(GenericDataModule):
     def setup(self, stage):
+
+        train, test, valid = itertools.tee(self.dataset, 3)
+
+        train_iterator = map(partial(get_split, split="train"), train)
+        valid_iterator = map(partial(get_split, split="validation"), valid)
+        test_iterator =  map(partial(get_split, split="test"), test)
 
         self.train = ConcatDataset(
             [
                 TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["train"]
-            ]
-        )
-        print(len(self.train))
-        self.test = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["test"]
+                for data in train_iterator 
 
             ]
         )
-        print(len(self.test))
+
         self.valid = ConcatDataset(
             [
                 TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in self.dataset["validation"]
+                for data in valid_iterator 
+
             ]
         )
-        print(len(self.valid))
+
+        self.test = ConcatDataset(
+            [
+                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
+                for data in test_iterator
+
+            ]
+        )
+
 
 def get_text(x):
     return x["text"]

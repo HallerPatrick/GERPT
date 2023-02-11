@@ -23,6 +23,9 @@ from src.loss import CrossEntropyLossSoft
 from .ngme import NGramsEmbedding, soft_n_hot
 
 
+DEBUG = False
+
+
 def repackage_hidden(h):
     """Wraps hidden states in new Tensors, to detach them from their history."""
 
@@ -155,6 +158,10 @@ class RNNModel(pl.LightningModule):
         # batch_size = batch["source"].size()[-1]
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
+        if DEBUG:
+            self.dictionary.print_batch(source)
+            input("continue")
+
         batch_size = source.size(2)
 
         if not self.hidden:
@@ -248,7 +255,7 @@ class RNNModel(pl.LightningModule):
 
         self.epoch += 1
 
-        if self.generate:
+        if self.generate and self.epoch == 9:
             # Only rank zero gives output
             print("Generating")
             result= self.generate_text()

@@ -33,7 +33,7 @@ def main():
         args.packed,
         args.reuse_dict,
         args.write_strategy,
-        100
+        10_000
     )
 
     if dataset_iterator:

@@ -16,7 +16,7 @@ from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, ShardedDataModule
-from src.process import load_tokenized_dataset, load_sharded_tokenized_dataset
+from src.process import load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.utils import (
@@ -48,8 +48,8 @@ if __name__ == "__main__":
 
     print("Load preprocessed dataset from disk...")
     if args.write_strategy == "sharding":
-        args.saved_data = args.saved_data + "-0.tar"
-        tokenized_dataset = load_sharded_tokenized_dataset(args.saved_data)
+        args.saved_data = args.saved_data + "-{0..1}.tar"
+        tokenized_dataset = load_sharded_splits(args.saved_data)
     else:
         tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
 

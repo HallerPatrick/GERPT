@@ -1,4 +1,5 @@
 import sys
+import pprint as pp
 from collections import Counter, OrderedDict, defaultdict
 from functools import lru_cache
 from typing import Iterator, List, Optional, Union
@@ -448,7 +449,10 @@ class Dictionary:
 
     def print_sequence(self, seq, ngram):
         """docstring for print_sequence"""
+        collected_tokens = self._get_char_sequence(seq, ngram)
+        print(f"[{', '.join(collected_tokens)}]")
 
+    def _get_char_sequence(self, seq, ngram):
         collected_tokens = []
 
         for token in seq:
@@ -456,5 +460,16 @@ class Dictionary:
                 token = token.item()
             collected_tokens.append(self.ngram2idx2word[ngram][token])
 
-        print(f"[{', '.join(collected_tokens)}]")
+        return collected_tokens
+
+
+    def print_batch(self, batch):
+
+        seqs = []
+        for batch_idx in range(batch.size(2)):
+            for n_idx  in range(batch.size(0)):
+                seqs.append(self._get_char_sequence(batch[n_idx, :, batch_idx], n_idx+1))
+        
+        for seq in seqs:
+            print(seq)
 

@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import webdataset as wds
+from webdataset.tariterators import braceexpand
 
 from src.utils import split_range, set_stacked_numpy_formatter
 
@@ -76,9 +77,11 @@ def process_tokenized_dataset(
         load_from_cache_file=USE_CACHE,
         num_proc=num_proc,
     )
-    tokenized_dataset = tokenized_dataset.remove_columns("text")
-    set_stacked_numpy_formatter()
-    tokenized_dataset.set_format("snp")
+
+    # TODO; Does this help us in anyway?
+    # tokenized_dataset = tokenized_dataset.remove_columns("text")
+    # set_stacked_numpy_formatter()
+    # tokenized_dataset.set_format("snp")
 
     if write_strategy == "sharding":
         return dictionary, process_with_shards(tokenized_dataset, rows_threshold)
@@ -116,17 +119,19 @@ def process_with_shards(tokenized_dataset: DatasetDict, rows_threshold: int):
             print(
                 f"Taking splits:\n    \
                     Train: [{train_start}:{train_end}]\n    \
-                    Test:  [{test_start}/{test_end}]\n    \
-                    Valid: [{valid_start}/{valid_end}]"
+                    Test:  [{test_start}:{test_end}]\n    \
+                    Valid: [{valid_start}:{valid_end}]"
             )
 
-            if (
-                (test_end - test_start) <= 1
-                or (train_end - train_start) <= 1
-                or (valid_end - valid_start) <= 1
-            ):
+            if (train_end - train_start) <= 1:
                 print("Skipping last spit")
                 break
+
+            if (test_end - test_start) <= 1:
+                test_source, test_target = np.array([]), np.array([])
+
+            if (valid_end - valid_start) <= 1:
+                valid_source, valid_target = np.array([]), np.array([])
 
             print("Train...")
             train_source, train_target = concat_from_split(
@@ -175,10 +180,37 @@ def write_sharded_tokenized_dataset(split_iterator, path):
                 )
     return shard_path
 
+def load_sharded_splits(path):
+
+    def collate_fn(lst):
+        sample = {}
+        for split in lst:
+            split_name = split[2].decode("utf-8")
+            sample[split_name] = {
+                "source": split[0],
+                "target": split[1],
+                "split": split_name
+            }
+        return sample
+    
+    # For some reason we have to check ourself how many shards we have
+    # Otherwise we iter through all shards for ever
+    urls = list(braceexpand.braceexpand(path))
+
+    dataset = wds.DataPipeline(
+        wds.ResampledShards(urls, nshards=len(urls)),
+        wds.tarfile_to_samples(),
+        wds.decode("rgb"),
+        wds.to_tuple("source.pyd", "target.pyd", "split"),
+        wds.batched(3, collation_fn=collate_fn),
+    )
+
+    return dataset
+
 def load_sharded_tokenized_dataset(path: str) -> dict:
     ds_dir = pathlib.Path(path)
 
-    assert ds_dir.is_file(), "Tokenized dataset has to be a tar archive"
+    # assert ds_dir.is_file(), "Tokenized dataset has to be a tar archive"
 
     dataset = wds.WebDataset(path).decode("rgb8")
 
