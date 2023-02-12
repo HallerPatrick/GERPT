@@ -113,39 +113,61 @@ class GenericDataModule(pl.LightningDataModule):
             pin_memory=True,
         )
 
-def get_split(sample, split):
-    return sample[split]
 
-class ShardedDataModule(GenericDataModule):
+class ShardedDataModule(pl.LightningDataModule):
+
+    def __init__(self, train_ds, valid_ds, test_ds, batch_size, bptt_size, pad_tokens, cpus=1):
+        super().__init__()
+        self.train_ds = train_ds
+        self.valid_ds = valid_ds
+        self.test_ds = test_ds
+        self.batch_size = batch_size
+        self.bptt_size = bptt_size
+        self.pad_tokens = pad_tokens
+        self.cpus = cpus
+
     def setup(self, stage):
 
-        train, test, valid = itertools.tee(self.dataset, 3)
+        self.prepare_data()
+        # if hasattr(self, "train"):
+        #     return
+        # self.train = TextDataset(self.train_ds, self.batch_size, self.bptt_size, self.pad_tokens)
+        # self.valid = TextDataset(self.valid_ds, self.batch_size, self.bptt_size, self.pad_tokens)
+        # self.test = TextDataset(self.test_ds, self.batch_size, self.bptt_size, self.pad_tokens)
+        # print("Called?")
 
-        train_iterator = map(partial(get_split, split="train"), train)
-        valid_iterator = map(partial(get_split, split="validation"), valid)
-        test_iterator =  map(partial(get_split, split="test"), test)
 
-        print("Concatenate datasets (train)")
-        concat_ds = []
-        for data in tqdm(train_iterator):
-            concat_ds.append(TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens))
+    def prepare_data(self) -> None:
+        self.train = TextDataset(self.train_ds, self.batch_size, self.bptt_size, self.pad_tokens)
+        self.valid = TextDataset(self.valid_ds, self.batch_size, self.bptt_size, self.pad_tokens)
+        self.test = TextDataset(self.test_ds, self.batch_size, self.bptt_size, self.pad_tokens)
 
-        self.train = ConcatDataset(concat_ds)
 
-        self.valid = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in valid_iterator 
-
-            ]
+    def train_dataloader(self):
+        return DataLoader(
+            self.train,
+            batch_size=self.batch_size,
+            drop_last=True,
+            num_workers=self.cpus,
+            pin_memory=True,
         )
 
-        self.test = ConcatDataset(
-            [
-                TextDataset(data, self.batch_size, self.bptt_size, self.pad_tokens)
-                for data in test_iterator
+    def val_dataloader(self):
+        return DataLoader(
+            self.valid,
+            batch_size=self.batch_size,
+            drop_last=True,
+            num_workers=self.cpus,
+            pin_memory=True,
+        )
 
-            ]
+    def test_dataloader(self):
+        return DataLoader(
+            self.test,
+            batch_size=self.batch_size,
+            drop_last=True,
+            num_workers=self.cpus,
+            pin_memory=True,
         )
 
 

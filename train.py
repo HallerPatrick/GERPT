@@ -1,5 +1,7 @@
 """The main entry script for the pre-training tasks for LSTMs and Transformer"""
 
+from functools import partial
+import itertools
 from pathlib import Path
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -30,6 +32,9 @@ from src.utils import (
 from train_ds import train_ds
 
 TEST = True
+
+def get_split(sample, split):
+    return sample[split]
 
 if __name__ == "__main__":
 
@@ -68,11 +73,6 @@ if __name__ == "__main__":
         config={**vars(args), "dict_size": len(dictionary)},
     )
 
-    # Init PL data module
-    if args.write_strategy == "sharding":
-        data_module = ShardedDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
-    else:
-        data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
     # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpoint(
@@ -135,8 +135,28 @@ if __name__ == "__main__":
 
     # wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
-    # TRAIN!
-    trainer.fit(model, data_module)
+    # Init PL data module
+    if args.write_strategy == "sharding":
+
+        # train, test, valid = itertools.tee(tokenized_dataset, 3)
+        #
+        # train_iterator = map(partial(get_split, split="train"), train)
+        # valid_iterator = map(partial(get_split, split="validation"), valid)
+        # test_iterator =  map(partial(get_split, split="test"), test)
+
+        for shard in tokenized_dataset:
+            train = get_split(shard, "train")
+            test = get_split(shard, "test")
+            valid = get_split(shard, "validation")
+            data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
+
+            trainer.fit(model, data_module)
+
+    else:
+        data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
+
+        # TRAIN!
+        trainer.fit(model, data_module)
     
     if TEST:
         trainer.test(model, data_module)

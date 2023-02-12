@@ -83,7 +83,10 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
         Number of tokens per batch
     """
 
-    assert len(text.shape) == 2
+    if text.shape[0] == 0:
+        return torch.tensor([])
+
+    assert len(text.shape) == 2, f"Array should be 2-dimension not of shape: {text.shape}"
 
     text: torch.Tensor = torch.from_numpy(text)
 
