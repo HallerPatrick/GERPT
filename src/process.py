@@ -12,6 +12,7 @@ from flair.embeddings import FlairEmbeddings
 from humanfriendly import format_timespan
 import nltk
 
+import h5py
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -79,15 +80,15 @@ def process_tokenized_dataset(
     )
 
     # TODO; Does this help us in anyway?
-    # tokenized_dataset = tokenized_dataset.remove_columns("text")
-    # set_stacked_numpy_formatter()
-    # tokenized_dataset.set_format("snp")
 
     if write_strategy == "sharding":
         return dictionary, process_with_shards(tokenized_dataset, rows_threshold)
     
     if write_strategy == "memmap":
         new_write_tokenized_dataset(tokenized_dataset, target_path)
+
+    if write_strategy == "hdf5":
+        write_to_hdf5(tokenized_dataset, target_path)
 
     return dictionary, None
 
@@ -234,6 +235,48 @@ def calculate_total_seq_length(dataset_split):
     with multiprocessing.Pool(processes=multiprocessing.cpu_count() // 2) as pool:
         results = pool.map(len_row, dataset_split["source"])
     return sum(results)
+
+def write_to_hdf5(tokenized_dataset, path):
+
+    
+    # tokenized_dataset = tokenized_dataset.remove_columns("text")
+    # set_stacked_numpy_formatter()
+    # tokenized_dataset.set_format("snp")
+
+    f = h5py.File(path + ".h5", "w")
+    
+    
+    for split in ["train", "test", "validation"]:
+
+        ngram = len(tokenized_dataset[split]["source"][0])
+        total_train_len = sum(tokenized_dataset[split]["text_len"])
+        
+        for seq_name in ["source", "target"]:
+            
+            dataset = f.create_dataset(split.replace("validation", "valid") + "_" + seq_name, (ngram, total_train_len))
+            
+            offset = 0
+            # print(split, seq_name)
+            for lst in tqdm(tokenized_dataset[split][seq_name]):
+                array = np.array(lst)
+                array_len = array.shape[1]
+                dataset[:, offset: (offset+array_len)] = array[:]
+                offset += array_len
+                del array
+
+def load_hdf5(path):
+
+    dataset = {}
+    hd = h5py.File(path, "r")
+
+    for gname, group in hd.items():
+        split, seq_name = gname.split("_")
+        
+        if split not in dataset:
+            dataset[split] = {}
+        dataset[split][seq_name] = group[:]
+    
+    return dataset
 
 def new_write_tokenized_dataset(dataset, path):
 
