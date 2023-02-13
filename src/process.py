@@ -1,3 +1,4 @@
+import collections
 from functools import partial
 import os
 import multiprocessing
@@ -25,24 +26,69 @@ from . import USE_CACHE
 from src.dataset import load_dataset_from_source
 from src.dictionary import Dictionary
 
+
 def process_tokenized_dataset(
-    target_path,
-    dataset_path: str,
-    ngme: str,
-    ngram: int,
-    model_type: str,
-    max_dict_size: int,
-    num_proc: int,
-    is_forward: bool,
-    packed: bool,
-    dict_file_name: Optional[str] = None,
-    write_strategy: str = "memmap",
-    rows_threshold: int = 50_000_000,
-    **kwargs,
+        target_path,
+        dataset_path: str,
+        ngme: str,
+        ngram: int,
+        model_type: str,
+        max_dict_size: int,
+        num_proc: int,
+        is_forward: bool,
+        packed: bool,
+        dict_file_name: Optional[str] = None,
+        write_strategy: str = "memmap",
+        rows_threshold: int = 50_000_000,
+        **kwargs,
 ) -> Tuple[Dictionary, Optional[Iterable]]:
     """🤗"""
 
+    return _process_tokenized_dataset(
+        target_path,
+        dataset_path,
+        ngme,
+        ngram,
+        model_type,
+        max_dict_size,
+        num_proc,
+        is_forward,
+        packed,
+        dict_file_name,
+        write_strategy,
+        rows_threshold,
+        **kwargs
+    )
+
+
+def _process_tokenized_dataset(
+        target_path,
+        dataset_path: str,
+        ngme: str,
+        ngram: int,
+        model_type: str,
+        max_dict_size: int,
+        num_proc: int,
+        is_forward: bool,
+        packed: bool,
+        dict_file_name: Optional[str] = None,
+        write_strategy: str = "memmap",
+        rows_threshold: int = 50_000_000,
+        **kwargs,
+):
     dataset = load_dataset_from_source(dataset_path)
+
+    if isinstance(dataset, collections.Iterable):
+        assert dict_file_name, "Can only preprocess splits with predefined dictionary"
+
+        dictionary = load_dictionary_from_file(dict_file_name)
+
+        if not os.path.exists(target_path):
+            os.mkdir(target_path)
+
+        for i, dataset_split in enumerate(dataset):
+            write_file_split(dataset_split, dictionary, target_path, i, num_proc)
+        return None, None
 
     # TODO: What do we need from this?
     # dataset = preprocess(dataset)
@@ -83,7 +129,7 @@ def process_tokenized_dataset(
 
     if write_strategy == "sharding":
         return dictionary, process_with_shards(tokenized_dataset, rows_threshold)
-    
+
     if write_strategy == "memmap":
         new_write_tokenized_dataset(tokenized_dataset, target_path)
 
@@ -92,8 +138,38 @@ def process_tokenized_dataset(
 
     return dictionary, None
 
+
+def write_file_split(dataset, dictionary, target_path, idx, num_proc):
+    print("Remove empty rows...")
+    dataset = dataset.filter(filter_empty_row, num_proc=num_proc)
+
+    def tokenize(x):
+        result = dictionary.tokenize_line(
+            x["text"], id_type=torch.int16, return_tensor="np"
+        )
+        return {**result, "text_len": len(x["text"])}
+
+    print("Tokenize dataset...")
+    tokenized_dataset = dataset.map(
+        tokenize,
+        load_from_cache_file=USE_CACHE,
+        num_proc=num_proc,
+    )
+
+    print("Concat dataset...")
+    source, target = concat_from_split(tokenized_dataset["train"])
+
+    target_file = pathlib.Path(target_path) / f"train-{str(idx)}"
+    print(f"Saving split {str(idx)} to {target_file}")
+    torch.save({
+        "source": source,
+        "target": target
+    }, target_file)
+
+
 def filter_empty_row(example) -> bool:
     return len(example["text"]) > 0
+
 
 def process_with_shards(tokenized_dataset: DatasetDict, rows_threshold: int):
     train_len = len(tokenized_dataset["train"])
@@ -159,6 +235,7 @@ def process_with_shards(tokenized_dataset: DatasetDict, rows_threshold: int):
 
             yield dataset
 
+
 def write_sharded_tokenized_dataset(split_iterator, path):
     shard_path = f"{path}-%0d.tar"
     with wds.ShardWriter(shard_path) as sink:
@@ -181,8 +258,8 @@ def write_sharded_tokenized_dataset(split_iterator, path):
                 )
     return shard_path
 
-def load_sharded_splits(path):
 
+def load_sharded_splits(path):
     def collate_fn(lst):
         sample = {}
         for split in lst:
@@ -193,7 +270,7 @@ def load_sharded_splits(path):
                 "split": split_name
             }
         return sample
-    
+
     # For some reason we have to check ourself how many shards we have
     # Otherwise we iter through all shards for ever
     urls = list(braceexpand.braceexpand(path))
@@ -207,6 +284,7 @@ def load_sharded_splits(path):
     )
 
     return dataset
+
 
 def load_sharded_tokenized_dataset(path: str) -> dict:
     ds_dir = pathlib.Path(path)
@@ -228,60 +306,60 @@ def load_sharded_tokenized_dataset(path: str) -> dict:
 
     return dict_dataset
 
+
 def len_row(row):
     return len(row[0])
+
 
 def calculate_total_seq_length(dataset_split):
     with multiprocessing.Pool(processes=multiprocessing.cpu_count() // 2) as pool:
         results = pool.map(len_row, dataset_split["source"])
     return sum(results)
 
-def write_to_hdf5(tokenized_dataset, path):
 
-    
+def write_to_hdf5(tokenized_dataset, path):
     # tokenized_dataset = tokenized_dataset.remove_columns("text")
     # set_stacked_numpy_formatter()
     # tokenized_dataset.set_format("snp")
 
     f = h5py.File(path + ".h5", "w")
-    
-    
+
     for split in ["train", "test", "validation"]:
 
         ngram = len(tokenized_dataset[split]["source"][0])
         total_train_len = sum(tokenized_dataset[split]["text_len"])
-        
+
         for seq_name in ["source", "target"]:
-            
+
             dataset = f.create_dataset(split.replace("validation", "valid") + "_" + seq_name, (ngram, total_train_len))
-            
+
             offset = 0
             # print(split, seq_name)
             for lst in tqdm(tokenized_dataset[split][seq_name]):
                 array = np.array(lst)
                 array_len = array.shape[1]
-                dataset[:, offset: (offset+array_len)] = array[:]
+                dataset[:, offset: (offset + array_len)] = array[:]
                 offset += array_len
                 del array
 
-def load_hdf5(path):
 
+def load_hdf5(path):
     dataset = {}
     hd = h5py.File(path, "r")
 
     for gname, group in hd.items():
         split, seq_name = gname.split("_")
-        
+
         if split not in dataset:
             dataset[split] = {}
         dataset[split][seq_name] = group[:]
-    
+
     return dataset
 
-def new_write_tokenized_dataset(dataset, path):
 
+def new_write_tokenized_dataset(dataset, path):
     os.mkdir(path)
-    
+
     total_train_len = 0
 
     for seq_name in ["source", "target"]:
@@ -294,20 +372,21 @@ def new_write_tokenized_dataset(dataset, path):
             # total_train_len = calculate_total_seq_length(dataset["train"])
             print(f"Total size: {(ngram, total_train_len)}")
 
-        fp_train_source = np.memmap(f"{path}/train_{seq_name}.npy", dtype='int16', mode='w+', shape=(ngram, total_train_len))
-        
+        fp_train_source = np.memmap(f"{path}/train_{seq_name}.npy", dtype='int16', mode='w+',
+                                    shape=(ngram, total_train_len))
+
         offset = 0
         print("Write rows to file...")
         for array in tqdm(dataset["train"][seq_name]):
             array_len = array.shape[1]
-            fp_train_source[:, offset: (offset+array_len)] = array[:]
+            fp_train_source[:, offset: (offset + array_len)] = array[:]
             offset += array_len
 
         fp_train_source.flush()
 
     with open(f"{path}/size.txt", "w") as f:
         f.write(f"{ngram},{total_train_len}")
-    
+
     source, target = concat_from_split(dataset["test"])
     np.save(f"{path}/test_source", source)
     np.save(f"{path}/test_target", target)
@@ -339,8 +418,8 @@ def write_tokenized_dataset(split_iterator, path):
                 )
     return dictionary, shard_path
 
-def load_tokenized_dataset(path: str, ngram: int) -> dict:
 
+def load_tokenized_dataset(path: str, ngram: int) -> dict:
     dataset = {
         "train": {},
         "test": {},
@@ -416,13 +495,13 @@ def load_dictionary_from_file(dict_file_name: str):
 
 
 def load_dictionary_from_hf(
-    ngme: str,
-    source: List[str],
-    ngrams: int,
-    model_type: str,
-    max_dict_size: int,
-    packed: bool = False,
-    num_workers: int = 1,
+        ngme: str,
+        source: List[str],
+        ngrams: int,
+        model_type: str,
+        max_dict_size: int,
+        packed: bool = False,
+        num_workers: int = 1,
 ) -> Dictionary:
     dictionary = Dictionary(ngrams, max_dict_size, ngme)
 
@@ -480,7 +559,7 @@ def collect_ngrams(line, n):
 
 
 def populate_dense_dict(
-    dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int = 1
+        dictionary: Dictionary, ngrams: int, source: List[str], num_workers: int = 1
 ):
     dictionary.ngme = "dense"
 
@@ -502,11 +581,11 @@ def populate_dense_dict(
         print(f"Run dictionary collection with {num_workers} workers")
         with multiprocessing.Pool(num_workers) as pool:
             for ngram_tokens in tqdm(
-                pool.map(
-                    partial(add_ngrams_from_text, ngrams=ngram_list),
-                    source,
-                    chunksize=25,
-                )
+                    pool.map(
+                        partial(add_ngrams_from_text, ngrams=ngram_list),
+                        source,
+                        chunksize=25,
+                    )
             ):
                 for n, tokens in ngram_tokens.items():
                     dictionary.add_ngrams(tokens, n)

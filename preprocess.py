@@ -36,6 +36,9 @@ def main():
         1000
     )
 
+    if not dictionary and not dataset_iterator:
+        return
+
     if dataset_iterator:
         write_sharded_tokenized_dataset(dataset_iterator, args.saved_data)
 

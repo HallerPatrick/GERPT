@@ -38,6 +38,9 @@ local_dataset_mapper = {
         "test": "data/cash/test.txt",
         "validation": "data/cash/valid.txt",
     },
+    "cash_splits": {
+        "train": "data/cash_splits/train-{001..003}.txt",
+    },
     "wikitext-2": {
         "train": "data/wikitext-2/train.txt",
         "test": "data/wikitext-2/test.txt",
@@ -68,6 +71,9 @@ local_dataset_mapper = {
         # For the pipeline, which expects a validation set
         "validation": baby_lm_dev(),
     },
+    "obw": {
+        "train": "data/obw/train/news.en-{00000..00100}"
+    }
 }
 
 

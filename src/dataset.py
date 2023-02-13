@@ -1,6 +1,8 @@
 from functools import partial
 import gc
 import itertools
+
+import braceexpand
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -8,6 +10,7 @@ import torch
 from tqdm import tqdm
 
 from datasets import load_dataset as ld
+from datasets import Dataset
 from datasets.dataset_dict import DatasetDict
 from torch.utils.data import ConcatDataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
@@ -188,18 +191,30 @@ def load_dataset_from_source(ds_path: str) -> DatasetDict:
 
     prefix, subset = ds_path.split("/")
 
-    print(prefix, subset)
-
     # Check if we have a local config for local dataset
     if prefix == "text" and subset in local_dataset_mapper:
-        dataset = ld("text", data_files=local_dataset_mapper[subset])
+        if subset == "cash_splits":
+            train_paths = list(braceexpand.braceexpand(local_dataset_mapper[subset]["train"]))
+
+            for train_path in train_paths:
+                yield ld("text", data_files={"train": train_path})
+            return
+        else:
+            dataset = ld("text", data_files=local_dataset_mapper[subset], split=["train[:80%]", "test", "validation"])
     elif prefix.startswith("wikipedia"):
         dataset = ld(*local_dataset_mapper[prefix]["args"])
     else:
         # Load the datasets from huggingface
         dataset = ld(*ds_path.split("/"))
 
-    assert isinstance(dataset, DatasetDict)
+    # assert isinstance(dataset, DatasetDict)
+    
+    if isinstance(dataset, list):
+        dataset = DatasetDict({
+            "train": dataset[0],
+            "test": dataset[1],
+            "validation": dataset[2]
+        }) 
 
     return dataset
 
