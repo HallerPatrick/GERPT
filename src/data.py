@@ -90,7 +90,7 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
     """
 
     if text.shape[0] == 0:
-        return torch.tensor([])
+        return torch.tensor([]), 0
 
     assert len(text.shape) == 2, f"Array should be 2-dimension not of shape: {text.shape}"
 

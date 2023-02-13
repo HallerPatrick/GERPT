@@ -166,6 +166,21 @@ def write_file_split(dataset, dictionary, target_path, idx, num_proc):
         "target": target
     }, target_file)
 
+def load_from_splits(path) -> collections.Iterator:
+    path = pathlib.Path(path)
+
+    idxs = [int(file.stem.removeprefix("train-")) for file in path.iterdir() if file.is_file()]
+    idxs.sort()
+
+    for idx in idxs:
+        ds_dict = torch.load(path / f"train-{str(idx)}")
+        empty_split = {"source": np.array([]), "target": np.array([])}
+        yield {
+            "train": ds_dict,
+            "test": empty_split, 
+            "validation": empty_split
+        }
+
 
 def filter_empty_row(example) -> bool:
     return len(example["text"]) > 0

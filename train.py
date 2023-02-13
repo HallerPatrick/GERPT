@@ -18,7 +18,7 @@ from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, ShardedDataModule
-from src.process import load_hdf5, load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset
+from src.process import load_hdf5, load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset, load_from_splits
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.utils import (
@@ -57,6 +57,8 @@ if __name__ == "__main__":
         tokenized_dataset = load_sharded_splits(args.saved_data)
     elif args.write_strategy == "hdf5":
         tokenized_dataset = load_hdf5(args.saved_data + ".h5")
+    elif args.write_strategy == "splits":
+        tokenized_dataset = load_from_splits(args.saved_data)
     else:
         tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
 
@@ -136,7 +138,7 @@ if __name__ == "__main__":
     # wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
     # Init PL data module
-    if args.write_strategy == "sharding":
+    if args.write_strategy in ["sharding", "splits"]:
 
         # train, test, valid = itertools.tee(tokenized_dataset, 3)
         #
@@ -151,7 +153,6 @@ if __name__ == "__main__":
             data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
 
             trainer.fit(model, data_module)
-
     else:
         data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
