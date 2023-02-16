@@ -145,12 +145,9 @@ class RNNModel(pl.LightningModule):
             factor=0.25,
             verbose=True,
             min_lr=1.25,
-            threshold=1e-6,
-            patience=30000,
-            threshold_mode="abs",
         )
         return [optimizer], [
-            {"scheduler": lr_scheduler, "monitor": "train/loss", "interval": "step"}
+            {"scheduler": lr_scheduler, "monitor": "train/loss"}
         ]
 
     def _step(self, batch):
