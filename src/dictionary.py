@@ -1,15 +1,21 @@
-import sys
+import copy
+import multiprocessing
 import pprint as pp
+import sys
 from collections import Counter, OrderedDict, defaultdict
-from functools import lru_cache
-from typing import Iterator, List, Optional, Union
-from matplotlib.widgets import EllipseSelector
+from functools import lru_cache, partial
+from typing import Iterator, List, Optional, Union, Tuple
 
+import flair
+from flair.embeddings import FlairEmbeddings
 import nltk
 import numpy as np
 import pyarrow
 import torch
+from matplotlib.widgets import EllipseSelector
+from tqdm import tqdm
 
+from datasets import Dataset
 from src import utils
 
 
@@ -20,7 +26,6 @@ def load_vocab(vocab_file):
         tokens = iter(reader.readlines())
 
     try:
-
         ngrams, ngme_type = next(tokens).strip().split(" ")
         ngrams = int(ngrams)
     except:
@@ -79,6 +84,111 @@ class Dictionary:
 
         return dictionary
 
+    @classmethod
+    def build_from_dataset(
+        cls,
+        dataset: Union[Dataset, Iterator[Dataset]],
+        ngram: int,
+        max_dict_size: int,
+        ngme: str,
+        packed: bool,
+        num_proc: int,
+    ) -> Tuple["Dictionary", List[Dataset]]:
+        """Builds a dictionary from a dataset.
+
+        Note: We return the processed dataset as well, because the consume the
+        dataset. If we would not return it, we would have to recreate the
+        iterator.
+        """
+        dictionary = cls(ngram, max_dict_size, ngme, packed)
+
+        # Populate dictionary
+        if ngme == "compositional":
+            print("Populate compositional dictionary...", end="")
+            dictionary.populate_compositional()
+            print("Done")
+        elif ngme == "explicit":
+            print("Populate explicit dictionary...", end="")
+            # If dataset is an generator, we need to copy it
+
+
+            if isinstance(dataset, Iterator):
+                processed_dataset = []
+                for dataset_for_dict in dataset:
+                    dictionary.populate_explicit(dataset_for_dict, num_proc)
+                    processed_dataset.append(dataset_for_dict)
+                dataset = processed_dataset
+            else:
+                dictionary.populate_explicit(dataset, num_proc)
+
+            print("Done")
+        else:
+            raise ValueError("Unknown ngme type")
+
+        # Check if we need to apply unking
+        if dictionary.max_dict_size == 0:
+            dictionary.max_dict_size = len(dictionary)
+
+        if dictionary.max_dict_size < len(dictionary):
+            print("Apply unking...", end="")
+            dictionary.unking()
+            print("Done")
+
+        # Check if all unigrams were indexed first and all idx are consecutive
+        assert list(dictionary.ngram2idx2word[1].keys()) == list(
+            range(0, len(dictionary.ngram2idx2word[1]))
+        )
+
+        return dictionary, dataset
+
+    def populate_compositional(self):
+        """Populate dictionary with compositional n-gram tokens. We base it on the unigram tokens of 'news-forward'"""
+        self.ngme = "compositional"
+        unigram_tokens = get_unigram_tokens()
+        for n_gram in range(1, self.ngram + 1):
+            self.add_ngram("<start>", n_gram)
+            self.add_ngram("<pad>", n_gram)
+            self.add_ngram("<unk>", n_gram)
+
+            for token in unigram_tokens:
+                self.add_ngram(token, n_gram)
+
+    def populate_explicit(self, rows: List[str], num_proc: int):
+        """Populate dictionary from a list of strings with explicit n-gram tokens"""
+        self.ngme = "explicit"
+
+        # Guarantee that all unigram tokens are indexed first
+        # Uni-gram tokens
+        for token in get_unigram_tokens():
+            self.add_ngram(token, 1)
+
+        # Add new n-gram token only if all uni-gram parts exist
+        for n in range(1, self.ngram + 1):
+            start_idx = self.add_ngram("<start>", n)
+            pad_idx = self.add_ngram("<pad>", n)
+            unk_idx = self.add_ngram("<unk>", n)
+            self.add_ngram(" " * n, n)
+            self._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
+
+        ngram_list = list(range(1, self.ngram + 1))
+        if num_proc > 1:
+            print(f"Run dictionary collection with {num_proc} workers")
+            with multiprocessing.Pool(num_proc) as pool:
+                for ngram_tokens in tqdm(
+                    pool.map(
+                        partial(add_ngrams_from_text, ngrams=ngram_list),
+                        rows,
+                        chunksize=25,
+                    )
+                ):
+                    for n, tokens in ngram_tokens.items():
+                        self.add_ngrams(tokens, n)
+
+        else:
+            for line in rows:
+                for n, tokens in add_ngrams_from_text(line, ngram_list).items():
+                    self.add_ngrams(tokens, n)
+
     def get_all_tokens(self):
         for ngram in range(1, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].items():
@@ -91,7 +201,6 @@ class Dictionary:
         return -1
 
     def add_ngram(self, word, ngram: int):
-
         self.frequencies.update({word: 1})
 
         if ngram not in self.ngram2idx2word:
@@ -107,7 +216,6 @@ class Dictionary:
         return self.ngram2word2idx[ngram][word]
 
     def add_ngrams(self, words: List[str], ngram: int):
-
         self.frequencies.update(Counter(words))
 
         for word in words:
@@ -184,7 +292,6 @@ class Dictionary:
         vocab_file: str,
         ngram: int,
     ) -> str:
-
         index = 0
 
         with open(vocab_file, "w", encoding="utf-8") as writer:
@@ -212,11 +319,11 @@ class Dictionary:
         line: Union[str, List[str]],
         id_type=torch.int64,
         return_tensor: Optional[str] = None,
-        with_text: bool = True
+        with_text: bool = True,
     ) -> dict:
-        if self.ngme == "dense":
+        if self.ngme == "explicit":
             return self._tokenize_line_dense(line, id_type, return_tensor, with_text)
-        elif self.ngme == "sparse":
+        elif self.ngme == "compositional":
             return self._tokenize_line_sparse(line, id_type, return_tensor, with_text)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
@@ -228,13 +335,18 @@ class Dictionary:
             for special_token_id in self._marker_tokens[1]
         ]
 
-    def _tokenize_line_dense(self, line: Union[str, List[str]], id_type, return_tensor: str = "list", with_text=True):
+    def _tokenize_line_dense(
+        self,
+        line: Union[str, List[str]],
+        id_type,
+        return_tensor: str = "list",
+        with_text=True,
+    ):
         ngram_sequences = []
         ngram_target_sequences = []
         min_length = sys.maxsize
 
         for n in range(1, self.ngram + 1):
-
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
@@ -242,7 +354,6 @@ class Dictionary:
             ids = []
             length = 0
             for i, word in enumerate(nltk.ngrams(words, n)):
-
                 if "<start>" in word:
                     word = [w for w in list(word) if w != "<start>"]
 
@@ -280,7 +391,7 @@ class Dictionary:
             return_value = {"text": line, "source": sequence, "target": target}
         else:
             return_value = {"source": sequence, "target": target}
-        
+
         return self.convert_return_value(return_value, return_tensor)
 
     @staticmethod
@@ -294,14 +405,20 @@ class Dictionary:
             return_dict["target"] = return_dict["target"].tolist()
             return return_dict
 
-        return_dict["source"] = Dictionary._to_tensor(return_dict["source"], return_tensor)
-        return_dict["target"] = Dictionary._to_tensor(return_dict["target"], return_tensor)
+        return_dict["source"] = Dictionary._to_tensor(
+            return_dict["source"], return_tensor
+        )
+        return_dict["target"] = Dictionary._to_tensor(
+            return_dict["target"], return_tensor
+        )
 
         if return_tensor == "arrow":
             if "text" in return_dict:
                 del return_dict["text"]
                 # return_dict["text"] = list(return_dict["text"])
-            return pyarrow.Table.from_arrays([return_dict["source"], return_dict["target"]], ["source", "target"])
+            return pyarrow.Table.from_arrays(
+                [return_dict["source"], return_dict["target"]], ["source", "target"]
+            )
 
         return return_dict
 
@@ -338,7 +455,6 @@ class Dictionary:
         min_length = sys.maxsize
 
         for n in range(1, self.ngram + 1):
-
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
 
@@ -347,7 +463,6 @@ class Dictionary:
             ids = []
             length = 0
             for c in words:
-
                 try:
                     ids.append(self.ngram2word2idx[n][c])
                 except KeyError:
@@ -380,7 +495,7 @@ class Dictionary:
             return_value = {"text": line, "source": sequence, "target": target}
         else:
             return_value = {"source": sequence, "target": target}
-        
+
         if return_tensor == "arrow":
             print("Table")
             return pyarrow.Table.from_pydict(return_value)
@@ -412,7 +527,6 @@ class Dictionary:
     def create_weight_tensor(
         self, unigram_ppl: bool, weighted_loss: bool = True
     ) -> torch.Tensor:
-
         unked_freqs = self.frequencies.most_common(self.max_dict_size)
 
         if unigram_ppl:
@@ -440,7 +554,6 @@ class Dictionary:
         return normed_weights
 
     def token_to_n_order(self, token: str) -> int:
-
         for n in self.ngram2word2idx:
             if token in self.ngram2word2idx[n]:
                 return n
@@ -462,14 +575,29 @@ class Dictionary:
 
         return collected_tokens
 
-
     def print_batch(self, batch):
-
         seqs = []
         for batch_idx in range(batch.size(2)):
-            for n_idx  in range(batch.size(0)):
-                seqs.append(self._get_char_sequence(batch[n_idx, :, batch_idx], n_idx+1))
-        
+            for n_idx in range(batch.size(0)):
+                seqs.append(
+                    self._get_char_sequence(batch[n_idx, :, batch_idx], n_idx + 1)
+                )
+
         for seq in seqs:
             print(seq)
 
+def collect_ngrams(line, n):
+    return ["".join(ngram) for ngram in nltk.ngrams(line, n)]
+
+def add_ngrams_from_text(text: str, ngrams: List[int]):
+    return {ngram: collect_ngrams(text, ngram) for ngram in ngrams}
+
+
+def get_unigram_tokens() -> List[str]:
+    flair_device = flair.device
+    flair.device = "cpu"
+
+    # Using unigrams from flair as base
+    e = FlairEmbeddings("news-forward")
+    flair.device = flair_device
+    return list(e.lm.dictionary.item2idx_not_encoded.keys())

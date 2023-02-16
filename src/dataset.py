@@ -1,22 +1,14 @@
-from functools import partial
-import gc
-import itertools
-
-import braceexpand
 import numpy as np
 import pytorch_lightning as pl
 import torch
 
-from tqdm import tqdm
-
-from datasets import load_dataset as ld
 from datasets import Dataset
 from datasets.dataset_dict import DatasetDict
 from torch.utils.data import ConcatDataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 
-from .data import batchify, local_dataset_mapper
+from .data import batchify
 
 
 class TextDataset(Dataset):
@@ -52,9 +44,6 @@ class TextDataset(Dataset):
 
         if self.current_batch == self.inputs.shape[2]:
             self.current_batch = 0
-
-            # TODO: Is this to often?
-            gc.collect()
 
         assert isinstance(source, torch.Tensor)
         assert isinstance(target, torch.Tensor)
@@ -130,15 +119,7 @@ class ShardedDataModule(pl.LightningDataModule):
         self.cpus = cpus
 
     def setup(self, stage):
-
         self.prepare_data()
-        # if hasattr(self, "train"):
-        #     return
-        # self.train = TextDataset(self.train_ds, self.batch_size, self.bptt_size, self.pad_tokens)
-        # self.valid = TextDataset(self.valid_ds, self.batch_size, self.bptt_size, self.pad_tokens)
-        # self.test = TextDataset(self.test_ds, self.batch_size, self.bptt_size, self.pad_tokens)
-        # print("Called?")
-
 
     def prepare_data(self) -> None:
         self.train = TextDataset(self.train_ds, self.batch_size, self.bptt_size, self.pad_tokens)
@@ -172,49 +153,3 @@ class ShardedDataModule(pl.LightningDataModule):
             num_workers=self.cpus,
             pin_memory=True,
         )
-
-
-def get_text(x):
-    return x["text"]
-
-
-def load_dataset_from_source(ds_path: str) -> DatasetDict:
-    """We using the HF dataset path convenientself.
-    Usually:
-    <dataset>/<subset>
-
-    For loading local datset, use:
-    text/<dataset-path>
-
-    We map <dataset-path> to dict of target files.
-    """
-
-    prefix, subset = ds_path.split("/")
-
-    # Check if we have a local config for local dataset
-    if prefix == "text" and subset in local_dataset_mapper:
-        if subset == "cash_splits":
-            train_paths = list(braceexpand.braceexpand(local_dataset_mapper[subset]["train"]))
-
-            for train_path in train_paths:
-                yield ld("text", data_files={"train": train_path})
-            return
-        else:
-            dataset = ld("text", data_files=local_dataset_mapper[subset], split=["train[:80%]", "test", "validation"])
-    elif prefix.startswith("wikipedia"):
-        dataset = ld(*local_dataset_mapper[prefix]["args"])
-    else:
-        # Load the datasets from huggingface
-        dataset = ld(*ds_path.split("/"))
-
-    # assert isinstance(dataset, DatasetDict)
-    
-    if isinstance(dataset, list):
-        dataset = DatasetDict({
-            "train": dataset[0],
-            "test": dataset[1],
-            "validation": dataset[2]
-        }) 
-
-    return dataset
-
