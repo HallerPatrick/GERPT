@@ -85,6 +85,12 @@ def argparser_train() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=""
     )
+
+    parser.add_argument(
+        "--online",
+        action="store_true",
+        help="Run online (Wandb) or offline (local)",
+    )
     parser.add_argument(
         "--config",
         type=str,

@@ -53,15 +53,6 @@ if __name__ == "__main__":
         exit()
 
     print("Load preprocessed dataset from disk...")
-    # if args.write_strategy == "sharding":
-    #     args.saved_data = args.saved_data + "-{0..1}.tar"
-    #     tokenized_dataset = load_sharded_splits(args.saved_data)
-    # elif args.write_strategy == "hdf5":
-    #     tokenized_dataset = load_hdf5(args.saved_data + ".h5")
-    # elif args.write_strategy == "splits":
-    #     tokenized_dataset = load_from_splits(args.saved_data)
-    # else:
-    #     tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
 
     tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
 
@@ -73,11 +64,10 @@ if __name__ == "__main__":
     # Init logger with all configs logged
     wandb_logger = WandbLogger(
         project="gerpt",
-        offline=True,
+        offline=not args.online,
         group=args.group,
         config={**vars(args), "dict_size": len(dictionary)},
     )
-
 
     # --- PL Callbacks ---
     checkpoint_callback = ModelCheckpoint(
@@ -147,7 +137,7 @@ if __name__ == "__main__":
         for shard in tokenized_dataset:
             train = get_split(shard, "train")
             test = get_split(shard, "test")
-            valid = get_split(shard, "validation")
+            valid = get_split(shard, "valid")
             data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
 
             trainer.fit(model, data_module)

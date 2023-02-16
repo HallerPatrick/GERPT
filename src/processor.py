@@ -449,6 +449,7 @@ class SplitProcessor(Processor):
                 print(f"Split {train_split} not found. Skipping.")
                 continue
             source, target = concat_from_split(dataset[train_split])
+            print(source.shape, target.shape)
             self._write_split(source, target, idx, train_split)
 
     def _write_split(self, source, target, idx: int, split: str):

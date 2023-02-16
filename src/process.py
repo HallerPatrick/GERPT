@@ -15,6 +15,7 @@ def dataset_iterator(paths):
     for path in paths:
         yield ld("text", data_files={"train": path})
 
+
 def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], DatasetDict]:
     """We using the HF dataset path convenientions.
     Usually:
@@ -35,8 +36,8 @@ def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], Datas
                 braceexpand.braceexpand(local_dataset_mapper[subset]["train"])
             )
             return dataset_iterator(train_paths)
-        else:
-            dataset = ld("text", data_files=local_dataset_mapper[subset])
+
+        dataset = ld("text", data_files=local_dataset_mapper[subset])
 
     # Special case
     elif prefix.startswith("wikipedia"):
@@ -44,6 +45,11 @@ def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], Datas
     else:
         # Load the datasets from huggingface
         dataset = ld(*ds_path.split("/"))
+
+    if "validation" in dataset:
+        valid_split = dataset["validation"]
+        del dataset["validation"]
+        dataset["valid"] = valid_split
 
     return dataset
 
