@@ -12,7 +12,6 @@ import nltk
 import numpy as np
 import pyarrow
 import torch
-from matplotlib.widgets import EllipseSelector
 from tqdm import tqdm
 
 from datasets import Dataset
@@ -322,9 +321,9 @@ class Dictionary:
         with_text: bool = True,
     ) -> dict:
         if self.ngme == "explicit":
-            return self._tokenize_line_dense(line, id_type, return_tensor, with_text)
+            return self._tokenize_line_explicit(line, id_type, return_tensor, with_text)
         elif self.ngme == "compositional":
-            return self._tokenize_line_sparse(line, id_type, return_tensor, with_text)
+            return self._tokenize_line_compositional(line, id_type, return_tensor, with_text)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
 
@@ -335,7 +334,7 @@ class Dictionary:
             for special_token_id in self._marker_tokens[1]
         ]
 
-    def _tokenize_line_dense(
+    def _tokenize_line_explicit(
         self,
         line: Union[str, List[str]],
         id_type,
@@ -435,7 +434,7 @@ class Dictionary:
 
         return list(tensor)
 
-    def _tokenize_line_sparse(
+    def _tokenize_line_compositional(
         self, line: Union[str, List[str]], id_type, return_tensor, with_text=True
     ):
         """

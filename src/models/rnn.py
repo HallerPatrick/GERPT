@@ -156,7 +156,10 @@ class RNNModel(pl.LightningModule):
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
         if DEBUG:
+            print("Source:")
             self.dictionary.print_batch(source)
+            print("Target:")
+            self.dictionary.print_batch(target)
             input("continue")
 
         batch_size = source.size(2)

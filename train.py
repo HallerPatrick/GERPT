@@ -18,7 +18,8 @@ from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.dataset import GenericDataModule, ShardedDataModule
-from src.process import load_hdf5, load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset, load_from_splits
+# from src.process import load_hdf5, load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset, load_from_splits
+from src.processor import Processor
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.utils import (
@@ -52,15 +53,17 @@ if __name__ == "__main__":
         exit()
 
     print("Load preprocessed dataset from disk...")
-    if args.write_strategy == "sharding":
-        args.saved_data = args.saved_data + "-{0..1}.tar"
-        tokenized_dataset = load_sharded_splits(args.saved_data)
-    elif args.write_strategy == "hdf5":
-        tokenized_dataset = load_hdf5(args.saved_data + ".h5")
-    elif args.write_strategy == "splits":
-        tokenized_dataset = load_from_splits(args.saved_data)
-    else:
-        tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
+    # if args.write_strategy == "sharding":
+    #     args.saved_data = args.saved_data + "-{0..1}.tar"
+    #     tokenized_dataset = load_sharded_splits(args.saved_data)
+    # elif args.write_strategy == "hdf5":
+    #     tokenized_dataset = load_hdf5(args.saved_data + ".h5")
+    # elif args.write_strategy == "splits":
+    #     tokenized_dataset = load_from_splits(args.saved_data)
+    # else:
+    #     tokenized_dataset = load_tokenized_dataset(args.saved_data, args.ngram)
+
+    tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
 
     dictionary = torch.load(args.saved_dict)
 
@@ -137,14 +140,9 @@ if __name__ == "__main__":
 
     # wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
-    # Init PL data module
-    if args.write_strategy in ["sharding", "splits"]:
-
-        # train, test, valid = itertools.tee(tokenized_dataset, 3)
-        #
-        # train_iterator = map(partial(get_split, split="train"), train)
-        # valid_iterator = map(partial(get_split, split="validation"), valid)
-        # test_iterator =  map(partial(get_split, split="test"), test)
+    # Couldnt find a smarter way to lazy load all splits or shards
+    # Therefore each split is loaded seperately and passed to the datamodule
+    if args.write_strategy in ["sharding", "split"]:
 
         for shard in tokenized_dataset:
             train = get_split(shard, "train")

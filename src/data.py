@@ -72,7 +72,7 @@ local_dataset_mapper = {
         "valid": baby_lm_dev(),
     },
     "obw": {
-        "train": "data/obw/train/news.en-{00000..00100}"
+        "train": "data/obw/train/news.en-{00001..00099}-of-00100"
     }
 }
 
