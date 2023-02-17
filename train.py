@@ -134,7 +134,12 @@ if __name__ == "__main__":
     # Therefore each split is loaded seperately and passed to the datamodule
     if args.write_strategy in ["sharding", "split"]:
 
-        for shard in tokenized_dataset:
+
+        for idx, shard in enumerate(tokenized_dataset):
+            
+            if idx == args.epochs:
+                break
+
             train = get_split(shard, "train")
             test = get_split(shard, "test")
             valid = get_split(shard, "valid")
@@ -171,11 +176,14 @@ if __name__ == "__main__":
             "checkpoints" / Path(args.save), ngram=args.ngram
         )
 
-        # Save vocab file
-        vocab_file = dictionary.save_vocabulary(
-            "checkpoints" / Path(args.save), NGMETokenizer.vocab_file_name, args.ngram
-        )
-        
+        if not args.reuse_dict:
+            # Save vocab file
+            vocab_file = dictionary.save_vocabulary(
+                "checkpoints" / Path(args.save) / ( NGMETokenizer.vocab_file_name + ".dict" ), args.ngram
+            )
+        else:
+            vocab_file = args.reuse_dict
+            
         # Save HF tokenizer
         NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 

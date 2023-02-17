@@ -1,29 +1,23 @@
 import math
 from pathlib import Path
-from typing import List,  Union
+from typing import List, Union
 
 import flair
 import numpy as np
 import pytorch_lightning as pl
-from pytorch_lightning.utilities import rank_zero
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from rich import print
+from pytorch_lightning.utilities import rank_zero
 from rich.panel import Panel
-from src import utils
 
+from src import utils
 from src.loss import CrossEntropyLossSoft
 
-# from src.utils import display_text
-
-from .ngme import NGramsEmbedding, soft_n_hot
+from .ngme import NGramsEmbedding, soft_n_hot, NGramsEmbeddingFast
 
 
-DEBUG = False
+DEBUG = True
 
 
 def repackage_hidden(h):
@@ -63,7 +57,7 @@ class RNNModel(pl.LightningModule):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-        self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
+        self.encoder = NGramsEmbeddingFast(len(dictionary), embedding_size, packed=packed)
         print(self.encoder)
         self.ngrams = ngrams
         self.unk_t = unk_t
@@ -98,6 +92,7 @@ class RNNModel(pl.LightningModule):
                 )
         elif cell_type == "mog_lstm":
             from src.models.mogrifier_lstm import MogLSTM
+
             # TODO: No Support for bidirectional and layers yet
             # TODO: Good amount of iterations for mog?
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
@@ -152,9 +147,9 @@ class RNNModel(pl.LightningModule):
 
     def _step(self, batch):
 
-        # batch_size = batch["source"].size()[-1]
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
+        print(source.size(), target.size())
         if DEBUG:
             print("Source:")
             self.dictionary.print_batch(source)

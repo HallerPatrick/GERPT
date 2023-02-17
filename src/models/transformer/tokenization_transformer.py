@@ -8,12 +8,11 @@ from pathlib import Path
 from nltk import ngrams as ngram_tokenizer
 from tokenizers import AddedToken
 from transformers import PreTrainedTokenizer
-from transformers.models.bert.tokenization_bert import load_vocab
 from transformers.tokenization_utils_base import BatchEncoding, EncodedInput
 from transformers.utils.generic import PaddingStrategy, TensorType, to_py_obj
 
 
-all_tokens = string.printable
+from src.dictionary import load_vocab
 
 
 class NGMETokenizer(PreTrainedTokenizer):

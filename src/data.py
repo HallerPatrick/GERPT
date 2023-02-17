@@ -71,9 +71,7 @@ local_dataset_mapper = {
         # For the pipeline, which expects a validation set
         "valid": baby_lm_dev(),
     },
-    "obw": {
-        "train": "data/obw/train/news.en-{00001..00099}-of-00100"
-    }
+    "obw": {"train": "data/obw/train/news.en-{00001..00099}-of-00100"},
 }
 
 
@@ -92,7 +90,9 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
     if text.shape[0] == 0:
         return torch.tensor([]), 0
 
-    assert len(text.shape) == 2, f"Array should be 2-dimension not of shape: {text.shape}"
+    assert (
+        len(text.shape) == 2
+    ), f"Array should be 2-dimension not of shape: {text.shape}"
 
     text: torch.Tensor = torch.from_numpy(text)
 
@@ -101,7 +101,12 @@ def batchify(text: np.ndarray, batch_size: int, bptt: int):
     text = text[:, : nbatch * batch_size * bptt]
 
     # text = text.reshape((text.shape[0], batch_size, -1)).transpose((0, 2, 1))
-    text = text.view((text.size(0), batch_size, -1)).permute((0, 2, 1)).contiguous().to(torch.int64)
+    text = (
+        text.view((text.size(0), batch_size, -1))
+        .permute((0, 2, 1))
+        .contiguous()
+        .to(torch.int64)
+    )
 
     # text: [ngram, seq, batch_size]
     return text, nbatch

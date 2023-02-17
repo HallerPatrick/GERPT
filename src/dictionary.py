@@ -95,7 +95,7 @@ class Dictionary:
     ) -> Tuple["Dictionary", List[Dataset]]:
         """Builds a dictionary from a dataset.
 
-        Note: We return the processed dataset as well, because the consume the
+        Note: We return the processed dataset as well, because the generator consumes the
         dataset. If we would not return it, we would have to recreate the
         iterator.
         """
@@ -109,16 +109,14 @@ class Dictionary:
         elif ngme == "explicit":
             print("Populate explicit dictionary...", end="")
             # If dataset is an generator, we need to copy it
-
-
             if isinstance(dataset, Iterator):
                 processed_dataset = []
                 for dataset_for_dict in dataset:
-                    dictionary.populate_explicit(dataset_for_dict, num_proc)
+                    dictionary.populate_explicit(dataset_for_dict["train"]["text"], num_proc)
                     processed_dataset.append(dataset_for_dict)
                 dataset = processed_dataset
             else:
-                dictionary.populate_explicit(dataset, num_proc)
+                dictionary.populate_explicit(dataset["train"]["text"], num_proc)
 
             print("Done")
         else:

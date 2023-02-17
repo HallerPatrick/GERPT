@@ -1,0 +1,68 @@
+# Hyperparameter configs
+
+online: False
+
+# Wandb Project
+project: 
+# Wandb Group
+group:
+
+# Training
+model: lstm
+
+# Load local, requires to download babylm dataset from https://github.com/babylm/babylm.github.io/raw/main/babylm_data.zip
+# into ./data/babylm_data. Folder should contain babylm_10M and or babylm_100M
+data: "text/babylm10M"
+
+saved_data: "data/data-babylm-10M"
+saved_dict: "data/data-babylm-10M"
+continue_from: #
+
+# Reuse following dict, instead of populating a new one from dataset
+reuse_dict: dicts/3-gram-vocab.dict
+
+# [sharding, memmap, hdf5, split]
+write_strategy: memmap
+
+# LSTM model will save a custom "flair_<save-file>" file for downstream
+save: babylm.pt
+cpus: 1
+gpus: 1
+epochs: 10
+
+# [explicit, compositional]
+ngme: explicit
+packed: false
+
+# Dictionary
+ngram: 3
+max_dict_size: 30000
+unigram_ppl: False
+weighted_loss: False
+weighted_labels: True
+
+# [const, linear, log, exp]
+weight_strat: exp
+
+# Model
+expected_size: 0 # 100000000
+embedding_size: 256
+hidden_size: 256
+batch_size: 2
+bptt: 100
+nlayers: 1
+nhead: 2
+dropout: 0.2
+is_forward: true
+
+seed: 1111
+log_interval: 200
+
+downstream: False
+wandb_flair_yaml: configs/flair_babylm.yaml
+fine_tune_configs: configs/flair_babylm.yaml
+
+# Generate text
+generate: true
+chars: 1000
+temperature: 0.7

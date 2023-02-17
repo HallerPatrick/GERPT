@@ -73,12 +73,16 @@ def process_tokenized_dataset(
     dataset = load_dataset_from_source(dataset_path)
 
     if dict_file_name:
+        print("Loading dictionary...", end="")
         dictionary = Dictionary.load_from_file(dict_file_name)
+        print("Done")
     else:
+        print("Building dictionary...", end="")
         # This might take some while...
         dictionary, dataset = Dictionary.build_from_dataset(
             dataset, ngram, max_dict_size, ngme, packed, num_proc
         )
+        print("Done")
 
     processor = Processor.from_strategy(write_strategy)(
         target_path,

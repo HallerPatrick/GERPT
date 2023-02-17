@@ -2,17 +2,18 @@ import math
 from typing import Optional
 
 import torch
+import pytorch_lightning as pl
 from rich import print
 from rich.panel import Panel
 
 import wandb
 from src.dictionary import Dictionary
-from src.models.base import BasePLModel
 from src.models.ngme import soft_n_hot
 from src.models.transformer import TransformerConfig, TransformerTransformer
 
+DEBUG = False
 
-class TransformerLightningModule(BasePLModel):
+class TransformerLightningModule(pl.LightningModule):
     def __init__(
         self, config: TransformerConfig, dictionary: Optional[Dictionary] = None
     ):
@@ -26,10 +27,21 @@ class TransformerLightningModule(BasePLModel):
         self.dictionary = dictionary
 
     def _step(self, batch):
-        output = self.model.forward(batch["source"])
+        # source, target = batch[0], batch[1]
+
+        source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
+
+        if DEBUG:
+            print("Source:")
+            self.dictionary.print_batch(source)
+            print("Target:")
+            self.dictionary.print_batch(target)
+            input("continue")
+
+        output = self.model.forward(source)
         output = output.view(-1, self.model.ntoken)
         target = soft_n_hot(
-            batch["target"], self.model.ntoken, self.model.weighted_labels
+            target, self.model.ntoken, self.model.weighted_labels
         )
         target = target.view(-1, self.model.ntoken)
         return self.model.criterion(output, target)
@@ -120,7 +132,7 @@ class TransformerLightningModule(BasePLModel):
                 # Use last 200 chars as sequence for new input
                 inp = (
                     self.dictionary.tokenize_line(
-                        generated_output[-200:], id_type=torch.int64
+                        list(generated_output[-200:]), id_type=torch.int64, return_tensor="pt"
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)

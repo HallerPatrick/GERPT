@@ -1,40 +1,44 @@
 # Hyperparameter configs
 
+online: False
+
 # Training
 # model: mog_lstm
-model: lstm
+model: transformer
 
 # Load from hugginface
-data: "wikitext/wikitext-2-raw-v1"
+# data: "wikitext/wikitext-2-raw-v1"
 
 # Load from disk in the ./data/ folder
 # data: "text/babylm10M" # -> ./data/cash
-# data: "text/cash" # -> ./data/cash
+data: "text/cash" # -> ./data/cash
+# data: "text/cash_splits" # -> ./data/cash
 
 saved_data: "data/tokenized_data"
 saved_dict: "data/dict_data"
-continue_from: checkpoints/model_backward-v5.ckpt
+continue_from: # checkpoints/model_backward-v5.ckpt
 
 # Reuse following dict, instead of populating a new one from dataset
 reuse_dict: #"dicts/dict_data.dict"
-# [sharding, memmap, hdf5]
-write_strategy: hdf5
+# [default, sharding, hdf5, split]
+write_strategy: default
 
 
 group:
 # LSTM model will save a custom "flair_<save-file>" file for downstream
 save: model_backward.pt
-cpus: 4
+cpus: 1
 gpus: 1
-epochs: 10
+epochs: 1
 wdecay: 1.2e-6
 lr: 0.1
 
-ngme: dense
+# [explicit, compositional]
+ngme: explicit
 packed: false
 
 # Dictionary
-ngram: 3
+ngram: 2
 unk_threshold: 0
 max_dict_size: 30000
 fallback: True
@@ -48,8 +52,8 @@ weight_strat: exp
 expected_size: 0 # 100000000
 embedding_size: 256
 hidden_size: 256
-batch_size: 2
-bptt: 100
+batch_size: 1
+bptt: 50
 nlayers: 1
 nhead: 2
 dropout: 0.2

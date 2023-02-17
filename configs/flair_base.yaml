@@ -32,4 +32,4 @@ downstream_tasks:
 model_name: rnn
 saved_model: checkpoints/flair_model.pt
 seed: 1111
-wandb_run_id: gerpt/32rgq99g
+wandb_run_id: gerpt/3ppjcqvn

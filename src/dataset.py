@@ -16,7 +16,7 @@ class TextDataset(Dataset):
         self.bptt = bptt_size
         self.batch_size = batch_size
         self.inputs, self.nbatch = batchify(ds["source"], batch_size, bptt_size)
-        # print(self.inputs)
+
         self.target, _ = batchify(ds["target"], batch_size, bptt_size)
 
         assert isinstance(self.inputs, torch.Tensor)

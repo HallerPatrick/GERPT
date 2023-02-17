@@ -4,6 +4,8 @@ import os
 from typing import Dict, Union, Iterable, List
 from pathlib import Path
 
+from functools import partial
+
 import h5py
 import braceexpand
 import torch
@@ -19,6 +21,14 @@ from src.utils import split_range
 class InvalidPathError(Exception):
     """Raised when the path is invalid for specific processor""" ""
 
+def filter_empty_row(example):
+    return len(example["text"]) > 0
+
+def tokenize(row, dictionary: Dictionary):
+    result = dictionary.tokenize_line(
+        row["text"], id_type=torch.int16, return_tensor="np"
+    )
+    return {**result, "text_len": len(row["text"])}
 
 class Processor:
     def __init__(
@@ -56,17 +66,8 @@ class Processor:
         2. Tokenize the data
         """
 
-        def filter_empty_row(example) -> bool:
-            return len(example["text"]) > 0
-
-        def tokenize(row):
-            result = self.dictionary.tokenize_line(
-                row["text"], id_type=torch.int16, return_tensor="np"
-            )
-            return {**result, "text_len": len(row["text"])}
-
         dataset = dataset.filter(filter_empty_row, num_proc=self.num_procs)
-        dataset = dataset.map(tokenize, num_proc=self.num_procs)
+        dataset = dataset.map(partial(tokenize, dictionary=self.dictionary), num_proc=self.num_procs)
 
         return dataset
 
@@ -80,8 +81,8 @@ class Processor:
 
         if strategy == "default":
             return DefaultProcessor
-        elif strategy == "memmap":
-            return MmapProcessor
+        # elif strategy == "memmap":
+        #     return MmapProcessor
         elif strategy == "webdataset":
             return ShardProcessor
         elif strategy == "hdf5":
@@ -412,7 +413,7 @@ class ShardProcessor(Processor):
             dataset = {
                 "train": {"source": train_source, "target": train_target},
                 "test": {"source": test_source, "target": test_target},
-                "validation": {"source": valid_source, "target": valid_target},
+                "valid": {"source": valid_source, "target": valid_target},
             }
 
             yield dataset
@@ -433,7 +434,7 @@ class SplitProcessor(Processor):
             yield {
                 "train": ds_dict,
                 "test": empty_split, 
-                "validation": empty_split
+                "valid": empty_split
             }
 
     def run(self, dataset: Iterable[DatasetDict]):
