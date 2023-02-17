@@ -233,7 +233,7 @@ torch::Tensor n_hot(const torch::Tensor &p_self, int64_t num_classes, bool packe
     }
   }
 
-  TORCH_CHECK(self.is_contiguous(), "Tensor has to be contiguous");
+  // TORCH_CHECK(self.is_contiguous(), "Tensor has to be contiguous");
 
   // non-empty tensor
   if (self.device().type() != torch::kCUDA || self.device().type() != torch::kCUDA) {
