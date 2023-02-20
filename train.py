@@ -54,7 +54,6 @@ if __name__ == "__main__":
 
     print("Load preprocessed dataset from disk...")
 
-    tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
 
     dictionary = torch.load(args.saved_dict)
 
@@ -101,7 +100,7 @@ if __name__ == "__main__":
     trainer = Trainer(
         # resume_from_checkpoint=Path("checkpoints" /  Path("flair_" + args.save)),
         logger=wandb_logger,
-        max_epochs=args.epochs,
+        max_epochs=1 if args.write_strategy in ["sharding", "split"] else args.epochs,
         # accelerator="auto",
         strategy=strategy,
         plugins=plugins,
@@ -128,25 +127,31 @@ if __name__ == "__main__":
     else:
         print(count_parameters(model))
 
-    # wandb_logger.log_metrics({"encoder_params": get_encoder_params(model)})
 
     # Couldnt find a smarter way to lazy load all splits or shards
     # Therefore each split is loaded seperately and passed to the datamodule
     if args.write_strategy in ["sharding", "split"]:
 
+        for epoch in range(args.epochs):
+            print(f"Epoch {epoch + 1}/{args.epochs}")
 
-        for idx, shard in enumerate(tokenized_dataset):
-            
-            if idx == args.epochs:
-                break
+            tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
+            for idx, shard in enumerate(tokenized_dataset):
+                print(f"Shard {idx + 1}")
 
-            train = get_split(shard, "train")
-            test = get_split(shard, "test")
-            valid = get_split(shard, "valid")
-            data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
+                trainer.fit_loop.epoch_progress.reset_on_run()
+                
+                if idx == args.epochs:
+                    break
 
-            trainer.fit(model, data_module)
+                train = get_split(shard, "train")
+                test = get_split(shard, "test")
+                valid = get_split(shard, "valid")
+                data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
+
+                trainer.fit(model, data_module)
     else:
+        tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
         data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
         # TRAIN!
