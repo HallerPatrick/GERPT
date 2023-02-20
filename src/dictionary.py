@@ -318,9 +318,9 @@ class Dictionary:
         return_tensor: Optional[str] = None,
         with_text: bool = True,
     ) -> dict:
-        if self.ngme == "explicit":
+        if self.ngme in ["dense", "explicit"]:
             return self._tokenize_line_explicit(line, id_type, return_tensor, with_text)
-        elif self.ngme == "compositional":
+        elif self.ngme == ["sparse", "compositional"]:
             return self._tokenize_line_compositional(line, id_type, return_tensor, with_text)
         else:
             raise ValueError("UNKOWN NGME APPROACH")
