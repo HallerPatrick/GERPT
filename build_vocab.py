@@ -19,7 +19,7 @@ def main():
         dataset, args.ngrams, args.max_dict_size, args.ngme, packed=False
     )
 
-    dictionary.save_vocabulary("dicts/1-gram.json", args.ngrams)
+    dictionary.save_vocabulary(args.output, args.ngrams)
 
 
 if __name__ == '__main__':

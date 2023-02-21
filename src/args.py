@@ -282,11 +282,15 @@ def argparse_build_dict():
     parser.add_argument(
         "--max-dict-size",
         type=str,
-        # choices=["small", "big"]
     )
 
     parser.add_argument(
         "--ngme",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--output",
         type=str,
         # choices=["small", "big"]
     )
