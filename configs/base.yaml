@@ -4,10 +4,10 @@ online: False
 
 # Training
 # model: mog_lstm
-model: transformer
+model: lstm
 
 # Load from hugginface
-# data: "wikitext/wikitext-2-raw-v1"
+data: "wikitext/wikitext-2-raw-v1"
 
 # Load from disk in the ./data/ folder
 # data: "text/babylm10M" # -> ./data/cash
@@ -20,16 +20,13 @@ continue_from: # checkpoints/model_backward-v5.ckpt
 
 # Reuse following dict, instead of populating a new one from dataset
 reuse_dict: #"dicts/dict_data.dict"
-# [default, sharding, hdf5, split]
-write_strategy: default
-
 
 group:
 # LSTM model will save a custom "flair_<save-file>" file for downstream
 save: model_backward.pt
 cpus: 1
 gpus: 1
-epochs: 1
+epochs: 12
 wdecay: 1.2e-6
 lr: 0.1
 
@@ -38,7 +35,7 @@ ngme: explicit
 packed: false
 
 # Dictionary
-ngram: 2
+ngram: 3
 unk_threshold: 0
 max_dict_size: 30000
 fallback: True
@@ -52,7 +49,7 @@ weight_strat: exp
 expected_size: 0 # 100000000
 embedding_size: 256
 hidden_size: 256
-batch_size: 1
+batch_size: 2
 bptt: 50
 nlayers: 1
 nhead: 2
@@ -67,7 +64,7 @@ wandb_flair_yaml: configs/flair_base.yaml
 fine_tune_configs: configs/flair_base.yaml
 
 # Generate text
-generate: true
+generate: false
 chars: 1000
 temperature: 0.7
 

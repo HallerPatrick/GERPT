@@ -1,51 +1,23 @@
-import copy
-import multiprocessing
-import pprint as pp
+import json
 import sys
-from collections import Counter, OrderedDict, defaultdict
-from functools import lru_cache, partial
-from typing import Iterator, List, Optional, Union, Tuple
+from collections import Counter, defaultdict
+from functools import lru_cache
+from typing import Iterator, List, Optional, Tuple, Union
 
 import flair
-from flair.embeddings import FlairEmbeddings
 import nltk
 import numpy as np
 import pyarrow
 import torch
-from tqdm import tqdm
-
 from datasets import Dataset
+from flair.embeddings import FlairEmbeddings
+
 from src import utils
 
 
 def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
-    vocab = OrderedDict()
-    with open(vocab_file, "r", encoding="utf-8") as reader:
-        tokens = iter(reader.readlines())
-
-    try:
-        ngrams, ngme_type = next(tokens).strip().split(" ")
-        ngrams = int(ngrams)
-    except:
-        print("Could not determine ngram of tokenizer in vocab file")
-        exit(-1)
-
-    for index, token in enumerate(tokens):
-        token = token.rstrip("\n")
-
-        ngram = int(token[0])
-        token = token[2:]
-
-        if "\\n" in token:
-            token = token.replace("\\n", "\n")
-
-        if ngram not in vocab:
-            vocab[ngram] = {token: index}
-        else:
-            vocab[ngram][token] = index
-
-    return ngrams, ngme_type, vocab
+    return json.load(open(vocab_file, "r", encoding="utf-8"))
 
 
 class Dictionary:
@@ -72,14 +44,18 @@ class Dictionary:
 
     @classmethod
     def load_from_file(cls, filename: str):
-        ngram, ngme_type, vocab = load_vocab(filename)
+        vocab_file = load_vocab(filename)
+
+        ngram = vocab_file["ngram"]
+        ngme_type = vocab_file["ngme"]
 
         # TODO: Not sufficient, save more meta data in dict file
         dictionary = cls(ngram, 0, ngme_type, False)
 
-        for ngram in vocab:
-            for token in vocab[ngram]:
-                dictionary.add_ngram(token, ngram)
+        # TODO: Load also frequency?
+
+        for token in vocab_file["vocab"]:
+            dictionary.add_ngram(token["token"], token["ngram"])
 
         return dictionary
 
@@ -91,7 +67,6 @@ class Dictionary:
         max_dict_size: int,
         ngme: str,
         packed: bool,
-        num_proc: int,
     ) -> Tuple["Dictionary", List[Dataset]]:
         """Builds a dictionary from a dataset.
 
@@ -103,24 +78,19 @@ class Dictionary:
 
         # Populate dictionary
         if ngme == "compositional":
-            print("Populate compositional dictionary...", end="")
             dictionary.populate_compositional()
-            print("Done")
         elif ngme == "explicit":
-            print("Populate explicit dictionary...", end="")
             # If dataset is an generator, we need to copy it
             if isinstance(dataset, Iterator):
                 processed_dataset = []
                 for dataset_for_dict in dataset:
-                    dictionary.populate_explicit(dataset_for_dict["train"]["text"], num_proc)
+                    dictionary.populate_explicit(dataset_for_dict["train"]["text"])
                     processed_dataset.append(dataset_for_dict)
                 dataset = processed_dataset
             else:
-                dictionary.populate_explicit(dataset["train"]["text"], num_proc)
-
-            print("Done")
+                dictionary.populate_explicit(dataset["train"]["text"])
         else:
-            raise ValueError("Unknown ngme type")
+            raise ValueError(f"Unknown ngme type: {ngme}")
 
         # Check if we need to apply unking
         if dictionary.max_dict_size == 0:
@@ -150,7 +120,7 @@ class Dictionary:
             for token in unigram_tokens:
                 self.add_ngram(token, n_gram)
 
-    def populate_explicit(self, rows: List[str], num_proc: int):
+    def populate_explicit(self, rows: List[str]):
         """Populate dictionary from a list of strings with explicit n-gram tokens"""
         self.ngme = "explicit"
 
@@ -168,23 +138,12 @@ class Dictionary:
             self._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
 
         ngram_list = list(range(1, self.ngram + 1))
-        if num_proc > 1:
-            print(f"Run dictionary collection with {num_proc} workers")
-            with multiprocessing.Pool(num_proc) as pool:
-                for ngram_tokens in tqdm(
-                    pool.map(
-                        partial(add_ngrams_from_text, ngrams=ngram_list),
-                        rows,
-                        chunksize=25,
-                    )
-                ):
-                    for n, tokens in ngram_tokens.items():
-                        self.add_ngrams(tokens, n)
 
-        else:
+        # TODO: Rather expensive
+        for n in ngram_list:
             for line in rows:
-                for n, tokens in add_ngrams_from_text(line, ngram_list).items():
-                    self.add_ngrams(tokens, n)
+                tokens = collect_ngrams(line, n)
+                self.add_ngrams(tokens, n)
 
     def get_all_tokens(self):
         for ngram in range(1, self.ngram + 1):
@@ -253,7 +212,7 @@ class Dictionary:
 
         dictionary = Dictionary(ngrams, max_dict_size, self.ngme)
 
-        for ngram in self.ngram2idx2word.keys():
+        for ngram in self.ngram2idx2word:
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
                 # Add token if:
                 # 1. Token occurs often enough
@@ -291,24 +250,33 @@ class Dictionary:
     ) -> str:
         index = 0
 
+        vocab = {}
+        vocab = {"ngram": ngram, "ngme": self.ngme, "vocab": []}
+
+        for ngram in range(1, self.ngram + 1):
+            for idx, token in self.ngram2idx2word[ngram].items():
+                if index != idx:
+                    # print(
+                    #     f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
+                    #     " Please check that the vocabulary is not corrupted!"
+                    # )
+                    index = idx
+
+                # TODO:Is this sound?
+                if "\n" in token:
+                    token = token.replace("\n", "\\n")
+
+                try:
+                    frequency = self.frequencies[token]
+                except KeyError:
+                    frequency = -1
+
+                index += 1
+                vocab["vocab"].append({"token": token, "index": idx, "frequency": frequency, "ngram": ngram})
+
         with open(vocab_file, "w", encoding="utf-8") as writer:
-            writer.write(str(ngram) + " " + self.ngme + "\n")
+            json.dump(vocab, writer, indent=4, ensure_ascii=False)
 
-            for ngram in range(1, self.ngram + 1):
-                for idx, token in self.ngram2idx2word[ngram].items():
-                    if index != idx:
-                        print(
-                            f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
-                            " Please check that the vocabulary is not corrupted!"
-                        )
-                        index = idx
-
-                    # TODO:Is this sound?
-                    if "\n" in token:
-                        token = token.replace("\n", "\\n")
-
-                    writer.write(str(ngram) + " " + token + "\n")
-                    index += 1
         return vocab_file
 
     def tokenize_line(
@@ -320,10 +288,10 @@ class Dictionary:
     ) -> dict:
         if self.ngme in ["dense", "explicit"]:
             return self._tokenize_line_explicit(line, id_type, return_tensor, with_text)
-        elif self.ngme == ["sparse", "compositional"]:
+        elif self.ngme in ["sparse", "compositional"]:
             return self._tokenize_line_compositional(line, id_type, return_tensor, with_text)
         else:
-            raise ValueError("UNKOWN NGME APPROACH")
+            raise ValueError("Unknown NGME type: {}".format(self.ngme))
 
     @lru_cache
     def _special_tokens(self) -> List[str]:
@@ -588,7 +556,6 @@ def collect_ngrams(line, n):
 
 def add_ngrams_from_text(text: str, ngrams: List[int]):
     return {ngram: collect_ngrams(text, ngram) for ngram in ngrams}
-
 
 def get_unigram_tokens() -> List[str]:
     flair_device = flair.device

@@ -29,7 +29,6 @@ def main():
         args.is_forward,
         args.packed,
         args.reuse_dict,
-        args.write_strategy,
         1000,
     )
 
@@ -40,8 +39,18 @@ def main():
 
         # args.saved_dict is most likely a complete path, just take the file name
         dict_stem = Path(args.saved_dict).stem
+        dict_file = str(Path("dicts") / (dict_stem + ".json"))
 
-        dictionary.save_vocabulary("dicts/" + dict_stem + ".dict", args.ngram)
+        dictionary.save_vocabulary(dict_file, args.ngram)
+
+
+    print("Preprocessing done")
+    print("=" * 80)
+    print("Saving:")
+    print(f"Tokenized dataset: {args.saved_data}")
+    print(f"Dictionary object: {args.saved_dict}")
+    print(f"Dictionary file:   {dict_file}")
+    print("=" * 80)
 
     # torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)
     torch.save(dictionary, args.saved_dict)

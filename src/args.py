@@ -285,15 +285,21 @@ def argparse_build_dict():
         # choices=["small", "big"]
     )
 
+    parser.add_argument(
+        "--ngme",
+        type=str,
+        # choices=["small", "big"]
+    )
+
     args = parser.parse_args()
     
-    if args.config:
-        yaml_args = read_config(args.config)
+    # if args.config:
+    #     yaml_args = read_config(args.config)
 
-        for key, value in args.__dict__.items():
-            if value:
-                yaml_args.__dict__.update({key: value})
+    #     for key, value in args.__dict__.items():
+    #         if value:
+    #             yaml_args.__dict__.update({key: value})
 
-        return yaml_args
+    #     return yaml_args
     return args
 

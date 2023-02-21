@@ -17,7 +17,7 @@ def dataset_iterator(paths):
         yield ld("text", data_files={"train": path})
 
 
-def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], DatasetDict]:
+def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict], DatasetDict], str]:
     """We using the HF dataset path convenientions.
     Usually:
     <dataset>/<subset>
@@ -30,20 +30,26 @@ def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], Datas
 
     prefix, subset = ds_path.split("/")
 
+    write_strategy = None
+
     # Check if we have a local config for local dataset
     if prefix == "text" and subset in local_dataset_mapper:
         if subset in ["obw", "cash_splits"]:
+            write_strategy = local_dataset_mapper[subset]["strategy"]
             train_paths = list(
-                braceexpand.braceexpand(local_dataset_mapper[subset]["train"])
+                braceexpand.braceexpand(local_dataset_mapper[subset]["splits"]["train"])
             )
-            return dataset_iterator(train_paths)
+            return dataset_iterator(train_paths), write_strategy
 
-        dataset = ld("text", data_files=local_dataset_mapper[subset])
+        write_strategy = local_dataset_mapper[subset]["strategy"]
+        dataset = ld("text", data_files=local_dataset_mapper[subset]["splits"])
 
     # Special case
     elif prefix.startswith("wikipedia"):
+        write_strategy = local_dataset_mapper[subset]["strategy"]
         dataset = ld(*local_dataset_mapper[prefix]["args"])
     else:
+        write_strategy = "default"
         # Load the datasets from huggingface
         dataset = ld(*ds_path.split("/"))
 
@@ -52,7 +58,9 @@ def load_dataset_from_source(ds_path: str) -> Union[Iterable[DatasetDict], Datas
         del dataset["validation"]
         dataset["valid"] = valid_split
 
-    return dataset
+    assert write_strategy is not None, "Write strategy not found"
+
+    return dataset, write_strategy
 
 
 def process_tokenized_dataset(
@@ -65,13 +73,11 @@ def process_tokenized_dataset(
     is_forward: bool,
     packed: bool,
     dict_file_name: Optional[str] = None,
-    write_strategy: str = "memmap",
     rows_threshold: int = 50_000_000,
-    **kwargs,
 ) -> Dictionary:
     """🤗"""
 
-    dataset = load_dataset_from_source(dataset_path)
+    dataset, write_strategy = load_dataset_from_source(dataset_path)
 
     if dict_file_name:
         print("Loading dictionary...", end="")
@@ -81,7 +87,7 @@ def process_tokenized_dataset(
         print("Building dictionary...", end="")
         # This might take some while...
         dictionary, dataset = Dictionary.build_from_dataset(
-            dataset, ngram, max_dict_size, ngme, packed, num_proc
+            dataset, ngram, max_dict_size, ngme, packed
         )
         print("Done")
 

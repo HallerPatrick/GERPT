@@ -441,8 +441,10 @@ class SplitProcessor(Processor):
         self._mkdir(path=self.target_path)
         for idx, ds in enumerate(dataset):
             print(f"Processing split {idx}")
+            print("-"*80)
             ds = self.process_data(ds)
             self._write_dataset(ds, idx)
+            print("-"*80)
             
     def _write_dataset(self, dataset: Iterable[DatasetDict], idx: int):
         for train_split in ["train", "test", "valid"]:
@@ -450,7 +452,6 @@ class SplitProcessor(Processor):
                 print(f"Split {train_split} not found. Skipping.")
                 continue
             source, target = concat_from_split(dataset[train_split])
-            print(source.shape, target.shape)
             self._write_split(source, target, idx, train_split)
 
     def _write_split(self, source, target, idx: int, split: str):

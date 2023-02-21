@@ -27,33 +27,34 @@ def baby_lm_test():
     return [f"data/babylm_data/babylm_test/{file}.test" for file in babylm_files]
 
 
+# Mapping of local datasets to their paths
 local_dataset_mapper = {
     "hp": {
-        "train": "data/hp/train.txt",
-        "test": "data/hp/test.txt",
-        "valid": "data/hp/valid.txt",
+        "strategy": "default",
+        "splits": {
+            "train": "data/hp/train.txt",
+            "test": "data/hp/test.txt",
+            "valid": "data/hp/valid.txt",
+        },
     },
     "cash": {
-        "train": "data/cash/train.txt",
-        "test": "data/cash/test.txt",
-        "valid": "data/cash/valid.txt",
+        "strategy": "default",
+        "splits": {
+            "train": "data/cash/train.txt",
+            "test": "data/cash/test.txt",
+            "valid": "data/cash/valid.txt",
+        },
     },
     "cash_splits": {
-        "train": "data/cash_splits/train-{001..003}.txt",
+        "strategy": "split",
+        "splits": {
+            "train": "data/cash_splits/train-{001..003}.txt",
+        },
     },
-    "wikitext-2": {
-        "train": "data/wikitext-2/train.txt",
-        "test": "data/wikitext-2/test.txt",
-        "valid": "data/wikitext-2/valid.txt",
+    "obw": {
+        "strategy": "split",
+        "splits": {"train": "data/obw/train/news.en-{00001..00099}-of-00100"},
     },
-    # HC
-    "cc100_german": {
-        "train": "home/tmp/halerpat/data/train.txt",
-        "test": "home/tmp/halerpat/data/test.txt",
-        "valid": "home/tmp/halerpat/data/valid.txt",
-    },
-    "wikipedia_en": {"args": ["wikipedia", "20220301.en"]},
-    "wikipedia_de": {"args": ["wikipedia", "20220301.de"]},
     "obw_news": {
         "train": "data/obw_news/train.txt",
         "test": "data/obw_news/test.txt",
@@ -71,7 +72,15 @@ local_dataset_mapper = {
         # For the pipeline, which expects a validation set
         "valid": baby_lm_dev(),
     },
-    "obw": {"train": "data/obw/train/news.en-{00001..00099}-of-00100"},
+    # # HC
+    # "cc100_german": {
+    #     "train": "home/tmp/halerpat/data/train.txt",
+    #     "test": "home/tmp/halerpat/data/test.txt",
+    #     "valid": "home/tmp/halerpat/data/valid.txt",
+    # },
+    # Hugginface
+    "wikipedia_en": {"args": ["wikipedia", "20220301.en"]},
+    "wikipedia_de": {"args": ["wikipedia", "20220301.de"]},
 }
 
 
