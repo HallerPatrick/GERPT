@@ -17,7 +17,7 @@ from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
-from src.dataset import GenericDataModule, ShardedDataModule
+from src.dataset import GenericDataModule, ShardedDataModule, SplitDataModule, TextIteratorDataset
 # from src.process import load_hdf5, load_sharded_splits, load_tokenized_dataset, load_sharded_tokenized_dataset, load_from_splits
 from src.processor import Processor
 from src.models import load_model
@@ -28,11 +28,9 @@ from src.utils import (
     count_parameters,
 )
 
-
-
 from train_ds import train_ds
 
-TEST = True
+TEST = False
 
 def get_split(sample, split):
     return sample[split]
@@ -101,6 +99,7 @@ if __name__ == "__main__":
         # resume_from_checkpoint=Path("checkpoints" /  Path("flair_" + args.save)),
         logger=wandb_logger,
         max_epochs=1 if args.write_strategy in ["sharding", "split"] else args.epochs,
+        # max_epochs=args.epochs,
         # accelerator="auto",
         strategy=strategy,
         plugins=plugins,
@@ -130,7 +129,7 @@ if __name__ == "__main__":
 
     # Couldnt find a smarter way to lazy load all splits or shards
     # Therefore each split is loaded seperately and passed to the datamodule
-    if args.write_strategy in ["sharding", "split"]:
+    if args.write_strategy in ["sharding"]:
 
         for epoch in range(args.epochs):
             print(f"Epoch {epoch + 1}/{args.epochs}")
@@ -147,9 +146,18 @@ if __name__ == "__main__":
                 train = get_split(shard, "train")
                 test = get_split(shard, "test")
                 valid = get_split(shard, "valid")
-                data_module = ShardedDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
+                data_module = SplitDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
 
                 trainer.fit(model, data_module)
+    elif args.write_strategy == "split":
+        # tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
+
+        for epoch in range(args.epochs):
+            print(f"Epoch {epoch + 1}/{args.epochs}")
+            data_module = SplitDataModule(args.saved_data, args.batch_size, args.bptt, None, args.cpus)
+            trainer.fit_loop.epoch_progress.reset_on_run()
+            # TRAIN!
+            trainer.fit(model, data_module)
     else:
         tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
         data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)

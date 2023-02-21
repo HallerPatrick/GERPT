@@ -17,7 +17,7 @@ from src.loss import CrossEntropyLossSoft
 from .ngme import NGramsEmbedding, soft_n_hot, NGramsEmbeddingFast
 
 
-DEBUG = True
+DEBUG = False
 
 
 def repackage_hidden(h):
@@ -149,7 +149,6 @@ class RNNModel(pl.LightningModule):
 
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
-        print(source.size(), target.size())
         if DEBUG:
             print("Source:")
             self.dictionary.print_batch(source)
