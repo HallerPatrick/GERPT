@@ -10,7 +10,6 @@ from torch import Tensor
 
 import pyarrow as pa
 import numpy as np
-from numba import jit
 
 from datasets.features.features import _ArrayXDExtensionType, _is_zero_copy_only
 from datasets.formatting.formatting import _is_array_with_nulls, _unnest, Formatter, BaseArrowExtractor
@@ -27,7 +26,7 @@ strats = {
     "exp": lambda x: x**2
 }
 
-def n_dist(n: int, strategy: str) -> list[float]:
+def n_dist(n: int, strategy: str) -> List[float]:
     """dist of ngram weight is logarithmic"""
     ns = list(range(1, n+1))
     xs = list(map(strats[strategy], ns))
@@ -321,11 +320,6 @@ def concat_dataset(rows: List[List[List[int]]]):
     # sublists = process_map(np_array, rows, max_workers=num_workers, chunksize=chunksize)
     
     return np.concatenate((rows), axis=1, dtype=np.int16)
-
-@jit(parallel=True, nopython=True)
-def numba_concat_dataset(rows: List[List[List[int]]]):
-    return np.concatenate(rows, axis=1) #, dtype=np.int16)
-
 
 
 def get_size(obj, seen=None):

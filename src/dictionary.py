@@ -179,6 +179,24 @@ class Dictionary:
                     self.ngram2word2idx[ngram][word] = self.current_max_idx
                     self.current_max_idx += 1
 
+    def _calculate_ngram_order_dict_size(self, ngrams: int) -> int:
+        """Calculate the number of tokens for a given ngram order"""
+
+        total_occurences = []
+
+        for ngram in range(1, ngrams + 1):
+            occurence = 0
+            for word, occurences in self.frequencies.items():
+                if word in self.ngram2word2idx[ngram]:
+                    occurence += 1
+            total_occurences.append(occurence)
+
+        total_occurences = np.array(total_occurences)
+
+        rel_occurences = total_occurences / total_occurences.sum()
+        new_occurences = rel_occurences * (200 / rel_occurences[0])
+        return new_occurences
+
     def unking(
         self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
     ):
@@ -192,7 +210,10 @@ class Dictionary:
         ngrams = ngrams if ngrams else self.ngram
 
         # Pre-define the number of tokens per ngram
-        n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
+        if ngrams <= 3:
+            n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams)
+        else:
+            n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
 
         # Take subset of frequencies counter based on ngram
         frequencies = []

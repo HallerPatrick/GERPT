@@ -15,3 +15,6 @@ sympy
 codetiming
 humanfriendly
 webdataset
+transformers
+datasets
+h5py
