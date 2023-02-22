@@ -1,0 +1,40 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/c++",
+      "-Wno-unused-result",
+      "-Wsign-compare",
+      "-Wunreachable-code",
+      "-fno-common",
+      "-dynamic",
+      "-DNDEBUG",
+      "-g",
+      "-fwrapv",
+      "-O3",
+      "-Wall",
+      "-pipe",
+      "-Os",
+      "-I/Users/patrickhaller/Projects/GERPT/venv/lib/python3.9/site-packages/torch/include",
+      "-I/Users/patrickhaller/Projects/GERPT/venv/lib/python3.9/site-packages/torch/include/torch/csrc/api/include",
+      "-I/Users/patrickhaller/Projects/GERPT/venv/lib/python3.9/site-packages/torch/include/TH",
+      "-I/Users/patrickhaller/Projects/GERPT/venv/lib/python3.9/site-packages/torch/include/THC",
+      "-I/Users/patrickhaller/Projects/GERPT/venv/include",
+      "-I/opt/local/Library/Frameworks/Python.framework/Versions/3.9/include/python3.9",
+      "-c",
+      "-c",
+      "-DTORCH_API_INCLUDE_EXTENSION_H",
+      "-DPYBIND11_COMPILER_TYPE=\"_clang\"",
+      "-DPYBIND11_STDLIB=\"_libcpp\"",
+      "-DPYBIND11_BUILD_ABI=\"_cxxabi1002\"",
+      "-DTORCH_EXTENSION_NAME=ngme_cpp",
+      "-D_GLIBCXX_USE_CXX11_ABI=0",
+      "-std=c++14",
+      "-o",
+      "/Users/patrickhaller/Projects/GERPT/cpp/build/temp.macosx-12.0-x86_64-3.9/ngme.o",
+      "/Users/patrickhaller/Projects/GERPT/cpp/ngme.cpp"
+    ],
+    "directory": "/Users/patrickhaller/Projects/GERPT/cpp/build/temp.macosx-12.0-x86_64-3.9",
+    "file": "/Users/patrickhaller/Projects/GERPT/cpp/ngme.cpp",
+    "output": "/Users/patrickhaller/Projects/GERPT/cpp/build/temp.macosx-12.0-x86_64-3.9/ngme.o"
+  }
+]

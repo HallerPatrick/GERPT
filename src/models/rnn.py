@@ -1,22 +1,23 @@
 import math
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Union
 
 import flair
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from rich import print
+from pytorch_lightning.utilities import rank_zero
 from rich.panel import Panel
 
-import wandb
-from src.data import tokenize_batch
-from src.dataset import Dictionary
+from src import utils
 from src.loss import CrossEntropyLossSoft
-from src.utils import display_input_n_gram_sequences, display_prediction
 
-from .ngme import NGramsEmbedding, soft_n_hot
+from .ngme import NGramsEmbedding, soft_n_hot, NGramsEmbeddingFast
+
+
+DEBUG = False
 
 
 def repackage_hidden(h):
@@ -33,7 +34,7 @@ class RNNModel(pl.LightningModule):
 
     def __init__(
         self,
-        dictionary: Dictionary,
+        dictionary,
         nlayers: int,
         ngrams: int,
         hidden_size: int,
@@ -42,19 +43,21 @@ class RNNModel(pl.LightningModule):
         embedding_size: int = 100,
         is_forward_lm=True,
         document_delimiter: str = "\n",
-        dropout=0.1,
+        dropout=0.25,
         unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
+        strategy: str = "const",
         generate: bool = False,
         temperature: float = 0.7,
         chars_to_gen: int = 1000,
+        cell_type = "lstm",
+        packed = False
     ):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-
-        self.encoder = NGramsEmbedding(len(dictionary), embedding_size)
+        self.encoder = NGramsEmbeddingFast(len(dictionary), embedding_size, packed=packed)
         self.ngrams = ngrams
         self.unk_t = unk_t
         self.dictionary = dictionary
@@ -65,26 +68,42 @@ class RNNModel(pl.LightningModule):
         self.hidden_size = hidden_size
         self.embedding_size = embedding_size
         self.dropout = dropout
-        self.unigram_ppl = unigram_ppl
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
+        self.strategy = strategy
+        self.unigram_ppl = unigram_ppl
 
         self.criterion = None
+        self.bidirectional = False
 
-        if nlayers == 1:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers)
-        else:
-            self.rnn = nn.LSTM(embedding_size, hidden_size, nlayers, dropout=dropout)
+        if cell_type == "lstm":
+            if nlayers == 1 and not self.bidirectional:
+                self.rnn = nn.LSTM(
+                    embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional
+                )
+            else:
+                self.rnn = nn.LSTM(
+                    embedding_size,
+                    hidden_size,
+                    nlayers,
+                    dropout=dropout,
+                    bidirectional=self.bidirectional,
+                )
+        elif cell_type == "mog_lstm":
+            from src.models.mogrifier_lstm import MogLSTM
+
+            # TODO: No Support for bidirectional and layers yet
+            # TODO: Good amount of iterations for mog?
+            self.rnn = MogLSTM(embedding_size, hidden_size, 5)
+
 
         self.drop = nn.Dropout(dropout)
-        self.decoder = nn.Linear(hidden_size, self.ntokens)
-        if nout is not None:
-            self.proj = nn.Linear(hidden_size, nout)
-            self.initialize(self.proj.weight)
-            self.decoder = nn.Linear(nout, self.ntokens)
-        else:
-            self.proj = None
-            self.decoder = nn.Linear(hidden_size, self.ntokens)
+        self.decoder = nn.Linear(
+            hidden_size * 2 if self.bidirectional else hidden_size,
+            self.ntokens
+            if not self.unigram_ppl
+            else len(self.dictionary.ngram2idx2word[1]),
+        )
 
         self.save_hyperparameters()
         self.init_weights()
@@ -92,25 +111,18 @@ class RNNModel(pl.LightningModule):
         self.hidden = None
         self.epoch = 0
 
-        # self.register_buffer(
-        #     "nram_indexes", torch.tensor([indexes for indexes in  self.dictionary.ngram_indexes.values() ])
-        # )
-
         self.generate = generate
         self.temperature = temperature
         self.chars_to_gen = chars_to_gen
 
-    def setup(self, stage: Optional[str] = None) -> None:
+        self.proj = None
 
-        if self.weighted_loss:
-            self.criterion = CrossEntropyLossSoft(
-                ignore_index=self.dictionary.word2idx["<pad>"],
-                weight=torch.tensor(self.dictionary.create_weight_tensor()),
-            )
-        else:
-            self.criterion = CrossEntropyLossSoft(
-                ignore_index=self.dictionary.word2idx["<pad>"],
-            )
+    def setup(self, stage) -> None:
+        self.criterion = CrossEntropyLossSoft(
+            weight=self.dictionary.create_weight_tensor(
+                self.unigram_ppl, self.weighted_loss
+            ),
+        )
 
     @staticmethod
     def initialize(matrix):
@@ -119,124 +131,147 @@ class RNNModel(pl.LightningModule):
         matrix.detach().uniform_(-stdv, stdv)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
-        return optimizer  # ], [lr_scheduler]
+        optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            "min",
+            factor=0.25,
+            verbose=True,
+            min_lr=1.25,
+        )
+        return [optimizer], [
+            {"scheduler": lr_scheduler, "monitor": "train/loss"}
+        ]
 
-    def training_step(self, batch, batch_idx):
-        # print(batch["source"][:,:,0].size())
-        # display_input_n_gram_sequences(batch["source"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["source"][:,:,1], self.dictionary)
-        # print("---")
-        # display_input_n_gram_sequences(batch["target"][:,:,0], self.dictionary)
-        # display_input_n_gram_sequences(batch["target"][:,:,1], self.dictionary)
-        # exit()
-        batch_size = batch["source"].size()[-1]
+    def _step(self, batch):
+
+        source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
+
+        if DEBUG:
+            print("Source:")
+            self.dictionary.print_batch(source)
+            print("Target:")
+            self.dictionary.print_batch(target)
+            input("continue")
+
+        batch_size = source.size(2)
 
         if not self.hidden:
             self.hidden = self.init_hidden(batch_size)
 
-        decoded, hidden = self.forward(batch["source"], self.hidden)
+        decoded, hidden = self.forward(source, self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
-        target = target.view(-1, self.ntokens)
+        if self.unigram_ppl:
+            target = soft_n_hot(
+                target,
+                len(self.dictionary.ngram2idx2word[1]),
+                self.strategy,
+                self.weighted_labels,
+                self.unigram_ppl,
+                self.encoder.packed
+            )
+            target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
+        else:
+            target = soft_n_hot(
+                target,
+                self.ntokens,
+                self.strategy,
+                self.weighted_labels,
+                self.unigram_ppl,
+                self.encoder.packed
+            )
+            target = target.view(-1, self.ntokens)
+            
         loss = self.criterion(decoded, target)
+        return loss, decoded, target
+
+    def training_step(self, batch, batch_idx):
+        loss, decoded, target = self._step(batch)
+
         self.log("train/loss", loss)
-        self.log("train/ppl", math.exp(loss), prog_bar=True)
+        try:
+            self.log("train/ppl", math.exp(loss), prog_bar=True)
+        except:
+            pass
 
-        # Unigram output
-        output = torch.index_select(
-            decoded, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        )
-        targets = torch.index_select(
-            target, 1, torch.tensor(self.dictionary.ngram_indexes[1]).to(self.device)
-        )
-        unigram_loss = self.criterion.unigram_loss(output, targets)
+        if self.unigram_ppl:
+            # Unigram output
+            output = torch.index_select(
+                decoded,
+                1,
+                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                    self.device
+                ),
+            )
+            targets = torch.index_select(
+                target,
+                1,
+                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
+                    self.device
+                ),
+            )
+            # Back to simple one hot encoding
+            targets[targets != 0] = 1
 
-        self.log("train/unigram_loss", unigram_loss, prog_bar=True)
-        self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
+            unigram_loss = self.criterion.unigram_loss(output, targets)
+            self.log("train/unigram_loss", unigram_loss, prog_bar=True)
+            self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        batch_size = batch["source"].size()[-1]
+    def validation_step(self, batch, _):
+        loss, _, _ = self._step(batch)
 
-        if not self.hidden:
-            self.hidden = self.init_hidden(batch_size)
+        self.log("valid/loss", loss, sync_dist=True)
+        self.log("valid/ppl", math.exp(loss), prog_bar=True, sync_dist=True)
+        self.log("valid/bpc", loss / np.log(2), sync_dist=True)
 
-        decoded, hidden = self.forward(batch["source"], self.hidden)
-        self.hidden = repackage_hidden(hidden)
-
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
-        target = target.view(-1, self.ntokens)
-        if self.unigram_ppl:
-            output = torch.index_select(decoded, 1, self.ngram_indexes)
-
-            targets = torch.index_select(target, 1, self.ngram_indexes)
-            loss = self.criterion(output, targets)
-        else:
-            loss = self.criterion(decoded, target)
-
-        self.log("valid/loss", loss)
-        self.log("valid/ppl", math.exp(loss), prog_bar=True)
-
-    def test_step(self, batch, batch_idx):
-        batch_size = batch["source"].size()[-1]
-        if not self.hidden:
-            self.hidden = self.init_hidden(batch_size)
-
-        self.hidden = repackage_hidden(self.hidden)
-
-        decoded, self.hidden = self.forward(batch["source"], self.hidden)
-        target = soft_n_hot(batch["target"], self.ntokens, self.weighted_labels)
-        target = target.view(-1, self.ntokens)
-
-        if self.unigram_ppl:
-            output = torch.index_select(decoded, 1, self.ngram_indexes)
-
-            targets = torch.index_select(target, 1, self.ngram_indexes)
-            loss = self.criterion(output, targets)
-        else:
-            loss = self.criterion(decoded, target)
-
+    def test_step(self, batch, _):
+        loss, _, _ = self._step(batch)
         self.log("test/loss", loss)
-        self.log("valid/ppl", math.exp(loss), prog_bar=True)
+        self.log("test/ppl", math.exp(loss), prog_bar=True)
 
-    def training_epoch_end(self, outputs) -> None:
+        # --- Calculate Bits-per-Byte ---
+        # 1. Reconstruct original text
+        # 2. Count number of UTF-8 bytes
+        # 3. Counter number of tokens (TODO: What tokens to pick?!)
+        # 4. Forumlar: BPB = (L_T / T_B) * log_2(e**l)
+        #    where: L_T, number of tokens, L_B number of UTF-8 encoded bytes, l = NLL
+        # source = batch[0] 
+        # num_tokens = source.size(1)
+        # num_bytes = None
+        # print(batch.size())
+
+    def training_epoch_end(self, _) -> None:
 
         self.epoch += 1
 
-        if self.generate:
-            print(Panel(self.generate_text(), title="[green]Generated text"))
+        if self.generate and self.epoch == 9:
+            # Only rank zero gives output
+            print("Generating")
+            result= self.generate_text()
+            print(result)
+            if result:
+                print(Panel(result, title="[green]Generated text"))
             self.train()
         # Reset hidden after each epoch
         self.hidden = None
 
+    # @rank_zero.rank_zero_only
     def generate_text(self) -> str:
 
-        # if self.ngrams > 2:
-        #     unk_idxs = set(
-        #         [
-        #             self.dictionary.word2idx[f"<{i}-UNK>"]
-        #             for i in range(3, self.ngrams + 1)
-        #         ]
-        #     )
-        #     token_idxs = set(self.dictionary.word2idx.values())
-        #     token_idxs = torch.tensor(
-        #         list(token_idxs.difference(unk_idxs)), dtype=torch.int64
-        #     ).to(self.device)
-
         inp = torch.randint(
-            self.ntokens, (self.ngrams, 1, 1), dtype=torch.long, device=self.device
+            self.ntokens, (self.ngrams, 1, 1), dtype=torch.int64, device=self.device
         )
         idx = inp[0][0].detach()
-        generated_output = self.dictionary.idx2word[idx]
-        sample_text = self.dictionary.idx2word[idx]
+        generated_output = self.dictionary.get_item_for_index(idx.item())
+        sample_text = self.dictionary.get_item_for_index(idx.item())
+
 
         with torch.no_grad():
             self.eval()
-            for i in range(self.chars):
+            for i in range(self.chars_to_gen):
 
                 # Reset hidden
                 hidden = self.init_hidden(1)
@@ -249,20 +284,33 @@ class RNNModel(pl.LightningModule):
                     output = F.softmax(output, dim=0).detach()
                     # Just get highest confidence
                     ngram_idx = torch.argmax(output)
+                    word = self.dictionary.get_item_for_index(ngram_idx.item())
                 else:
                     output = F.log_softmax(output, dim=0)
-
-                    # Remove all UNK tokens for ngram > 2
-                    # if self.ngrams > 2:
-                    #     output = torch.index_select(output, 0, token_idxs).detach()
 
                     word_weights = output.squeeze().div(self.temperature).exp().detach()
 
                     # multinomial over all tokens
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
 
-                # Get ngram word
-                word = self.dictionary.idx2word[ngram_idx]
+
+                    ngram_order = self.dictionary.get_ngram_order(ngram_idx.item())
+                    ngrams_idxs = [ngram_idx]
+                    if self.dictionary.ngme == "sparse":
+                        for i in range(1, ngram_order):
+                            ngram_subset = torch.index_select(
+                                word_weights,
+                                0,
+                                torch.tensor(list(self.dictionary.ngram2idx2word[i].keys()))
+                            )
+
+                            ngrams_idxs.append(torch.multinomial(ngram_subset, 1)[0])
+
+
+                    word = "".join(list(reversed([self.dictionary.get_item_for_index(idx.item()) for idx in ngrams_idxs])))
+
+                if word == "<pad>":
+                    word = " "
 
                 # Append to generated sequence
                 generated_output = generated_output + word
@@ -271,9 +319,10 @@ class RNNModel(pl.LightningModule):
                 # Use last 200 chars as sequence for new input
 
                 inp = (
-                    self.dictionary.tokenize_line(list(generated_output[-200:]))[
-                        "source"
-                    ]
+                    self.dictionary.tokenize_line(
+                        list(generated_output[-200:]), id_type=torch.int64,
+                        return_tensor="pt"
+                    )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
                 )
@@ -287,7 +336,6 @@ class RNNModel(pl.LightningModule):
             )
         except:
             pass
-        # wandb.log({"train/text": generated_output})
 
         return sample_text
 
@@ -302,11 +350,22 @@ class RNNModel(pl.LightningModule):
         emb = self.encoder(input)
         emb = self.drop(emb)
 
-        self.rnn.flatten_parameters()
+        if isinstance(self.rnn, nn.LSTM):
+            self.rnn.flatten_parameters()
+            output, hidden = self.rnn(emb, hidden)
+        else:
+            emb = torch.transpose(emb, 0, 1).contiguous()
+            print(emb.size())
+            print(hidden[0].size())
+            print(hidden[1].size())
+            output, hidden = self.rnn(emb, hidden)
 
-        output, hidden = self.rnn(emb, hidden)
         decoded = self.decoder(output)
-        decoded = decoded.view(-1, self.ntokens)
+
+        if self.unigram_ppl:
+            decoded = decoded.view(-1, len(self.dictionary.ngram2idx2word[1]))
+        else:
+            decoded = decoded.view(-1, self.ntokens)
 
         return decoded, hidden
 
@@ -337,8 +396,22 @@ class RNNModel(pl.LightningModule):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).detach()
         return (
-            weight.new(self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
-            weight.new(self.nlayers, bsz, self.hidden_size).zero_().clone().detach(),
+            weight.new(
+                self.nlayers * 2 if self.bidirectional else self.nlayers,
+                bsz,
+                self.hidden_size,
+            )
+            .zero_()
+            .clone()
+            .detach(),
+            weight.new(
+                self.nlayers * 2 if self.bidirectional else self.nlayers,
+                bsz,
+                self.hidden_size,
+            )
+            .zero_()
+            .clone()
+            .detach(),
         )
 
     def __getstate__(self):
@@ -357,6 +430,8 @@ class RNNModel(pl.LightningModule):
             "ngrams": self.ngrams,
             "unk_t": self.unk_t,
         }
+
+        print(model_state)
 
         return model_state
 
@@ -461,12 +536,13 @@ class RNNModel(pl.LightningModule):
             for string in chunk:
                 chars = list(string) + [" "] * (len_longest_chunk - len(string))
 
-                chars = ["".join(chars)]
+                # chars = "".join(chars)
 
                 # [ngram, 1, sequence]
-                n_gram_char_indices = tokenize_batch(
-                    self.dictionary, chars, self.ngrams, otf=True
-                ).unsqueeze(dim=1)
+                # self.dictionary.ngme = "dense"
+                n_gram_char_indices = self.dictionary.tokenize_line(
+                    chars, id_type=torch.int64, return_tensor="pt"
+                )["source"].unsqueeze(dim=1)
 
                 sequences_as_char_indices.append(n_gram_char_indices)
 
@@ -475,10 +551,13 @@ class RNNModel(pl.LightningModule):
 
         output_parts = []
         for batch in batches:
-            # [ngram, sequence, batch_size]
+            # batch: [ngram, batch, seq]
             batch = batch.transpose(1, 2).to(flair.device)
 
+            # batch: [ngram, sequence, batch_size]
             _, rnn_output, hidden = self.forward2(batch, hidden)
+
+            # rnn_output: [seq_len, batch, hidden]
 
             output_parts.append(rnn_output)
 

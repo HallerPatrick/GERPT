@@ -85,12 +85,26 @@ def argparser_train() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=""
     )
+
+    parser.add_argument(
+        "--online",
+        action="store_true",
+        help="Run online (Wandb) or offline (local)",
+    )
     parser.add_argument(
         "--config",
         type=str,
         default="",
         help="Configration file (YAML) for all arguments, if empty, use command lines arguments",
     )
+
+    parser.add_argument(
+        "--group",
+        type=str,
+        default=False,
+        help="Wandb group name (optional)",
+    )
+
     parser.add_argument(
         "--data",
         type=str,
@@ -100,7 +114,7 @@ def argparser_train() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        help="type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, Transformer)",
+        help="type of recurrent net (LSTM, Transformer, MOG_LSTM)",
     )
 
     parser.add_argument(
@@ -130,11 +144,11 @@ def argparser_train() -> argparse.Namespace:
         action="store_true",
         help="Use a weighted target labels for n-gram",
     )
-    # parser.add_argument(
-    #     "--unigram-ppl",
-    #     action="store_true",
-    #     help="Calculate perplexity only over unigrams",
-    # )
+    parser.add_argument(
+        "--weight-strat",
+        type=str
+    )
+
     parser.add_argument("--embedding-size", type=int, help="size of word embeddings")
     parser.add_argument(
         "--expected-size", type=int, help="Size of model adjusted by tuning hidden size"
@@ -209,3 +223,81 @@ def argparse_generate():
 
     parser.add_argument("--num", type=int, default=1)
     return parser.parse_args()
+
+
+def argparse_babylm():
+    """Argparser for eval babylm"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        type=str
+    )
+    parser.add_argument(
+        "--model",
+        type=str
+    )
+
+    parser.add_argument(
+        "--dict",
+        type=str
+    )
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        # choices=["small", "big"]
+    )
+
+    args = parser.parse_args()
+
+    if not args.config:
+        return args
+
+    yaml_args = read_config(args.config)
+
+    for key, value in args.__dict__.items():
+        if value:
+            yaml_args.__dict__.update({key: value})
+
+    return yaml_args
+
+
+def argparse_build_dict():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True
+    )
+
+    parser.add_argument(
+        "--ngrams",
+        type=int,
+        required=True
+    )
+
+    parser.add_argument(
+        "--max-dict-size",
+        type=int,
+        required=True
+    )
+
+    parser.add_argument(
+        "--ngme",
+        type=str,
+        required=True
+    )
+
+    parser.add_argument(
+        "--output",
+        type=str,
+        required=True
+        # choices=["small", "big"]
+    )
+
+    args = parser.parse_args()
+    
+    return args
+

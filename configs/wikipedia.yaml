@@ -1,0 +1,56 @@
+# Hyperparameter configs
+
+# Training
+model: lstm
+
+# Load from hugginface
+data: "wikitext/wikitext-2-raw-v1"
+
+# Load from disk in the ./data/ folder
+# data: "wikipedia" # -> ./data/cash
+
+saved_data: "data/tokenized_data"
+saved_dict: "data/dict_data"
+
+ngme: dense
+
+# LSTM model will save a custom "flair_<save-file>" file for downstream
+save: model.pt
+cpus: 12
+gpus: 1
+epochs: 2
+wdecay: 1.2e-6
+lr: 0.1
+
+# Dictionary
+ngram: 10
+unk_threshold: 0
+max_dict_size: 0
+fallback: True
+unigram_ppl: False
+weighted_loss: True
+weighted_labels: True
+
+# Model
+is_forward: true
+expected_size: 0 # 100000000
+embedding_size: 256
+hidden_size: 256
+batch_size: 1
+bptt: 100
+nlayers: 1
+nhead: 2
+dropout: 0.2
+
+seed: 1111
+log_interval: 200
+
+downstream: False
+wandb_flair_yaml: configs/flair_base.yaml
+fine_tune_configs: configs/flair_base.yaml
+
+# Generate text
+generate: True
+chars: 1000
+temperature: 0.7
+

@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 import torch
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers import AutoModel, AutoConfig
 import wrapt
 from flair.data import Corpus, Sentence, Token
 from flair.embeddings.token import TransformerWordEmbeddings
@@ -12,7 +14,7 @@ from flair.embeddings.token import TransformerWordEmbeddings
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
     def __init__(
         self,
-        model: str = "bert-base-uncased",
+        model,
         is_document_embedding: bool = True,
         allow_long_sentences: bool = True,
         **kwargs,
@@ -248,7 +250,7 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
                 )
 
 
-def patch_flair():
+def patch_flair_lstm():
 
     import flair
     import torch
@@ -279,22 +281,46 @@ def patch_flair():
 
         return model
 
+def patch_flair_trans():
+
+    import flair
+    import torch
+
+    from src.models.rnn import RNNModel
+
+    @wrapt.patch_function_wrapper(flair.models.LanguageModel, "load_language_model")
+    def load_language_model(wrapped, instance, args, kwargs):
+        """Monkey patch load_language_model to load our RNNModel"""
+        
+        print("LOAD TRANSFORMER")
+        print(str(args[0]))
+        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(str(args[0]), vocab_file=str(args[0]) + "/vocab.txt", **kwargs)
+        config = AutoConfig.from_pretrained(str(args[0]), output_hidden_states=True, **kwargs)
+        model = AutoModel.from_pretrained(str(args[0]), config=config)
+        model.is_forward_lm = True
+        model.tokenizer = tokenizer
+        model.to(flair.device)
+        return model
 
 def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None
 ) -> Corpus:
 
-    from flair.datasets import CONLL_03, CONLL_03_GERMAN, IMDB, UD_ENGLISH
+    from flair.datasets import CONLL_03, CONLL_03_GERMAN, IMDB, UD_ENGLISH, UD_GERMAN
     from flair.datasets.document_classification import (SENTEVAL_CR,
-                                                        SENTEVAL_SST_BINARY)
+                                                        SENTEVAL_SST_BINARY, GERMEVAL_2018_OFFENSIVE_LANGUAGE)
 
     corpus_mapper = {
         "conll_03": {"corpus": CONLL_03, "args": [base_path]},
-        "conll_03_de": {"corpus": CONLL_03_GERMAN, "args": [base_path]},
         "ud_english": {"corpus": UD_ENGLISH, "args": []},
         "imdb": {"corpus": IMDB, "args": []},
         "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},
         "senteval": {"corpus": SENTEVAL_CR, "args": []},
+
+        # German
+        "conll_03_de": {"corpus": CONLL_03_GERMAN, "args": [base_path]},
+        "germeval_2010": {"corpus": GERMEVAL_2018_OFFENSIVE_LANGUAGE, "args": []},
+        "ud_german": {"corpus": UD_GERMAN, "args": []}
     }
 
     return corpus_mapper[corpus_name]["corpus"](*corpus_mapper[corpus_name]["args"])

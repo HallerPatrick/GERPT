@@ -1,0 +1,66 @@
+# Hyperparameter configs
+
+online: False
+
+# Wandb Project
+project: 
+# Wandb Group
+group:
+
+# Training
+model: lstm
+
+# Load from hugginface
+data: "wikitext/wikitext-2-raw-v1"
+
+saved_data: "data/data-wiki-2"
+saved_dict: "data/data-dict-2"
+continue_from: # If runnning from checkpoint
+
+# Reuse following dict, instead of populating a new one from dataset
+reuse_dict: #
+# [sharding, memmap, hdf5, split]
+write_strategy: memmap
+
+# LSTM model will save a custom "flair_<save-file>" file for downstream
+save: wiki-2.pt
+cpus: 1
+gpus: 1
+epochs: 10
+
+# [explicit, compositional]
+ngme: compositional
+packed: false
+
+# Dictionary
+ngram: 3
+max_dict_size: 30000
+unigram_ppl: False
+weighted_loss: False
+weighted_labels: True
+
+# [const, linear, log, exp]
+weight_strat: exp
+
+# Model
+expected_size: 0 # 100000000
+embedding_size: 256
+hidden_size: 256
+batch_size: 2
+bptt: 100
+nlayers: 1
+nhead: 2
+dropout: 0.2
+is_forward: true
+
+seed: 1111
+log_interval: 200
+
+downstream: False
+wandb_flair_yaml: configs/flair_wiki2.yaml
+fine_tune_configs: configs/flair_wiki2.yaml
+
+# Generate text
+generate: true
+chars: 1000
+temperature: 0.7

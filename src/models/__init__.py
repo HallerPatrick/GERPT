@@ -1,52 +1,46 @@
 from argparse import Namespace
 from typing import Dict
+from pathlib import Path
 
-from src.dataset import Dictionary
 from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
 from src.models.transformer.transformer import TransformerLightningModule
-from src.utils import calculate_lstm_hidden_size
+from src.utils import calcualate_transformer_hidden_size, calculate_lstm_hidden_size
 
 
-def load_model(dictionary: Dictionary, args: Namespace):
+def load_model(dictionary, args: Namespace):
 
-    if hasattr(args, "expected_size"):
-        if args.expected_size > 0:
-            new_hidden_size = int(
-                calculate_lstm_hidden_size(
-                    len(dictionary),
-                    args.embedding_size,
-                    4,
-                    args.nlayers,
-                    args.expected_size,
-                    args.hidden_size,
-                )
+    if "lstm" in args.model:
+        if args.continue_from and Path(args.continue_from).exists():
+            print("LOADING FROM CHECKPOINT")
+            model = RNNModel.load_from_checkpoint(args.continue_from)
+        else:
+            model = RNNModel(
+                dictionary,
+                args.nlayers,
+                args.ngram,
+                args.hidden_size,
+                args.unk_threshold,
+                None,
+                args.embedding_size,
+                unigram_ppl=args.unigram_ppl,
+                weighted_loss=args.weighted_loss,
+                weighted_labels=args.weighted_labels,
+                strategy=args.weight_strat,
+                generate=args.generate,
+                temperature=args.temperature,
+                chars_to_gen=args.chars,
+                is_forward_lm=args.is_forward,
+                cell_type=args.model,
+                packed=args.packed
             )
-            print(f"New Hidden Size: {new_hidden_size}")
-            args.hidden_size = new_hidden_size
-
-    if args.model in ["lstm", "rnn"]:
-        model = RNNModel(
-            dictionary,
-            args.nlayers,
-            args.ngram,
-            args.hidden_size,
-            args.unk_threshold,
-            None,
-            args.embedding_size,
-            unigram_ppl=args.unigram_ppl,
-            weighted_loss=args.weighted_loss,
-            weighted_labels=args.weighted_labels,
-        )
     else:
         # Adjust args
         args.ntoken = len(dictionary)
-
-        if args.weighted_loss:
-            args.weight_tensor = dictionary.create_weight_tensor()
+        args.weight_tensor = dictionary.create_weight_tensor(args.unigram_ppl, args.weighted_loss).tolist()
 
         args.ngram_indexes = dictionary.ngram_indexes
-        args.pad_token_id = dictionary.word2idx["<pad>"]
+        # args.pad_token_id = dictionary.word2idx["<pad>"]
 
         model = TransformerLightningModule(
             TransformerConfig.from_args(args), dictionary=dictionary

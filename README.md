@@ -58,3 +58,5 @@ python train_ds.py --config configs/flair_base.yaml
 ## Troubleshooting
 
 * Deepspeed tries to access some tmp folders for cuda extensions, that the user may not have permissions for. Export `TORCH_EXTENSIONS_DIR` to a new location.
+
+

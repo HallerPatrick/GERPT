@@ -12,3 +12,6 @@ matplotlib
 numpy
 pandas
 sympy
+codetiming
+humanfriendly
+webdataset

@@ -1,174 +1,121 @@
-import sys
-from typing import Dict, List
-
 import torch
-from colorama import Fore
-from nltk import ngrams
-from rich.progress import track
+import numpy as np
 
+babylm_files = [
+    "aochildes",
+    "bnc_spoken",
+    "cbt",
+    "children_stories",
+    "gutenberg",
+    "open_subtitles",
+    "qed",
+    "simple_wikipedia",
+    "switchboard",
+    "wikipedia",
+]
+
+
+def baby_lm_train(size_path):
+    return [f"data/babylm_data/{size_path}/{file}.train" for file in babylm_files]
+
+
+def baby_lm_dev():
+    return [f"data/babylm_data/babylm_dev/{file}.dev" for file in babylm_files]
+
+
+def baby_lm_test():
+    return [f"data/babylm_data/babylm_test/{file}.test" for file in babylm_files]
+
+
+# Mapping of local datasets to their paths
 local_dataset_mapper = {
     "hp": {
-        "train": "data/hp/train.txt",
-        "test": "data/hp/test.txt",
-        "validation": "data/hp/valid.txt",
+        "strategy": "default",
+        "splits": {
+            "train": "data/hp/train.txt",
+            "test": "data/hp/test.txt",
+            "valid": "data/hp/valid.txt",
+        },
     },
     "cash": {
-        "train": "data/cash/train.txt",
-        "test": "data/cash/test.txt",
-        "validation": "data/cash/valid.txt",
+        "strategy": "default",
+        "splits": {
+            "train": "data/cash/train.txt",
+            "test": "data/cash/test.txt",
+            "valid": "data/cash/valid.txt",
+        },
     },
-    "wikitext-2": {
-        "train": "data/wikitext-2/train.txt",
-        "test": "data/wikitext-2/test.txt",
-        "validation": "data/wikitext-2/valid.txt",
+    "cash_splits": {
+        "strategy": "split",
+        "splits": {
+            "train": "data/cash_splits/train-{001..003}.txt",
+        },
     },
-    # HC
-    "cc100_german": {
-        "train": "home/tmp/halerpat/data/train.txt",
-        "test": "home/tmp/halerpat/data/test.txt",
-        "validation": "home/tmp/halerpat/data/valid.txt",
+    "obw": {
+        "strategy": "split",
+        "splits": {"train": "data/obw/train/news.en-{00001..00099}-of-00100"},
     },
+    "obw_news": {
+        "train": "data/obw_news/train.txt",
+        "test": "data/obw_news/test.txt",
+        "valid": "data/obw_news/valid.txt",
+    },
+    "babylm10M": {
+        "train": baby_lm_train("babylm_10M"),
+        "test": baby_lm_test(),
+        # For the pipeline, which expects a validation set
+        "valid": baby_lm_dev(),
+    },
+    "babylm100M": {
+        "train": baby_lm_train("babylm_100M"),
+        "test": baby_lm_test(),
+        # For the pipeline, which expects a validation set
+        "valid": baby_lm_dev(),
+    },
+    # # HC
+    # "cc100_german": {
+    #     "train": "home/tmp/halerpat/data/train.txt",
+    #     "test": "home/tmp/halerpat/data/test.txt",
+    #     "valid": "home/tmp/halerpat/data/valid.txt",
+    # },
+    # Hugginface
+    "wikipedia_en": {"args": ["wikipedia", "20220301.en"]},
+    "wikipedia_de": {"args": ["wikipedia", "20220301.de"]},
 }
 
 
-def tokenize_batch(
-    dictionary, lines: List[str], ngram: int, label=None, otf=False, fallback=False
-):
-    """Tokenizes lines of text. Number of lines is already number of batches.
+def batchify(text: np.ndarray, batch_size: int, bptt: int):
+    """Splits text into batches of size batch_size and bptt.
     Parameters
     ----------
-    lines: List[str]
-        List of strings, every string can represent a sentence or line of text.
-    otf: bool
-        On the Fly (oft) tokenization that leaves out the <eos> marker token,
-        used for text generating of not complete sentence
-    fallback: bool
-        If if n-gram token is UNK try using the n-1-gram token
+    text: str
+        Text to be batchified
+    batch_size: int
+        Number of batches
+    bptt: int
+        Number of tokens per batch
     """
 
-    n_gram_sequences = []
+    if text.shape[0] == 0:
+        return torch.tensor([]), 0
 
-    padding_char_index = dictionary.get_idx_for_item(" ")
+    assert (
+        len(text.shape) == 2
+    ), f"Array should be 2-dimension not of shape: {text.shape}"
 
-    len_longest_chunk: int = 0
+    text: torch.Tensor = torch.from_numpy(text)
 
-    for n in range(1, ngram + 1):
-        idss_n = []
+    # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    nbatch = text.size(1) // (batch_size * bptt)
+    text = text[:, : nbatch * batch_size * bptt]
 
-        _lines = (
-            track(lines, description=f"Tokenize for {n}-gram sequence for {label}")
-            if label
-            else lines
-        )
-        for line in _lines:
+    # text = text.reshape((text.shape[0], batch_size, -1)).transpose((0, 2, 1))
+    text = (
+        text.view((text.size(0), batch_size, -1))
+        .permute((0, 2, 1))
+        .contiguous()
+        .to(torch.int64)
+    )
 
-            # Adding start offsets for all ngrams
-            words = ["<start>" for _ in range(1, n)]
-            words.extend(list(line))
-            if not otf:
-                words.append("<eos>")
-
-            ids = []
-            for word in ngrams(words, n):
-                word = "".join(word)
-                try:
-                    ids.append(dictionary.word2idx[word])
-                except KeyError:
-                    # Fall back on n-1 gram if possible
-                    if fallback and word[1:] in dictionary.word2idx:
-                        ids.append(dictionary.word2idx[word])
-                    else:
-                        ids.append(dictionary.word2idx[f"<{n}-UNK>"])
-
-            if len(ids) > len_longest_chunk:
-                len_longest_chunk = len(ids)
-
-            idss_n.append(ids)
-
-        n_gram_sequences.append(idss_n)
-
-    padded_char_sequence = []
-    for ls in n_gram_sequences:
-        new_lines = []
-        for line in ls:
-            line += [padding_char_index] * (len_longest_chunk - len(line))
-            new_lines.append(torch.tensor(line).type(torch.int64))
-
-        seq = torch.cat(new_lines).unsqueeze(dim=0)
-
-        padded_char_sequence.append(seq)
-
-    n_gram_sequences = torch.cat([torch.tensor(t) for t in padded_char_sequence])
-    return n_gram_sequences
-
-
-def tokenize(dictionary, lines: List[str], ngram, label, otf=False, fallback=False):
-    """Tokenizes lines of text.
-
-    Parameters
-    ----------
-
-    lines: List[str]
-        List of strings, every string can represent a sentence or line of text.
-    otf: bool
-        On the Fly (oft) tokenization that leaves out the <eos> marker token,
-        used for text generating of not complete sentence
-    fallback: bool
-        If if n-gram token is UNK try using the n-1-gram token
-    """
-
-    n_gram_sequences = []
-    min_length = sys.maxsize
-
-    for n in range(1, ngram + 1):
-        idss_n = []
-
-        _lines = (
-            track(
-                lines,
-                description=f"Tokenize for {n}-gram sequence for {Fore.GREEN}{label}{Fore.RESET}",
-            )
-            if label
-            else lines
-        )
-
-        for line in _lines:
-
-            # Adding start offsets for all ngrams
-            words = ["<start>" for _ in range(1, n)]
-            words.extend(list(line))
-            if not otf:
-                words.append("<eos>")
-
-            ids = []
-            length = 0
-            for i, word in enumerate(ngrams(words, n)):
-                try:
-                    ids.append(dictionary.word2idx["".join(word)])
-                except KeyError:
-                    # Fall back on n-1 gram if possible
-                    if fallback and word[1:] in dictionary.word2idx:
-                        ids.append(dictionary.word2idx[word])
-                    else:
-                        ids.append(dictionary.word2idx[f"<{n}-UNK>"])
-                length += 1
-
-            idss_n.append(torch.tensor(ids).type(torch.int64))
-
-        # N-gram sequence, [1, #tokens]
-        seq = torch.cat(idss_n).unsqueeze(dim=0)
-        length = seq.size(1)
-
-        if length < min_length:
-            min_length = length
-
-        n_gram_sequences.append(seq)
-
-    n_gram_sequences = torch.cat([t[:min_length] for t in n_gram_sequences])
-
-    return n_gram_sequences
-
-
-def grouped(iterable, n):
-    # s -> (s0,s1,s2,...sn-1), (sn,sn+1,sn+2,...s2n-1), (s2n,s2n+1,s2n+2,...s3n-1), ...
-    return zip(*[iter(iterable)] * n)
+    # text: [ngram, seq, batch_size]
+    return text, nbatch
