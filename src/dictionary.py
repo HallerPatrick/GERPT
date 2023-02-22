@@ -50,12 +50,11 @@ class Dictionary:
         ngme_type = vocab_file["ngme"]
 
         # TODO: Not sufficient, save more meta data in dict file
-        dictionary = cls(ngram, 0, ngme_type, False)
-
-        # TODO: Load also frequency?
+        dictionary = cls(ngram, len(vocab_file["vocab"]), ngme_type, False)
 
         for token in vocab_file["vocab"]:
             dictionary.add_ngram(token["token"], token["ngram"])
+            dictionary.frequencies.update({token["token"]: token["frequency"]})
 
         return dictionary
 
@@ -100,11 +99,6 @@ class Dictionary:
             print("Apply unking...", end="")
             dictionary.unking()
             print("Done")
-
-        # Check if all unigrams were indexed first and all idx are consecutive
-        assert list(dictionary.ngram2idx2word[1].keys()) == list(
-            range(0, len(dictionary.ngram2idx2word[1]))
-        )
 
         return dictionary, dataset
 
@@ -195,37 +189,50 @@ class Dictionary:
 
         max_dict_size = new_max_dict_size if new_max_dict_size else self.max_dict_size
 
-        if ngrams:
-            sub_frequencies = {}
+        ngrams = ngrams if ngrams else self.ngram
+
+        # Pre-define the number of tokens per ngram
+        n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
+
+        # Take subset of frequencies counter based on ngram
+        frequencies = []
+        frequencies_tokens = []
+        for ngram in range(1, ngrams+1):
+            frequency = Counter()
+
+            freq_dict = {}
+
             for token, freq in self.frequencies.items():
-                n_order = self.token_to_n_order(token)
+                if token in self.ngram2word2idx[ngram]:
+                    freq_dict[token] = freq
 
-                if n_order <= ngrams:
-                    sub_frequencies.update({token: freq})
+            frequency.update(freq_dict)
+            most_common = frequency.most_common(n_tokens_per_ngram[ngram-1])
 
-            frequencies = Counter(sub_frequencies)
-        else:
-            frequencies = self.frequencies
-            ngrams = self.ngram
-
-        candidates = list(map(lambda x: x[0], frequencies.most_common(max_dict_size)))
+            frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
+            frequencies.append(most_common)
 
         dictionary = Dictionary(ngrams, max_dict_size, self.ngme)
 
+        marker_tokens = ["<unk>", "<pad>", "<start>"]
+
+        # Add all ngrams up to ngrams to new dictionary
         for ngram in self.ngram2idx2word:
             for token, ngram_idx in self.ngram2word2idx[ngram].items():
-                # Add token if:
-                # 1. Token occurs often enough
-                # 2. Is a marker token
-                # 3. Is unigram
-                if (
-                    token in candidates
-                    or ngram_idx in self._marker_tokens[ngram]
-                    # or ngram == 1 TODO: Do we really need to ensure all unigrams are in?
-                ):
-                    dictionary.add_ngram(token, ngram)
+                if ngram <= ngrams:
+                    if (
+                        token in frequencies_tokens[ngram - 1]
+                        or token in marker_tokens
+                        # or ngram == 1 TODO: Do we really need to ensure all unigrams are in?
+                    ):
+                        dictionary.add_ngram(token, ngram)
 
-        dictionary.frequencies = frequencies
+        # Collect all frequencies to pass to new dictionary
+        new_frequency = Counter()
+        for frequncy in frequencies:
+            new_frequency.update(dict(frequncy))
+
+        dictionary.frequencies = new_frequency
 
         return dictionary
 

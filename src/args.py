@@ -265,45 +265,39 @@ def argparse_babylm():
 def argparse_build_dict():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config",
-        type=str
-    )
+
     parser.add_argument(
         "--dataset",
-        type=str
+        type=str,
+        required=True
     )
 
     parser.add_argument(
         "--ngrams",
-        type=int
+        type=int,
+        required=True
     )
 
     parser.add_argument(
         "--max-dict-size",
-        type=str,
+        type=int,
+        required=True
     )
 
     parser.add_argument(
         "--ngme",
         type=str,
+        required=True
     )
 
     parser.add_argument(
         "--output",
         type=str,
+        required=True
         # choices=["small", "big"]
     )
 
     args = parser.parse_args()
     
-    # if args.config:
-    #     yaml_args = read_config(args.config)
-
-    #     for key, value in args.__dict__.items():
-    #         if value:
-    #             yaml_args.__dict__.update({key: value})
-
-    #     return yaml_args
     return args
 

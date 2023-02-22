@@ -47,8 +47,8 @@ def soft_dist(n):
     return [1 / n] * n
 
 @lru_cache(maxsize=5)
-def n_dist(n: int, strategy: str) -> List[float]:
-    """Dist of ngram weight is logarithmic"""
+def n_dist(n: int, strategy: str) -> list[float]:
+    """dist of ngram weight is logarithmic"""
     ns = list(range(1, n+1))
     xs = list(map(strats[strategy], ns))
     result = list(map(lambda x: x / sum(xs), xs))

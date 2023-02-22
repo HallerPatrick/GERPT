@@ -13,7 +13,7 @@ def main():
 
     args = argparse_build_dict()
 
-    dataset = load_dataset_from_source(args.dataset)
+    dataset, write_strategy = load_dataset_from_source(args.dataset)
 
     dictionary, dataset = Dictionary.build_from_dataset(
         dataset, args.ngrams, args.max_dict_size, args.ngme, packed=False

@@ -56,6 +56,19 @@ class Processor:
     def read_dataset(file_path: str) -> Union[DatasetDict, Iterable[DatasetDict]]:
         """Reads the preprocessed dataset from the file path"""
 
+        strategy = Processor.get_strategy_from_path(file_path)
+
+        return Processor.from_strategy(strategy).read_dataset(file_path)
+
+    @staticmethod
+    def get_strategy_from_path(file_path: str) -> str:
+        """Reads the strategy from the file path"""
+
+        with open(file_path + "/strategy", "r", encoding="utf8") as f:
+            strategy = f.read().strip()
+
+        return strategy
+
     def write_dataset(self, dataset: DatasetDict):
         """Writes the dataset to the file path"""
 
@@ -147,6 +160,10 @@ class DefaultProcessor(Processor):
 
     def write_dataset(self, dataset: DatasetDict()):
         """Writes the dataset to the file path"""
+
+        
+        with open(f"{self.target_path}/strategy", "w") as f:
+            f.write("default")
 
         for split in dataset:
             target_file = Path(self.target_path) / f"{split}.pt"
@@ -439,6 +456,10 @@ class SplitProcessor(Processor):
 
     def run(self, dataset: Iterable[DatasetDict]):
         self._mkdir(path=self.target_path)
+
+        with open(f"{self.target_path}/strategy", "w") as f:
+            f.write("split")
+
         for idx, ds in enumerate(dataset):
             print(f"Processing split {idx}")
             print("-"*80)
@@ -447,6 +468,7 @@ class SplitProcessor(Processor):
             print("-"*80)
             
     def _write_dataset(self, dataset: Iterable[DatasetDict], idx: int):
+
         for train_split in ["train", "test", "valid"]:
             if train_split not in dataset:
                 print(f"Split {train_split} not found. Skipping.")

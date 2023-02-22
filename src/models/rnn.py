@@ -58,7 +58,6 @@ class RNNModel(pl.LightningModule):
 
         self.ntokens = len(dictionary)
         self.encoder = NGramsEmbeddingFast(len(dictionary), embedding_size, packed=packed)
-        print(self.encoder)
         self.ngrams = ngrams
         self.unk_t = unk_t
         self.dictionary = dictionary
@@ -132,7 +131,6 @@ class RNNModel(pl.LightningModule):
         matrix.detach().uniform_(-stdv, stdv)
 
     def configure_optimizers(self):
-        # optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
         optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
@@ -538,12 +536,12 @@ class RNNModel(pl.LightningModule):
             for string in chunk:
                 chars = list(string) + [" "] * (len_longest_chunk - len(string))
 
-                chars = "".join(chars)
+                # chars = "".join(chars)
 
                 # [ngram, 1, sequence]
                 # self.dictionary.ngme = "dense"
                 n_gram_char_indices = self.dictionary.tokenize_line(
-                    chars, id_type=torch.int64
+                    chars, id_type=torch.int64, return_tensor="pt"
                 )["source"].unsqueeze(dim=1)
 
                 sequences_as_char_indices.append(n_gram_char_indices)

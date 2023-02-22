@@ -94,11 +94,13 @@ if __name__ == "__main__":
     else:
         strategy = None
 
+    write_strategy = Processor.get_strategy_from_path(args.saved_data)
+
     # --- Training ---
     trainer = Trainer(
         # resume_from_checkpoint=Path("checkpoints" /  Path("flair_" + args.save)),
         logger=wandb_logger,
-        max_epochs=1 if args.write_strategy in ["sharding", "split"] else args.epochs,
+        max_epochs=1 if write_strategy in ["sharding", "split"] else args.epochs,
         # max_epochs=args.epochs,
         # accelerator="auto",
         strategy=strategy,
@@ -129,12 +131,12 @@ if __name__ == "__main__":
 
     # Couldnt find a smarter way to lazy load all splits or shards
     # Therefore each split is loaded seperately and passed to the datamodule
-    if args.write_strategy in ["sharding"]:
+    if write_strategy in ["sharding"]:
 
         for epoch in range(args.epochs):
             print(f"Epoch {epoch + 1}/{args.epochs}")
 
-            tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
+            tokenized_dataset = Processor.from_strategy(write_strategy).read_dataset(args.saved_data)
             for idx, shard in enumerate(tokenized_dataset):
                 print(f"Shard {idx + 1}")
 
@@ -149,7 +151,7 @@ if __name__ == "__main__":
                 data_module = SplitDataModule(train, test, valid, args.batch_size, args.bptt, None, args.cpus)
 
                 trainer.fit(model, data_module)
-    elif args.write_strategy == "split":
+    elif write_strategy == "split":
         # tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
 
         for epoch in range(args.epochs):
@@ -159,7 +161,7 @@ if __name__ == "__main__":
             # TRAIN!
             trainer.fit(model, data_module)
     else:
-        tokenized_dataset = Processor.from_strategy(args.write_strategy).read_dataset(args.saved_data)
+        tokenized_dataset = Processor.from_strategy(write_strategy).read_dataset(args.saved_data)
         data_module = GenericDataModule(tokenized_dataset, args.batch_size, args.bptt, None, args.cpus)
 
         # TRAIN!
@@ -168,16 +170,20 @@ if __name__ == "__main__":
     if TEST:
         trainer.test(model, data_module)
 
+    last_ckpt_path = "checkpoints/" + args.save + ".last.ckpt"
+
+    trainer.save_checkpoint(last_ckpt_path)
+
     # Combine sharded model checkpoints into one for future loading
     if (
         strategy
         and "deepspeed_stage_" in strategy.strategy_name
         and hasattr(checkpoint_callback, "save_path")
     ):
-        ckpt_path = checkpoint_callback.save_path
-        print(f"Convert to single checkpoint: {ckpt_path}.single")
-        convert_zero_checkpoint_to_fp32_state_dict(ckpt_path, ckpt_path + ".single")
+        print(f"Convert to single checkpoint: {last_ckpt_path}")
+        convert_zero_checkpoint_to_fp32_state_dict(last_ckpt_path, last_ckpt_path)
 
+    
     # Custom save for flair embeddings
     if args.model == "lstm":
         model.save("checkpoints" / Path(args.save))
@@ -200,8 +206,6 @@ if __name__ == "__main__":
         # Save HF tokenizer
         NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
-        # Save HF model
-
     try:
         # Save wandb run id in config for fine tuning run
         if hasattr(args, "wandb_flair_yaml") and args.wandb_flair_yaml:
@@ -209,6 +213,13 @@ if __name__ == "__main__":
             write_to_yaml(args.wandb_flair_yaml, "wandb_run_id", wandb.run.path)
     except:
         print("Could not write wandb RUN ID to flair config file")
+
+    print("Training done")
+    print("=" * 80)
+    print("Saving:")
+    print(f"Flair Model:     {'checkpoints' / Path('flair_' + args.save)}")
+    print(f"Last Checkpoint: {last_ckpt_path}")
+    print("=" * 80)
 
     # Auto downstream training
     if hasattr(args, "downstream") and args.downstream:

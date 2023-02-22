@@ -1,5 +1,6 @@
 import sys
 import timeit
+from math import log
 from datetime import timedelta
 from typing import Any, Callable, Optional, List
 
@@ -19,6 +20,19 @@ import torch.nn.functional as F
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+
+strats = {
+    "linear": lambda x: x,
+    "log": lambda x: log(x+1),
+    "exp": lambda x: x**2
+}
+
+def n_dist(n: int, strategy: str) -> list[float]:
+    """dist of ngram weight is logarithmic"""
+    ns = list(range(1, n+1))
+    xs = list(map(strats[strategy], ns))
+    result = list(map(lambda x: x / sum(xs), xs))
+    return result
 
 
 def split_range(i, ds_split, num_splits):
