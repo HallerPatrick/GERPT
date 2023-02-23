@@ -103,7 +103,9 @@ def main(args):
 
     for _ in range(args.num_iters):
         generate(model, args.temperature, args.seed, args.num_chars)
-        print("-" * 70)
+        print()
+        print("="*80)
+        print()
 
 
 if __name__ == "__main__":

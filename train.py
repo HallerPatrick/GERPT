@@ -151,10 +151,10 @@ if __name__ == "__main__":
     print("=" * 80)
     print("Saving:")
     print(
-        f"Flair Model:                                        {'checkpoints' / Path('flair_' + args.save)}"
+        f"Flair Model:     {'checkpoints' / Path('flair_' + args.save)}"
     )
     print(
-        f"Last Checkpoint {'(deepspeed folder)' if strategy else ''}: {last_ckpt_path}"
+        f"Last Checkpoint: {last_ckpt_path}{'(deepspeed folder)' if strategy else ''}"
     )
     if strategy:
         print(
