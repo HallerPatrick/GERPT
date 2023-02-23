@@ -205,23 +205,20 @@ def argparse_generate():
     """Argparser for standalone generator"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model",
+        "--model-path",
         type=str,
+        required=True
     )
     parser.add_argument(
         "--temperature",
         type=float,
+        default=0.7
     )
+    parser.add_argument("--mode", type=str, default="gen")
+    parser.add_argument("--num-iters", type=int, default=1, help="How often to generate")
+    parser.add_argument("--num-chars", type=int, default=1000, help="How many chars to generate")
+    parser.add_argument("--seed", type=str, default="Hello ", help="Seed text for generation")
 
-    parser.add_argument(
-        "--type",
-        type=str,
-        help="Either transformer or rnn"
-    )
-
-    parser.add_argument("--mode", type=str)
-
-    parser.add_argument("--num", type=int, default=1)
     return parser.parse_args()
 
 

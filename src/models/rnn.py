@@ -14,7 +14,7 @@ from rich.panel import Panel
 from src import utils
 from src.loss import CrossEntropyLossSoft
 
-from .ngme import NGramsEmbedding, soft_n_hot, NGramsEmbeddingFast
+from .ngme import NGramsEmbedding, soft_n_hot
 
 
 DEBUG = False
@@ -38,9 +38,9 @@ class RNNModel(pl.LightningModule):
         nlayers: int,
         ngrams: int,
         hidden_size: int,
-        unk_t: int,
         nout=None,
         embedding_size: int = 100,
+        lr: float = 20,
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.25,
@@ -51,15 +51,14 @@ class RNNModel(pl.LightningModule):
         generate: bool = False,
         temperature: float = 0.7,
         chars_to_gen: int = 1000,
-        cell_type = "lstm",
-        packed = False
+        cell_type: str = "lstm",
+        packed: bool = False,
     ):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-        self.encoder = NGramsEmbeddingFast(len(dictionary), embedding_size, packed=packed)
+        self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
         self.ngrams = ngrams
-        self.unk_t = unk_t
         self.dictionary = dictionary
         self.nlayers = nlayers
         self.is_forward_lm = is_forward_lm
@@ -72,6 +71,7 @@ class RNNModel(pl.LightningModule):
         self.weighted_loss = weighted_loss
         self.strategy = strategy
         self.unigram_ppl = unigram_ppl
+        self.lr = lr
 
         self.criterion = None
         self.bidirectional = False
@@ -79,7 +79,10 @@ class RNNModel(pl.LightningModule):
         if cell_type == "lstm":
             if nlayers == 1 and not self.bidirectional:
                 self.rnn = nn.LSTM(
-                    embedding_size, hidden_size, nlayers, bidirectional=self.bidirectional
+                    embedding_size,
+                    hidden_size,
+                    nlayers,
+                    bidirectional=self.bidirectional,
                 )
             else:
                 self.rnn = nn.LSTM(
@@ -95,7 +98,6 @@ class RNNModel(pl.LightningModule):
             # TODO: No Support for bidirectional and layers yet
             # TODO: Good amount of iterations for mog?
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
-
 
         self.drop = nn.Dropout(dropout)
         self.decoder = nn.Linear(
@@ -131,20 +133,20 @@ class RNNModel(pl.LightningModule):
         matrix.detach().uniform_(-stdv, stdv)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr=20.0)
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            "min",
-            factor=0.25,
-            verbose=True,
-            min_lr=1.25,
+        optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
+        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=[4, 5, 6], gamma=0.25, verbose=True
         )
-        return [optimizer], [
-            {"scheduler": lr_scheduler, "monitor": "train/loss"}
-        ]
+        # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        #     optimizer,
+        #     "min",
+        #     factor=0.25,
+        #     verbose=True,
+        #     min_lr=1.25,
+        # )
+        return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss"}]
 
     def _step(self, batch):
-
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
         if DEBUG:
@@ -169,7 +171,7 @@ class RNNModel(pl.LightningModule):
                 self.strategy,
                 self.weighted_labels,
                 self.unigram_ppl,
-                self.encoder.packed
+                self.encoder.packed,
             )
             target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
         else:
@@ -179,10 +181,10 @@ class RNNModel(pl.LightningModule):
                 self.strategy,
                 self.weighted_labels,
                 self.unigram_ppl,
-                self.encoder.packed
+                self.encoder.packed,
             )
             target = target.view(-1, self.ntokens)
-            
+
         loss = self.criterion(decoded, target)
         return loss, decoded, target
 
@@ -238,19 +240,18 @@ class RNNModel(pl.LightningModule):
         # 3. Counter number of tokens (TODO: What tokens to pick?!)
         # 4. Forumlar: BPB = (L_T / T_B) * log_2(e**l)
         #    where: L_T, number of tokens, L_B number of UTF-8 encoded bytes, l = NLL
-        # source = batch[0] 
+        # source = batch[0]
         # num_tokens = source.size(1)
         # num_bytes = None
         # print(batch.size())
 
     def training_epoch_end(self, _) -> None:
-
         self.epoch += 1
 
         if self.generate and self.epoch == 9:
             # Only rank zero gives output
             print("Generating")
-            result= self.generate_text()
+            result = self.generate_text()
             print(result)
             if result:
                 print(Panel(result, title="[green]Generated text"))
@@ -260,7 +261,6 @@ class RNNModel(pl.LightningModule):
 
     # @rank_zero.rank_zero_only
     def generate_text(self) -> str:
-
         inp = torch.randint(
             self.ntokens, (self.ngrams, 1, 1), dtype=torch.int64, device=self.device
         )
@@ -268,11 +268,9 @@ class RNNModel(pl.LightningModule):
         generated_output = self.dictionary.get_item_for_index(idx.item())
         sample_text = self.dictionary.get_item_for_index(idx.item())
 
-
         with torch.no_grad():
             self.eval()
             for i in range(self.chars_to_gen):
-
                 # Reset hidden
                 hidden = self.init_hidden(1)
                 output, hidden = self(inp, hidden)
@@ -293,7 +291,6 @@ class RNNModel(pl.LightningModule):
                     # multinomial over all tokens
                     ngram_idx = torch.multinomial(word_weights, 1)[0]
 
-
                     ngram_order = self.dictionary.get_ngram_order(ngram_idx.item())
                     ngrams_idxs = [ngram_idx]
                     if self.dictionary.ngme == "sparse":
@@ -301,13 +298,23 @@ class RNNModel(pl.LightningModule):
                             ngram_subset = torch.index_select(
                                 word_weights,
                                 0,
-                                torch.tensor(list(self.dictionary.ngram2idx2word[i].keys()))
+                                torch.tensor(
+                                    list(self.dictionary.ngram2idx2word[i].keys())
+                                ),
                             )
 
                             ngrams_idxs.append(torch.multinomial(ngram_subset, 1)[0])
 
-
-                    word = "".join(list(reversed([self.dictionary.get_item_for_index(idx.item()) for idx in ngrams_idxs])))
+                    word = "".join(
+                        list(
+                            reversed(
+                                [
+                                    self.dictionary.get_item_for_index(idx.item())
+                                    for idx in ngrams_idxs
+                                ]
+                            )
+                        )
+                    )
 
                 if word == "<pad>":
                     word = " "
@@ -320,8 +327,9 @@ class RNNModel(pl.LightningModule):
 
                 inp = (
                     self.dictionary.tokenize_line(
-                        list(generated_output[-200:]), id_type=torch.int64,
-                        return_tensor="pt"
+                        list(generated_output[-200:]),
+                        id_type=torch.int64,
+                        return_tensor="pt",
                     )["source"]
                     .unsqueeze(dim=2)
                     .to(self.device)
@@ -346,6 +354,9 @@ class RNNModel(pl.LightningModule):
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
     def forward(self, input, hidden):
+
+        # print(self.optimizers().param_groups[0]["lr"])
+        # exit()
         # [#ngram, #seq_len, #batch_size]
         emb = self.encoder(input)
         emb = self.drop(emb)
@@ -370,7 +381,6 @@ class RNNModel(pl.LightningModule):
         return decoded, hidden
 
     def forward2(self, input, hidden, ordered_sequence_lengths=None):
-
         # input: [ngram, sequence_length, batch]
         encoded = self.encoder(input)
         encoded = self.drop(encoded)
@@ -415,7 +425,6 @@ class RNNModel(pl.LightningModule):
         )
 
     def __getstate__(self):
-
         # serialize the language models and the constructor arguments (but nothing else)
         model_state = {
             "state_dict": self.state_dict(),
@@ -428,7 +437,6 @@ class RNNModel(pl.LightningModule):
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
-            "unk_t": self.unk_t,
         }
 
         print(model_state)
@@ -436,17 +444,14 @@ class RNNModel(pl.LightningModule):
         return model_state
 
     def __setstate__(self, d):
-
         # special handling for deserializing language models
         if "state_dict" in d:
-
             # re-initialize language model with constructor arguments
             language_model = RNNModel(
                 dictionary=d["dictionary"],
                 nlayers=d["nlayers"],
                 ngrams=d["ngrams"],
                 hidden_size=d["hidden_size"],
-                unk_t=d["unk_t"],
                 nout=d["nout"],
                 embedding_size=d["embedding_size"],
                 is_forward_lm=d["is_forward_lm"],
@@ -468,7 +473,6 @@ class RNNModel(pl.LightningModule):
             self.__dict__ = d
 
     def save(self, file: Union[str, Path]):
-
         model_state = {
             "state_dict": self.state_dict(),
             "dictionary": self.dictionary,
@@ -480,7 +484,6 @@ class RNNModel(pl.LightningModule):
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
-            "unk_t": self.unk_t,
         }
 
         if isinstance(file, str):
@@ -499,7 +502,6 @@ class RNNModel(pl.LightningModule):
         end_marker: str,
         chars_per_chunk: int = 512,
     ):
-
         len_longest_str: int = len(max(strings, key=len))
 
         # pad strings with whitespaces to longest sentence

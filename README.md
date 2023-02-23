@@ -12,6 +12,15 @@ Install necessary dependencies:
 pip install -r requirements.txt
 ```
 
+### Optional
+
+Compile the CUDA extensions for the N-Gram Multihot approach:
+
+```
+cd cpp
+python setup.py install
+```
+
 To run the training on GPUs please install `pytorch` with CUDA support.
 
 
@@ -60,3 +69,7 @@ python train_ds.py --config configs/flair_base.yaml
 * Deepspeed tries to access some tmp folders for cuda extensions, that the user may not have permissions for. Export `TORCH_EXTENSIONS_DIR` to a new location.
 
 
+
+
+h,         e,  l,  l,  o,      ,w .   ,o  ,  r,  l, d
+<start>h, he, el, ll, lo, <unk>, <unk>, wo, or, rl, ld

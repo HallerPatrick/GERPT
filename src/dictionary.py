@@ -1,7 +1,6 @@
 import json
 import sys
-from collections import Counter, defaultdict
-from functools import lru_cache
+from collections import Counter
 from typing import Iterator, List, Optional, Tuple, Union
 
 import flair
@@ -28,22 +27,22 @@ class Dictionary:
         ngme: str,
         packed: bool = False,
     ):
-        self._marker_tokens = {}
-        self.ngram_indexes = defaultdict(list)
         self.ngram = ngram
         self.max_dict_size = max_dict_size
+        self.ngme = ngme
+        self.packed = packed
+
+        self._marker_tokens = {}
         self.frequencies: Counter = Counter()
-        self.pad_tokens = {}
 
         self.ngram2word2idx = {}
         self.ngram2idx2word = {}
 
         self.current_max_idx = 0
-        self.ngme = ngme
-        self.packed = packed
 
     @classmethod
     def load_from_file(cls, filename: str):
+        """Loads a dictionary from a file."""
         vocab_file = load_vocab(filename)
 
         ngram = vocab_file["ngram"]
@@ -140,17 +139,20 @@ class Dictionary:
                 self.add_ngrams(tokens, n)
 
     def get_all_tokens(self):
+        """Returns all tokens in the dictionary."""
         for ngram in range(1, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].items():
                 yield idx, token
 
     def get_ngram_order(self, idx) -> int:
+        """Returns the n-gram order of a token."""
         for ngram, idx2word in self.ngram2idx2word.items():
             if idx in idx2word:
                 return ngram
         return -1
 
-    def add_ngram(self, word, ngram: int):
+    def add_ngram(self, word, ngram: int) -> int:
+        """Add a new n-gram token to the dictionary."""
         self.frequencies.update({word: 1})
 
         if ngram not in self.ngram2idx2word:
@@ -166,6 +168,7 @@ class Dictionary:
         return self.ngram2word2idx[ngram][word]
 
     def add_ngrams(self, words: List[str], ngram: int):
+        """Add a list of n-gram tokens to the dictionary."""
         self.frequencies.update(Counter(words))
 
         for word in words:
@@ -194,8 +197,18 @@ class Dictionary:
         total_occurences = np.array(total_occurences)
 
         rel_occurences = total_occurences / total_occurences.sum()
-        new_occurences = rel_occurences * (200 / rel_occurences[0])
-        return new_occurences
+        new_occurences = rel_occurences * 30_000
+        return new_occurences.astype(int)
+
+    def _remove_whitespace_tokens(self):
+        """Remove ngram tokens that contain whitespaces"""
+        # Ignore ungiram
+        for ngram in range(2, self.ngram + 1):
+            for idx, token in self.ngram2idx2word[ngram].copy().items():
+                if " " in token:
+                    self.ngram2idx2word[ngram].pop(idx)
+                    self.ngram2word2idx[ngram].pop(token)
+                    self.current_max_idx -= 1
 
     def unking(
         self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
@@ -210,10 +223,12 @@ class Dictionary:
         ngrams = ngrams if ngrams else self.ngram
 
         # Pre-define the number of tokens per ngram
-        if ngrams <= 3:
+        if ngrams <= 4:
             n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams)
         else:
             n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
+
+        print(n_tokens_per_ngram)
 
         # Take subset of frequencies counter based on ngram
         frequencies = []
@@ -258,14 +273,16 @@ class Dictionary:
         return dictionary
 
     def get_marker_tokens(self) -> Iterator[int]:
-        for ngram in self._marker_tokens:
-            for token_idx in self._marker_tokens[ngram]:
+        """Return an iterator over the marker tokens."""
+        for token_idxs in self._marker_tokens.values():
+            for token_idx in token_idxs:
                 yield token_idx
 
     def __len__(self):
         return self.current_max_idx
 
     def get_item_for_index(self, idx):
+        """Return the token for a given index."""
         for idxs in self.ngram2idx2word.values():
             if idx in idxs:
                 return idxs[idx]
@@ -276,21 +293,16 @@ class Dictionary:
         vocab_file: str,
         ngram: int,
     ) -> str:
-        index = 0
+        """Save the vocabulary to a file."""
 
-        vocab = {}
+        index = 0
         vocab = {"ngram": ngram, "ngme": self.ngme, "vocab": []}
 
         for ngram in range(1, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].items():
                 if index != idx:
-                    # print(
-                    #     f"Saving vocabulary to {vocab_file}: vocabulary indices are not consecutive."
-                    #     " Please check that the vocabulary is not corrupted!"
-                    # )
                     index = idx
 
-                # TODO:Is this sound?
                 if "\n" in token:
                     token = token.replace("\n", "\\n")
 
@@ -305,8 +317,6 @@ class Dictionary:
         with open(vocab_file, "w", encoding="utf-8") as writer:
             json.dump(vocab, writer, indent=4, ensure_ascii=False)
 
-        return vocab_file
-
     def tokenize_line(
         self,
         line: Union[str, List[str]],
@@ -319,14 +329,7 @@ class Dictionary:
         elif self.ngme in ["sparse", "compositional"]:
             return self._tokenize_line_compositional(line, id_type, return_tensor, with_text)
         else:
-            raise ValueError("Unknown NGME type: {}".format(self.ngme))
-
-    @lru_cache
-    def _special_tokens(self) -> List[str]:
-        return [
-            self.ngram2idx2word[1][special_token_id]
-            for special_token_id in self._marker_tokens[1]
-        ]
+            raise ValueError(f"Unknown NGME type: {self.ngme}")
 
     def _tokenize_line_explicit(
         self,
@@ -389,6 +392,7 @@ class Dictionary:
 
     @staticmethod
     def convert_return_value(return_dict, return_tensor):
+        """Convert return value to desired format."""
         if return_tensor == "pt":
             return return_dict
 
@@ -477,6 +481,7 @@ class Dictionary:
         sequence = torch.cat(
             [t[0][:min_length].clone().detach().unsqueeze(0) for t in ngram_sequences]
         )
+
         target = torch.cat(
             [
                 t[0][:min_length].clone().detach().unsqueeze(0)
@@ -509,31 +514,23 @@ class Dictionary:
         if isinstance(t, list):
             t = torch.tensor(t)
 
-        # Roll sequences now
-        st = torch.roll(t, -shifts, 1)
-
         # Apply padding later!
         # for i in range(1, shifts + 1):
         #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
-        return st
+        return torch.roll(t, -shifts, 1)
 
     def create_weight_tensor(
         self, unigram_ppl: bool, weighted_loss: bool = True
     ) -> torch.Tensor:
         unked_freqs = self.frequencies.most_common(self.max_dict_size)
 
-        if unigram_ppl:
-            t = torch.ones(len(self.ngram2idx2word[1]))
-        else:
-            t = torch.ones(len(self))
+        t = torch.ones(len(self.ngram2idx2word[1])) if unigram_ppl else torch.ones(len(self))
 
         if not unigram_ppl and weighted_loss:
             for token, freq in unked_freqs:
                 t[self.ngram2word2idx[self.token_to_n_order(token)][token]] = freq
 
-            max_t = max(t)
-
-            normed_weights = torch.tensor([(1 - (x / (max_t + 1))).item() for x in t])
+            normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
         else:
             normed_weights = t
 
@@ -547,18 +544,20 @@ class Dictionary:
         return normed_weights
 
     def token_to_n_order(self, token: str) -> int:
-        for n in self.ngram2word2idx:
-            if token in self.ngram2word2idx[n]:
-                return n
+        """Get N-gram order for a token"""
+        for n_gram, word2idx in self.ngram2word2idx.items():
+            if token in word2idx:
+                return n_gram
 
         return 0
 
     def print_sequence(self, seq, ngram):
-        """docstring for print_sequence"""
+        """Print a sequence of token ids"""
         collected_tokens = self._get_char_sequence(seq, ngram)
         print(f"[{', '.join(collected_tokens)}]")
 
     def _get_char_sequence(self, seq, ngram):
+        """Convert a sequence of token ids to a list of chars"""
         collected_tokens = []
 
         for token in seq:
@@ -569,6 +568,7 @@ class Dictionary:
         return collected_tokens
 
     def print_batch(self, batch):
+        """Print a batch of token ids with dimensions (ngram, seq_len, batch)"""
         seqs = []
         for batch_idx in range(batch.size(2)):
             for n_idx in range(batch.size(0)):
@@ -580,12 +580,15 @@ class Dictionary:
             print(seq)
 
 def collect_ngrams(line, n):
+    """Collect ngrams from a line of text"""
     return ["".join(ngram) for ngram in nltk.ngrams(line, n)]
 
 def add_ngrams_from_text(text: str, ngrams: List[int]):
+    """Add ngrams from a text to a ngram dictionary"""
     return {ngram: collect_ngrams(text, ngram) for ngram in ngrams}
 
 def get_unigram_tokens() -> List[str]:
+    """Get unigram tokens from flair"""
     flair_device = flair.device
     flair.device = "cpu"
 

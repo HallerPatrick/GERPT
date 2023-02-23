@@ -54,7 +54,6 @@ dropout: 0.2
 is_forward: true
 
 seed: 1111
-log_interval: 200
 
 downstream: False
 wandb_flair_yaml: configs/flair_wiki2.yaml

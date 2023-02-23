@@ -4,6 +4,10 @@
 # model: mog_lstm
 model: lstm
 
+# Weights and Biases
+online: false
+group:
+
 # Load from hugginface
 # data: "wikitext/wikitext-2-raw-v1"
 
@@ -21,13 +25,11 @@ reuse_dict: "dicts/dict_data.dict"
 write_strategy: splits
 
 
-group:
 # LSTM model will save a custom "flair_<save-file>" file for downstream
 save: model_backward.pt
 cpus: 1
 gpus: 1
 epochs: 10
-wdecay: 1.2e-6
 lr: 0.1
 
 ngme: dense
@@ -56,7 +58,6 @@ dropout: 0.2
 is_forward: true
 
 seed: 1111
-log_interval: 200
 
 downstream: False
 wandb_flair_yaml: configs/flair_base.yaml

@@ -19,8 +19,7 @@ save: model.pt
 cpus: 12
 gpus: 1
 epochs: 2
-wdecay: 1.2e-6
-lr: 0.1
+lr: 20.0
 
 # Dictionary
 ngram: 10
@@ -43,7 +42,6 @@ nhead: 2
 dropout: 0.2
 
 seed: 1111
-log_interval: 200
 
 downstream: False
 wandb_flair_yaml: configs/flair_base.yaml
