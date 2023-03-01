@@ -248,7 +248,7 @@ class RNNModel(pl.LightningModule):
     def training_epoch_end(self, _) -> None:
         self.epoch += 1
 
-        if self.generate and self.epoch == 9:
+        if self.generate:
             # Only rank zero gives output
             print("Generating")
             result = self.generate_text()
@@ -289,9 +289,17 @@ class RNNModel(pl.LightningModule):
                     word_weights = output.squeeze().div(self.temperature).exp().detach()
 
                     # multinomial over all tokens
-                    ngram_idx = torch.multinomial(word_weights, 1)[0]
+                    # To avoid unk gens, take ( n*unique_unks_in_dict )+1 
+                    # Probe for first non unk token
+                    ngram_idx = torch.multinomial(word_weights, 1)[0].item()
 
-                    ngram_order = self.dictionary.get_ngram_order(ngram_idx.item())
+                    # ngram_idx = None
+                    # for idx in ngram_idxs:
+                    #     idx = idx.item()
+                    #     if self.dictionary.get_item_for_index(idx) != "<unk>":
+                    #         ngram_idx = idx
+
+                    ngram_order = self.dictionary.get_ngram_order(ngram_idx)
                     ngrams_idxs = [ngram_idx]
                     if self.dictionary.ngme == "sparse":
                         for i in range(1, ngram_order):
@@ -309,7 +317,7 @@ class RNNModel(pl.LightningModule):
                         list(
                             reversed(
                                 [
-                                    self.dictionary.get_item_for_index(idx.item())
+                                    self.dictionary.get_item_for_index(idx)
                                     for idx in ngrams_idxs
                                 ]
                             )

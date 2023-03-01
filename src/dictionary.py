@@ -1,6 +1,6 @@
 import json
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Iterator, List, Optional, Tuple, Union
 
 import flair
@@ -32,7 +32,7 @@ class Dictionary:
         self.ngme = ngme
         self.packed = packed
 
-        self._marker_tokens = {}
+        self._marker_tokens = defaultdict(list)
         self.frequencies: Counter = Counter()
 
         self.ngram2word2idx = {}
@@ -96,7 +96,7 @@ class Dictionary:
 
         if dictionary.max_dict_size < len(dictionary):
             print("Apply unking...", end="")
-            dictionary.unking()
+            dictionary = dictionary.unking()
             print("Done")
 
         return dictionary, dataset
@@ -182,8 +182,11 @@ class Dictionary:
                     self.ngram2word2idx[ngram][word] = self.current_max_idx
                     self.current_max_idx += 1
 
-    def _calculate_ngram_order_dict_size(self, ngrams: int) -> int:
+    def _calculate_ngram_order_dict_size(self, ngrams: int, max_dict_size: Optional[int] = None) -> int:
         """Calculate the number of tokens for a given ngram order"""
+
+        if not max_dict_size:
+            max_dict_size = self.max_dict_size
 
         total_occurences = []
 
@@ -197,7 +200,7 @@ class Dictionary:
         total_occurences = np.array(total_occurences)
 
         rel_occurences = total_occurences / total_occurences.sum()
-        new_occurences = rel_occurences * 30_000
+        new_occurences = rel_occurences * max_dict_size
         return new_occurences.astype(int)
 
     def _remove_whitespace_tokens(self):
@@ -222,13 +225,13 @@ class Dictionary:
 
         ngrams = ngrams if ngrams else self.ngram
 
+        self._remove_whitespace_tokens()
+
         # Pre-define the number of tokens per ngram
         if ngrams <= 4:
             n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams)
         else:
             n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
-
-        print(n_tokens_per_ngram)
 
         # Take subset of frequencies counter based on ngram
         frequencies = []
@@ -261,7 +264,12 @@ class Dictionary:
                         or token in marker_tokens
                         # or ngram == 1 TODO: Do we really need to ensure all unigrams are in?
                     ):
-                        dictionary.add_ngram(token, ngram)
+
+                        if token in marker_tokens:
+                            marker_idx = dictionary.add_ngram(token, ngram)
+                            dictionary._marker_tokens[ngram].append(marker_idx)
+                        else:
+                            dictionary.add_ngram(token, ngram)
 
         # Collect all frequencies to pass to new dictionary
         new_frequency = Counter()
