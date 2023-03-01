@@ -442,7 +442,7 @@ class SplitProcessor(Processor):
     def read_dataset(file_path: str):
         path = Path(file_path)
 
-        idxs = [int(file.stem.removeprefix("train-")) for file in path.iterdir() if file.is_file()]
+        idxs = [int(file.stem.removeprefix("train-")) for file in path.iterdir() if file.is_file() and file.stem != "strategy"]
         idxs.sort()
 
         for idx in idxs:
