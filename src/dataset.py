@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+from typing import Iterator
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -277,7 +279,8 @@ class TextIteratorDataset(torch.utils.data.IterableDataset):
         return len(self.ds_iterator)
 
     def __iter__(self):
-        for split in self.ds_iterator:
+        for i, split in enumerate(self.ds_iterator):
+            print(f"Split {i}")
             yield from iter(SplitIterator(
                 split["train"], self.batch_size, self.bptt, self.pad_tokens
             ))
@@ -291,18 +294,17 @@ class SplitDataModule(pl.LightningDataModule):
         self.pad_tokens = pad_tokens
         self.cpus = cpus
 
+        self.dataset_iterator = Processor.from_strategy("split").read_dataset(self.data_dir)
+        self.current_split = 0
+
     def train_dataloader(self):
-        print("Loading train data")
+        print(f"Split {self.current_split}")
+        self.current_split += 1
         return DataLoader(
-            TextIteratorDataset(
-                Processor.from_strategy("split").read_dataset(self.data_dir),
-                self.batch_size,
-                self.bptt_size,
-                self.pad_tokens,
-                self.cpus,
-            ),
+            TextDataset(next(self.dataset_iterator)["train"], self.batch_size, self.bptt_size, self.pad_tokens),
             batch_size=self.batch_size,
             drop_last=True,
             num_workers=self.cpus,
             pin_memory=True,
         )
+

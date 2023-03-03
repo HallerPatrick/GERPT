@@ -43,14 +43,14 @@ class TrainStrategy:
         """Train the model with the split data module. The module is a wrapper around
         the DatasetIterator class, that yields splits of the dataset.
         """
-        for epoch in range(args.epochs):
-            print(f"Epoch {epoch + 1}/{args.epochs}")
-            data_module = SplitDataModule(
-                args.saved_data, args.batch_size, args.bptt, None, args.cpus
-            )
-            trainer.fit_loop.epoch_progress.reset_on_run()
+        # for epoch in range(args.epochs):
+        #     print(f"Epoch {epoch + 1}/{args.epochs}")
+        data_module = SplitDataModule(
+            args.saved_data, args.batch_size, args.bptt, None, args.cpus
+        )
+            # trainer.fit_loop.epoch_progress.reset_on_run()
             # TRAIN!
-            trainer.fit(model, data_module)
+        trainer.fit(model, data_module)
 
     @staticmethod
     def train_sharded(trainer, model, write_strategy, args):

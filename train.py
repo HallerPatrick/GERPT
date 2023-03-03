@@ -22,6 +22,7 @@ from train_ds import train_ds
 
 TEST = False
 
+torch.set_float32_matmul_precision("medium")
 
 def pl_callbacks():
     """Return a list of callbacks for the trainer"""
@@ -98,6 +99,8 @@ if __name__ == "__main__":
         # Disable validation during training
         limit_val_batches=0.0,
         fast_dev_run=False,
+        reload_dataloaders_every_n_epochs=1,
+        log_every_n_steps=10
     )
 
     # Train model based on data module and strategy
