@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers.wandb import WandbLogger
+from pytorch_lightning.strategies import DDPStrategy
 from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
 from pytorch_lightning.utilities.deepspeed import \
     convert_zero_checkpoint_to_fp32_state_dict
@@ -31,6 +32,7 @@ def pl_callbacks():
         save_on_train_epoch_end=True,
         dirpath="checkpoints",
         filename=args.save,
+        verbose=True
     )
 
     # Peformance
@@ -75,8 +77,8 @@ if __name__ == "__main__":
     )
 
     if torch.cuda.is_available():
-        strategy = DeepSpeedStrategy(
-            accelerator="auto", logging_batch_size_per_gpu=args.batch_size
+        strategy = DDPStrategy(
+            find_unused_parameters=False
         )
     else:
         strategy = None
@@ -93,6 +95,7 @@ if __name__ == "__main__":
         logger=wandb_logger,
         max_epochs=args.epochs,
         strategy=strategy,
+        accelerator="gpu",
         devices=args.gpus,
         gradient_clip_val=0.25,
         callbacks=pl_callbacks(),
@@ -112,11 +115,11 @@ if __name__ == "__main__":
     trainer.save_checkpoint(last_ckpt_path)
 
     # Combine sharded model checkpoints into one for future loading
-    if strategy:
-        print(f"Convert to single checkpoint: {last_ckpt_path}")
-        convert_zero_checkpoint_to_fp32_state_dict(
-            last_ckpt_path, last_ckpt_path + ".single"
-        )
+    # if strategy:
+    #     print(f"Convert to single checkpoint: {last_ckpt_path}")
+    #     convert_zero_checkpoint_to_fp32_state_dict(
+    #         last_ckpt_path, last_ckpt_path + ".single"
+    #     )
 
     # Custom save for flair embeddings
     if args.model == "lstm":

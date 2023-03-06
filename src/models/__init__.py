@@ -5,13 +5,14 @@ from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
 from src.models.transformer.transformer import TransformerLightningModule
 from src.utils import count_parameters
+from src.models import llama
 
 
 def load_model(dictionary, args: Namespace, print_params: bool = True):
     if "lstm" in args.model:
         if args.continue_from and Path(args.continue_from).exists():
             print("LOADING FROM CHECKPOINT")
-            model = RNNModel.load_from_checkpoint(args.continue_from)
+            model = RNNModel.load_from_checkpoint(args.continue_from, lr=args.lr)
         else:
             model = RNNModel(
                 dictionary,
