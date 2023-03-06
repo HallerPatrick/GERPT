@@ -89,13 +89,13 @@ if __name__ == "__main__":
 
     # --- Training ---
     trainer = Trainer(
-        resume_from_checkpoint=args.continue_from
-        if args.continue_from and Path(args.continue_from).exists()
-        else None,
+        # resume_from_checkpoint=args.continue_from
+        # if args.continue_from and Path(args.continue_from).exists()
+        # else None,
         logger=wandb_logger,
         max_epochs=args.epochs,
         strategy=strategy,
-        accelerator="gpu",
+        accelerator="auto",
         devices=args.gpus,
         gradient_clip_val=0.25,
         callbacks=pl_callbacks(),
@@ -113,13 +113,6 @@ if __name__ == "__main__":
     last_ckpt_path = "checkpoints/" + args.save + ".last.ckpt"
 
     trainer.save_checkpoint(last_ckpt_path)
-
-    # Combine sharded model checkpoints into one for future loading
-    # if strategy:
-    #     print(f"Convert to single checkpoint: {last_ckpt_path}")
-    #     convert_zero_checkpoint_to_fp32_state_dict(
-    #         last_ckpt_path, last_ckpt_path + ".single"
-    #     )
 
     # Custom save for flair embeddings
     if args.model == "lstm":

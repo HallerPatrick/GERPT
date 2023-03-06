@@ -300,8 +300,17 @@ class SplitDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         print(f"Split {self.current_split}")
         self.current_split += 1
+
+        # Make this infinite
+        try:
+            next_ds = next(self.dataset_iterator)["train"]
+        except StopIteration:
+            self.dataset_iterator = Processor.from_strategy("split").read_dataset(self.data_dir)
+            next_ds = next(self.dataset_iterator)["train"]
+            self.current_split = 0
+
         return DataLoader(
-            TextDataset(next(self.dataset_iterator)["train"], self.batch_size, self.bptt_size, self.pad_tokens),
+            TextDataset(next_ds, self.batch_size, self.bptt_size, self.pad_tokens),
             batch_size=self.batch_size,
             drop_last=True,
             num_workers=self.cpus,

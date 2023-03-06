@@ -137,10 +137,6 @@ def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = Non
             learning_rate=settings.lr,
             mini_batch_size=settings.mini_batch_size,
             max_epochs=settings.max_epochs,
-            # Bug with saving vocab file in saved model
-            use_final_model_for_eval=True
-            # if args.model_name == "transformer"
-            # else False,
         )
         chart = None
 
