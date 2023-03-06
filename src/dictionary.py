@@ -200,7 +200,7 @@ class Dictionary:
         total_occurences = np.array(total_occurences)
 
         rel_occurences = total_occurences / total_occurences.sum()
-        new_occurences = rel_occurences * max_dict_size
+        new_occurences = rel_occurences * (200 / rel_occurences[0])
         return new_occurences.astype(int)
 
     def _remove_whitespace_tokens(self):
@@ -212,6 +212,7 @@ class Dictionary:
                     self.ngram2idx2word[ngram].pop(idx)
                     self.ngram2word2idx[ngram].pop(token)
                     self.current_max_idx -= 1
+                    del self.frequencies[token]
 
     def unking(
         self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
@@ -224,29 +225,55 @@ class Dictionary:
         max_dict_size = new_max_dict_size if new_max_dict_size else self.max_dict_size
 
         ngrams = ngrams if ngrams else self.ngram
+        
+        print(f"Total count: {len(self)}")
 
         self._remove_whitespace_tokens()
+        print(f"Removed whitespaces: {len(self)}")
+
+        min_frequency = {k: v for k, v in self.frequencies.items() if v > 10_000}
+        print(f"Min occurence 10 000: {len(min_frequency)}")
 
         # Pre-define the number of tokens per ngram
         if ngrams <= 4:
-            n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams)
+            n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams, new_max_dict_size)
         else:
             n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
+
+        print(n_tokens_per_ngram)
 
         # Take subset of frequencies counter based on ngram
         frequencies = []
         frequencies_tokens = []
-        for ngram in range(1, ngrams+1):
+
+        # For unigrams, we guarantee 200 tokens
+        frequency = Counter()
+
+        freq_dict = {}
+
+        for token, freq in self.frequencies.items():
+            if token in self.ngram2word2idx[1]:
+                freq_dict[token] = freq
+
+        frequency.update(freq_dict)
+        most_common = frequency.most_common(200)
+
+        frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
+        frequencies.append(most_common)
+
+        for ngram in range(2, ngrams+1):
             frequency = Counter()
 
             freq_dict = {}
 
-            for token, freq in self.frequencies.items():
+            for token, freq in min_frequency.items():
                 if token in self.ngram2word2idx[ngram]:
                     freq_dict[token] = freq
 
             frequency.update(freq_dict)
+            print(f"Len freq Ngram: {ngram} -> {len(frequency)}")
             most_common = frequency.most_common(n_tokens_per_ngram[ngram-1])
+            print(f"Most common: {ngram} -> {len(most_common)}")
 
             frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
             frequencies.append(most_common)
