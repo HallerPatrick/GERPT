@@ -49,7 +49,6 @@ def main():
     print("Saving:")
     print(f"Tokenized dataset: {args.saved_data}")
     print(f"Dictionary object: {args.saved_dict}")
-    print(f"Dictionary file:   {dict_file}")
     print("=" * 80)
 
     # torch.save(tokenized_dataset, args.saved_data, pickle_protocol=4)

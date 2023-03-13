@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any, Callable, Optional, List
 
 import pytorch_lightning as pl
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 import torch
 from torch import Tensor
 
@@ -12,10 +13,17 @@ import pyarrow as pa
 import numpy as np
 
 from datasets.features.features import _ArrayXDExtensionType, _is_zero_copy_only
-from datasets.formatting.formatting import _is_array_with_nulls, _unnest, Formatter, BaseArrowExtractor
+from datasets.formatting.formatting import (
+    _is_array_with_nulls,
+    _unnest,
+    Formatter,
+    BaseArrowExtractor,
+)
 
 import torch.nn.functional as F
 
+from rich import print as rich_print
+from rich.panel import Panel
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -24,13 +32,14 @@ from lightning_fabric.utilities.rank_zero import _get_rank
 
 strats = {
     "linear": lambda x: x,
-    "log": lambda x: math_log(x+1),
-    "exp": lambda x: x**2
+    "log": lambda x: math_log(x + 1),
+    "exp": lambda x: x**2,
 }
+
 
 def n_dist(n: int, strategy: str) -> List[float]:
     """dist of ngram weight is logarithmic"""
-    ns = list(range(1, n+1))
+    ns = list(range(1, n + 1))
     xs = list(map(strats[strategy], ns))
     result = list(map(lambda x: x / sum(xs), xs))
     return result
@@ -39,7 +48,7 @@ def n_dist(n: int, strategy: str) -> List[float]:
 def split_range(i, ds_split, num_splits):
     split_len = len(ds_split)
     split_size = split_len // num_splits
-    start, end = (i*split_size), ((i+1)*split_size)
+    start, end = (i * split_size), ((i + 1) * split_size)
     if end > split_len:
         end = split_len
 
@@ -47,6 +56,7 @@ def split_range(i, ds_split, num_splits):
         start += 1
 
     return start, end
+
 
 def pack(integer_list):
     """Pack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
@@ -58,14 +68,14 @@ def pack(integer_list):
         packed_integer |= integer << (16 * i)
     return packed_integer
 
-def pack_tensor(tensor: Tensor) -> Tensor:
 
+def pack_tensor(tensor: Tensor) -> Tensor:
     # Assume n-gram is first dimension
     assert len(tensor.shape) == 2
-    
+
     return torch.tensor([pack(tensor[:, col_i]) for col_i in range(tensor.size(1))])
-        
-        
+
+
 def unpack(packed_integer):
     """Unpack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
     integer_list = []
@@ -75,34 +85,36 @@ def unpack(packed_integer):
         integer_list.append(integer)
     return integer_list
 
+
 def unpack_tensor(tensor: Tensor) -> Tensor:
     assert len(tensor.shape) == 1
-    
+
     unpacked_sequence = [unpack(i) for i in tensor]
 
     return torch.tensor(unpacked_sequence, dtype=torch.int64).t().to(tensor.device)
 
-def unpack_batched_tensor(tensor: Tensor) -> Tensor:
 
+def unpack_batched_tensor(tensor: Tensor) -> Tensor:
     assert len(tensor.shape) == 2, f"But dim is {tensor.shape}"
 
     # Expect batch dimension second
-    ts = [unpack_tensor(tensor[:, batch_i]).unsqueeze(-1) for batch_i in range(tensor.size(1))]
+    ts = [
+        unpack_tensor(tensor[:, batch_i]).unsqueeze(-1)
+        for batch_i in range(tensor.size(1))
+    ]
 
     return torch.cat(ts, dim=-1).to(tensor.device)
 
 
-
-
 class TimePerEpochCallback(Callback):
     def on_train_epoch_start(
-            self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
         self.start = timeit.default_timer()
         return super().on_train_epoch_start(trainer, pl_module)
 
     def on_train_epoch_end(
-            self, trainer: pl.Trainer, pl_module: pl.LightningModule
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
     ) -> None:
         end = timeit.default_timer()
         trainer.logger.log_metrics(
@@ -110,23 +122,35 @@ class TimePerEpochCallback(Callback):
         )
         return super().on_train_epoch_end(trainer, pl_module)
 
-class EarlyStoppingOnLRCallback(Callback):
 
+class EarlyStoppingOnLRCallback(Callback):
     def __init__(self, lr_threshold) -> None:
-        super().__init__()  
+        super().__init__()
         self.lr_threshold = lr_threshold
-    
-    def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int) -> Optional[int]:
+
+    def on_train_batch_start(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        batch: Any,
+        batch_idx: int,
+    ) -> Optional[int]:
         current_lr = trainer.optimizers[0].param_groups[0]["lr"]
 
         if current_lr < self.lr_threshold:
-            self._log_info(trainer, f"Early stopping training. Learning Rate under threshold of {self.lr_threshold}", False)
+            self._log_info(
+                trainer,
+                f"Early stopping training. Learning Rate under threshold of {self.lr_threshold}",
+                False,
+            )
             trainer.should_stop = True
 
         return super().on_train_batch_start(trainer, pl_module, batch, batch_idx)
 
     @staticmethod
-    def _log_info(trainer: Optional["pl.Trainer"], message: str, log_rank_zero_only: bool) -> None:
+    def _log_info(
+        trainer: Optional["pl.Trainer"], message: str, log_rank_zero_only: bool
+    ) -> None:
         rank = _get_rank(
             strategy=(trainer.strategy if trainer is not None else None),  # type: ignore[arg-type]
         )
@@ -135,6 +159,38 @@ class EarlyStoppingOnLRCallback(Callback):
         message = rank_prefixed_message(message, rank)
         if rank is None or not log_rank_zero_only or rank == 0:
             print(message)
+
+
+class TextGenerationCallback(Callback):
+    def __init__(self, interval: int) -> None:
+        super().__init__()
+
+        self.interval = interval
+
+    def on_train_epoch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        if (
+            trainer.current_epoch != 0
+            and trainer.lightning_module.generate
+            and trainer.current_epoch % self.interval == 0
+        ):
+            if torch.cuda.is_available():
+
+                @rank_zero_only
+                def _generate_text():
+                    result = trainer.lightning_module.generate_text()
+                    rich_print(Panel(result, title="[green]Generated text"))
+
+                _generate_text()
+
+            else:
+                result = trainer.lightning_module.generate_text()
+                rich_print(Panel(result, title="[green]Generated text"))
+
+            trainer.lightning_module.train()
+
+        return super().on_train_epoch_end(trainer, pl_module)
 
 
 class ModelCheckpointCallback(ModelCheckpoint):
@@ -155,7 +211,6 @@ def display_text(t, dictionary, ngram):
     print()
 
 
-
 def display_prediction(prediction, dictionary):
     prediction = F.softmax(prediction.view(-1), dim=0)
     preds = []
@@ -169,7 +224,9 @@ def display_prediction(prediction, dictionary):
         print("{:9}: {:.15f},".format(repr(dictionary.idx2word[i]), pred))
 
 
-def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int, total_size: int) -> int:
+def calcualate_transformer_hidden_size(
+    d: int, e: int, l: int, h: int, hid: int, total_size: int
+) -> int:
     """
 
     Args
@@ -186,23 +243,21 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int,
     from sympy import Symbol
     from sympy.solvers import solve
 
-
-
     hid = Symbol("hid")
 
     result = solve(
-        ( d * e + e ) # encoder
-        + l * (
-            (e * (3 * e) + (3 * e)) #atnn_in
-            + (e * e + e) #atnn_out
-            + (e * hid + hid) #layer1
-            + (e * hid + e) #layer2
-            + (2 * (2 * e)) #norm
+        (d * e + e)  # encoder
+        + l
+        * (
+            (e * (3 * e) + (3 * e))  # atnn_in
+            + (e * e + e)  # atnn_out
+            + (e * hid + hid)  # layer1
+            + (e * hid + e)  # layer2
+            + (2 * (2 * e))  # norm
         )
-        + (d * e + e) # decoder
+        + (d * e + e)  # decoder
         - total_size,
-        hid
-
+        hid,
     )
 
     if isinstance(result, list):
@@ -213,11 +268,9 @@ def calcualate_transformer_hidden_size(d: int, e: int, l: int, h: int, hid: int,
 
 def lstm_size(e, h):
     c = 4
-    lstm_size = (
-        e * h + h * h + h + h
-    ) * 4
+    lstm_size = (e * h + h * h + h + h) * 4
 
-    lstm_size = 4 * ( h * (e + h) + h + h )
+    lstm_size = 4 * (h * (e + h) + h + h)
     return lstm_size
 
 
@@ -234,18 +287,16 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
 
     """
 
-
     from sympy import Symbol
     from sympy.solvers import solve
 
-
     encoder_size = d * e + e
     lstm_size = (
-            (c * e * h)
-            + (c * h * h)
-            + (c * h)
-            + (c * h)
-            + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
+        (c * e * h)
+        + (c * h * h)
+        + (c * h)
+        + (c * h)
+        + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
     )
     decoder_size = d * h + d
     print(f"Encoder Size: {encoder_size}")
@@ -258,11 +309,11 @@ def calculate_lstm_hidden_size(d: int, e: int, c: int, l: int, total_size: int, 
     result = solve(
         (d * e + e)
         + (
-                (c * e * h)
-                + (c * h * h)
-                + (c * h)
-                + (c * h)
-                + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
+            (c * e * h)
+            + (c * h * h)
+            + (c * h)
+            + (c * h)
+            + (l - 1) * ((c * h * h) + (c * h * h) + (c * h) + (c * h))
         )
         + (d * h + d)
         - total_size,
@@ -346,7 +397,7 @@ def concat_dataset(rows: List[List[List[int]]]):
 
     # with Pool(num_workers) as pool:
     # sublists = process_map(np_array, rows, max_workers=num_workers, chunksize=chunksize)
-    
+
     return np.concatenate((rows), axis=1, dtype=np.int16)
 
 
@@ -364,9 +415,9 @@ def get_size(obj, seen=None):
     if isinstance(obj, dict):
         size += sum([get_size(v, seen) for v in obj.values()])
         size += sum([get_size(k, seen) for k in obj.keys()])
-    elif hasattr(obj, '__dict__'):
+    elif hasattr(obj, "__dict__"):
         size += get_size(obj.__dict__, seen)
-    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+    elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, bytearray)):
         size += sum([get_size(i, seen) for i in obj])
     return size
 
@@ -382,13 +433,18 @@ class StackedNumpyArrowExtractor(BaseArrowExtractor[dict, np.ndarray, dict]):
         return self._arrow_array_to_numpy(pa_table[pa_table.column_names[0]])
 
     def extract_batch(self, pa_table: pa.Table) -> dict:
-        return {col: self._arrow_array_to_numpy(pa_table[col]) for col in pa_table.column_names}
+        return {
+            col: self._arrow_array_to_numpy(pa_table[col])
+            for col in pa_table.column_names
+        }
 
     def _arrow_array_to_numpy(self, pa_array: pa.Array) -> np.ndarray:
         if isinstance(pa_array, pa.ChunkedArray):
             if isinstance(pa_array.type, _ArrayXDExtensionType):
                 # don't call to_pylist() to preserve dtype of the fixed-size array
-                zero_copy_only = _is_zero_copy_only(pa_array.type.storage_dtype, unnest=True)
+                zero_copy_only = _is_zero_copy_only(
+                    pa_array.type.storage_dtype, unnest=True
+                )
                 if pa_array.type.shape[0] is None:
                     array: List = [
                         row
@@ -397,42 +453,58 @@ class StackedNumpyArrowExtractor(BaseArrowExtractor[dict, np.ndarray, dict]):
                     ]
                 else:
                     array: List = [
-                        row for chunk in pa_array.chunks for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
+                        row
+                        for chunk in pa_array.chunks
+                        for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
                     ]
             else:
                 zero_copy_only = _is_zero_copy_only(pa_array.type) and all(
                     not _is_array_with_nulls(chunk) for chunk in pa_array.chunks
                 )
                 array: List = [
-                    row for chunk in pa_array.chunks for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
+                    row
+                    for chunk in pa_array.chunks
+                    for row in chunk.to_numpy(zero_copy_only=zero_copy_only)
                 ]
         else:
             if isinstance(pa_array.type, _ArrayXDExtensionType):
                 # don't call to_pylist() to preserve dtype of the fixed-size array
-                zero_copy_only = _is_zero_copy_only(pa_array.type.storage_dtype, unnest=True)
+                zero_copy_only = _is_zero_copy_only(
+                    pa_array.type.storage_dtype, unnest=True
+                )
                 if pa_array.type.shape[0] is None:
-                    array: List = pa_array.to_list_of_numpy(zero_copy_only=zero_copy_only)
+                    array: List = pa_array.to_list_of_numpy(
+                        zero_copy_only=zero_copy_only
+                    )
                 else:
                     array: List = pa_array.to_numpy(zero_copy_only=zero_copy_only)
             else:
-                zero_copy_only = _is_zero_copy_only(pa_array.type) and not _is_array_with_nulls(pa_array)
+                zero_copy_only = _is_zero_copy_only(
+                    pa_array.type
+                ) and not _is_array_with_nulls(pa_array)
                 array: List = pa_array.to_numpy(zero_copy_only=zero_copy_only).tolist()
         if len(array) > 0:
             if any(
-                (isinstance(x, np.ndarray) and (x.dtype == object or x.shape != array[0].shape))
+                (
+                    isinstance(x, np.ndarray)
+                    and (x.dtype == object or x.shape != array[0].shape)
+                )
                 or (isinstance(x, float) and np.isnan(x))
                 for x in array
             ):
                 if isinstance(array[0], np.ndarray):
                     array = array[0]
-                
-                result = np.stack(np.array(array, copy=False, **{**self.np_array_kwargs, "dtype": object}))
+
+                result = np.stack(
+                    np.array(
+                        array, copy=False, **{**self.np_array_kwargs, "dtype": object}
+                    )
+                )
                 return [result]
         return np.array(array, copy=False, **self.np_array_kwargs)
 
 
 class StackedNumpyFormatter(Formatter[dict, np.ndarray, dict]):
-
     numpy_arrow_extractor = StackedNumpyArrowExtractor
 
     def __init__(self, features=None, decoded=True, **np_array_kwargs):
@@ -446,19 +518,25 @@ class StackedNumpyFormatter(Formatter[dict, np.ndarray, dict]):
         return row
 
     def format_column(self, pa_table: pa.Table) -> np.ndarray:
-        column = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_column(pa_table)
+        column = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_column(
+            pa_table
+        )
         if self.decoded:
-            column = self.python_features_decoder.decode_column(column, pa_table.column_names[0])
+            column = self.python_features_decoder.decode_column(
+                column, pa_table.column_names[0]
+            )
         return column
 
     def format_batch(self, pa_table: pa.Table) -> dict:
-        batch = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_batch(pa_table)
+        batch = self.numpy_arrow_extractor(**self.np_array_kwargs).extract_batch(
+            pa_table
+        )
         if self.decoded:
             batch = self.python_features_decoder.decode_batch(batch)
         return batch
+
 
 def set_stacked_numpy_formatter():
     from datasets.formatting import _register_formatter
 
     _register_formatter(StackedNumpyFormatter, "stacked-numpy", aliases=["snp"])
-

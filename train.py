@@ -18,7 +18,7 @@ from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.train_strategy import TrainStrategy
-from src.utils import TimePerEpochCallback, EarlyStoppingOnLRCallback
+from src.utils import TextGenerationCallback, TimePerEpochCallback, EarlyStoppingOnLRCallback
 from train_ds import train_ds
 
 TEST = False
@@ -45,12 +45,15 @@ def pl_callbacks():
 
     early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.3)
 
+    text_gen_callback = TextGenerationCallback(interval=5)
+
     return [
         checkpoint_callback,
         log_time_per_epoch_callback,
         rick_prog_bar_callback,
         learning_rate_callback,
-        early_stopping_callback
+        early_stopping_callback,
+        text_gen_callback
     ]
 
 
@@ -100,13 +103,14 @@ if __name__ == "__main__":
         strategy=strategy,
         accelerator="auto",
         devices=args.gpus,
+        precision=16,
         gradient_clip_val=0.25,
         callbacks=pl_callbacks(),
         # Disable validation during training
         limit_val_batches=0.0,
         fast_dev_run=False,
         reload_dataloaders_every_n_epochs=1,
-        log_every_n_steps=10
+        log_every_n_steps=10,
     )
 
     # Train model based on data module and strategy

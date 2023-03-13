@@ -134,27 +134,30 @@ class RNNModel(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
-        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=[4, 5, 6, 7], gamma=0.25, verbose=True
-        )
-        # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        #     optimizer,
-        #     "min",
-        #     factor=0.25,
-        #     verbose=True,
-        #     min_lr=1.25,
+        # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        #     optimizer, milestones=[4, 5, 6, 7], gamma=0.25, verbose=True
         # )
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            "min",
+            factor=0.25,
+            verbose=True,
+            patience=50
+        )
         return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss"}]
+    
+    def _debug_input(self, source, target):
+        print("Source:")
+        self.dictionary.print_batch(source)
+        print("Target:")
+        self.dictionary.print_batch(target)
+        input("continue")
 
     def _step(self, batch):
         source, target = batch[0].permute((1, 2, 0)), batch[1].permute((1, 2, 0))
 
         if DEBUG:
-            print("Source:")
-            self.dictionary.print_batch(source)
-            print("Target:")
-            self.dictionary.print_batch(target)
-            input("continue")
+            self._debug_input(source, target)
 
         batch_size = source.size(2)
 
@@ -164,26 +167,15 @@ class RNNModel(pl.LightningModule):
         decoded, hidden = self.forward(source, self.hidden)
         self.hidden = repackage_hidden(hidden)
 
-        if self.unigram_ppl:
-            target = soft_n_hot(
-                target,
-                len(self.dictionary.ngram2idx2word[1]),
-                self.strategy,
-                self.weighted_labels,
-                self.unigram_ppl,
-                self.encoder.packed,
-            )
-            target = target.view(-1, len(self.dictionary.ngram2idx2word[1]))
-        else:
-            target = soft_n_hot(
-                target,
-                self.ntokens,
-                self.strategy,
-                self.weighted_labels,
-                self.unigram_ppl,
-                self.encoder.packed,
-            )
-            target = target.view(-1, self.ntokens)
+        target = soft_n_hot(
+            target,
+            self.ntokens,
+            self.strategy,
+            self.weighted_labels,
+            self.unigram_ppl,
+            self.encoder.packed,
+        )
+        target = target.view(-1, self.ntokens)
 
         loss = self.criterion(decoded, target)
         return loss, decoded, target
@@ -196,29 +188,6 @@ class RNNModel(pl.LightningModule):
             self.log("train/ppl", math.exp(loss), prog_bar=True)
         except:
             pass
-
-        if self.unigram_ppl:
-            # Unigram output
-            output = torch.index_select(
-                decoded,
-                1,
-                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
-                    self.device
-                ),
-            )
-            targets = torch.index_select(
-                target,
-                1,
-                torch.tensor(list(self.dictionary.ngram2idx2word[1].keys())).to(
-                    self.device
-                ),
-            )
-            # Back to simple one hot encoding
-            targets[targets != 0] = 1
-
-            unigram_loss = self.criterion.unigram_loss(output, targets)
-            self.log("train/unigram_loss", unigram_loss, prog_bar=True)
-            self.log("train/unigram_ppl", math.exp(unigram_loss), prog_bar=True)
 
         return loss
 
@@ -246,16 +215,6 @@ class RNNModel(pl.LightningModule):
         # print(batch.size())
 
     def training_epoch_end(self, _) -> None:
-        self.epoch += 1
-
-        if self.generate:
-            # Only rank zero gives output
-            print("Generating")
-            result = self.generate_text()
-            print(result)
-            if result:
-                print(Panel(result, title="[green]Generated text"))
-            self.train()
         # Reset hidden after each epoch
         self.hidden = None
 
@@ -369,15 +328,8 @@ class RNNModel(pl.LightningModule):
         emb = self.encoder(input)
         emb = self.drop(emb)
 
-        if isinstance(self.rnn, nn.LSTM):
-            self.rnn.flatten_parameters()
-            output, hidden = self.rnn(emb, hidden)
-        else:
-            emb = torch.transpose(emb, 0, 1).contiguous()
-            print(emb.size())
-            print(hidden[0].size())
-            print(hidden[1].size())
-            output, hidden = self.rnn(emb, hidden)
+        self.rnn.flatten_parameters()
+        output, hidden = self.rnn(emb, hidden)
 
         decoded = self.decoder(output)
 
@@ -446,8 +398,6 @@ class RNNModel(pl.LightningModule):
             "dropout": self.dropout,
             "ngrams": self.ngrams,
         }
-
-        print(model_state)
 
         return model_state
 
