@@ -1,6 +1,6 @@
 import sys
 import timeit
-from math import log
+from math import log as math_log
 from datetime import timedelta
 from typing import Any, Callable, Optional, List
 
@@ -19,10 +19,12 @@ import torch.nn.functional as F
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from pytorch_lightning.utilities.rank_zero import rank_prefixed_message
+from lightning_fabric.utilities.rank_zero import _get_rank
 
 strats = {
     "linear": lambda x: x,
-    "log": lambda x: log(x+1),
+    "log": lambda x: math_log(x+1),
     "exp": lambda x: x**2
 }
 
@@ -107,6 +109,32 @@ class TimePerEpochCallback(Callback):
             {"train/secs_per_epoch": timedelta(seconds=end - self.start).seconds}
         )
         return super().on_train_epoch_end(trainer, pl_module)
+
+class EarlyStoppingOnLRCallback(Callback):
+
+    def __init__(self, lr_threshold) -> None:
+        super().__init__()  
+        self.lr_threshold = lr_threshold
+    
+    def on_train_batch_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", batch: Any, batch_idx: int) -> Optional[int]:
+        current_lr = trainer.optimizers[0].param_groups[0]["lr"]
+
+        if current_lr < self.lr_threshold:
+            self._log_info(trainer, f"Early stopping training. Learning Rate under threshold of {self.lr_threshold}", False)
+            trainer.should_stop = True
+
+        return super().on_train_batch_start(trainer, pl_module, batch, batch_idx)
+
+    @staticmethod
+    def _log_info(trainer: Optional["pl.Trainer"], message: str, log_rank_zero_only: bool) -> None:
+        rank = _get_rank(
+            strategy=(trainer.strategy if trainer is not None else None),  # type: ignore[arg-type]
+        )
+        if trainer is not None and trainer.world_size <= 1:
+            rank = None
+        message = rank_prefixed_message(message, rank)
+        if rank is None or not log_rank_zero_only or rank == 0:
+            print(message)
 
 
 class ModelCheckpointCallback(ModelCheckpoint):

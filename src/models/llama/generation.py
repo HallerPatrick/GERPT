@@ -43,6 +43,8 @@ class LLaMA:
         tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).cuda().long()
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t).long()
+
+
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0
@@ -124,9 +126,9 @@ def load(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int) -
 
 def load_model(ckpt_dir: str, tokenizer_path: str, local_rank: int, world_size: int) -> LLaMA:
 
-    local_rank, world_size = setup_model_parallel()
-    if local_rank > 0:
-        sys.stdout = open(os.devnull, 'w')
+    # local_rank, world_size = setup_model_parallel()
+    # if local_rank > 0:
+    #     sys.stdout = open(os.devnull, 'w')
 
     return load(ckpt_dir, tokenizer_path, local_rank, world_size)
 

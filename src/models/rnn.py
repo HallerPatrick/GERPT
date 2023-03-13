@@ -135,7 +135,7 @@ class RNNModel(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.lr)
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=[4, 5, 6], gamma=0.25, verbose=True
+            optimizer, milestones=[4, 5, 6, 7], gamma=0.25, verbose=True
         )
         # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         #     optimizer,

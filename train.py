@@ -18,7 +18,7 @@ from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.models import load_model
 from src.models.transformer import NGMETokenizer
 from src.train_strategy import TrainStrategy
-from src.utils import TimePerEpochCallback
+from src.utils import TimePerEpochCallback, EarlyStoppingOnLRCallback
 from train_ds import train_ds
 
 TEST = False
@@ -43,11 +43,14 @@ def pl_callbacks():
 
     learning_rate_callback = LearningRateMonitor()
 
+    early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.3)
+
     return [
         checkpoint_callback,
         log_time_per_epoch_callback,
         rick_prog_bar_callback,
         learning_rate_callback,
+        early_stopping_callback
     ]
 
 

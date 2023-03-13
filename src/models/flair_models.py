@@ -268,7 +268,6 @@ def patch_flair_lstm():
             nlayers=state["nlayers"],
             ngrams=state["ngrams"],
             hidden_size=state["hidden_size"],
-            unk_t=state["unk_t"],
             nout=state["nout"],
             embedding_size=state["embedding_size"],
             is_forward_lm=state["is_forward_lm"],
