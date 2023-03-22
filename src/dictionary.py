@@ -24,11 +24,13 @@ class Dictionary:
         self,
         ngram: int,
         max_dict_size: int,
+        min_frequency: int,
         ngme: str,
         packed: bool = False,
     ):
         self.ngram = ngram
         self.max_dict_size = max_dict_size
+        self.min_frequency = min_frequency
         self.ngme = ngme
         self.packed = packed
 
@@ -63,6 +65,7 @@ class Dictionary:
         dataset: Union[Dataset, Iterator[Dataset]],
         ngram: int,
         max_dict_size: int,
+        min_frequency: int,
         ngme: str,
         packed: bool,
     ) -> Tuple["Dictionary", List[Dataset]]:
@@ -72,7 +75,7 @@ class Dictionary:
         dataset. If we would not return it, we would have to recreate the
         iterator.
         """
-        dictionary = cls(ngram, max_dict_size, ngme, packed)
+        dictionary = cls(ngram, max_dict_size, min_frequency, ngme, packed)
 
         # Populate dictionary
         if ngme == "compositional":
@@ -93,7 +96,7 @@ class Dictionary:
         # Check if we need to apply unking
         if dictionary.max_dict_size == 0:
             dictionary.max_dict_size = len(dictionary)
-
+        
         if dictionary.max_dict_size < len(dictionary):
             print("Apply unking...", end="")
             dictionary = dictionary.unking()
@@ -121,6 +124,8 @@ class Dictionary:
         # Uni-gram tokens
         for token in get_unigram_tokens():
             self.add_ngram(token, 1)
+
+        assert "\n" in self.ngram2word2idx[1]
 
         # Add new n-gram token only if all uni-gram parts exist
         for n in range(1, self.ngram + 1):
@@ -182,7 +187,9 @@ class Dictionary:
                     self.ngram2word2idx[ngram][word] = self.current_max_idx
                     self.current_max_idx += 1
 
-    def _calculate_ngram_order_dict_size(self, ngrams: int, max_dict_size: Optional[int] = None) -> int:
+    def _calculate_ngram_order_dict_size(
+        self, ngrams: int, max_dict_size: Optional[int] = None
+    ) -> int:
         """Calculate the number of tokens for a given ngram order"""
 
         if not max_dict_size:
@@ -204,18 +211,20 @@ class Dictionary:
         return new_occurences.astype(int)
 
     def _remove_whitespace_tokens(self):
-        """Remove ngram tokens that contain whitespaces"""
+        """Remove n+1gram tokens that contain unigram tokens we dont want"""
+        special_tokens = [" ", "\n"]
         # Ignore ungiram
         for ngram in range(2, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].copy().items():
-                if " " in token:
-                    self.ngram2idx2word[ngram].pop(idx)
-                    self.ngram2word2idx[ngram].pop(token)
-                    self.current_max_idx -= 1
-                    del self.frequencies[token]
+                for special_token in special_tokens:
+                    if special_token in token:
+                        self.ngram2idx2word[ngram].pop(idx)
+                        self.ngram2word2idx[ngram].pop(token)
+                        self.current_max_idx -= 1
+                        del self.frequencies[token]
 
     def unking(
-        self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None
+            self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None, min_frequency: Optional[int] = None
     ):
         """Trim the dictionary size to `new_max_dict_size` or self.max_dict_size.
 
@@ -225,20 +234,26 @@ class Dictionary:
         max_dict_size = new_max_dict_size if new_max_dict_size else self.max_dict_size
 
         ngrams = ngrams if ngrams else self.ngram
-        
+
+        min_frequency = min_frequency if min_frequency else self.min_frequency
+
         print(f"Total count: {len(self)}")
 
         self._remove_whitespace_tokens()
         print(f"Removed whitespaces: {len(self)}")
 
-        min_frequency = {k: v for k, v in self.frequencies.items() if v > 10_000}
+        min_frequency = {k: v for k, v in self.frequencies.items() if v > min_frequency}
         print(f"Min occurence 10 000: {len(min_frequency)}")
 
         # Pre-define the number of tokens per ngram
         if ngrams <= 4:
-            n_tokens_per_ngram = self._calculate_ngram_order_dict_size(ngrams, new_max_dict_size)
+            n_tokens_per_ngram = self._calculate_ngram_order_dict_size(
+                ngrams, new_max_dict_size
+            )
         else:
-            n_tokens_per_ngram = list(map(lambda x: round(x*max_dict_size), utils.n_dist(ngrams, "exp")))
+            n_tokens_per_ngram = list(
+                map(lambda x: round(x * max_dict_size), utils.n_dist(ngrams, "exp"))
+            )
 
         print(n_tokens_per_ngram)
 
@@ -261,7 +276,7 @@ class Dictionary:
         frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
         frequencies.append(most_common)
 
-        for ngram in range(2, ngrams+1):
+        for ngram in range(2, ngrams + 1):
             frequency = Counter()
 
             freq_dict = {}
@@ -272,13 +287,13 @@ class Dictionary:
 
             frequency.update(freq_dict)
             print(f"Len freq Ngram: {ngram} -> {len(frequency)}")
-            most_common = frequency.most_common(n_tokens_per_ngram[ngram-1])
+            most_common = frequency.most_common(n_tokens_per_ngram[ngram - 1])
             print(f"Most common: {ngram} -> {len(most_common)}")
 
             frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
             frequencies.append(most_common)
 
-        dictionary = Dictionary(ngrams, max_dict_size, self.ngme)
+        dictionary = Dictionary(ngrams, max_dict_size, min_frequency, self.ngme)
 
         marker_tokens = ["<unk>", "<pad>", "<start>"]
 
@@ -291,7 +306,6 @@ class Dictionary:
                         or token in marker_tokens
                         # or ngram == 1 TODO: Do we really need to ensure all unigrams are in?
                     ):
-
                         if token in marker_tokens:
                             marker_idx = dictionary.add_ngram(token, ngram)
                             dictionary._marker_tokens[ngram].append(marker_idx)
@@ -305,6 +319,8 @@ class Dictionary:
 
         dictionary.frequencies = new_frequency
 
+        print(dictionary.ngram2word2idx)
+
         return dictionary
 
     def get_marker_tokens(self) -> Iterator[int]:
@@ -316,7 +332,7 @@ class Dictionary:
     def __len__(self):
         return self.current_max_idx
 
-    def get_item_for_index(self, idx):
+    def get_item_for_index(self, idx) -> str:
         """Return the token for a given index."""
         for idxs in self.ngram2idx2word.values():
             if idx in idxs:
@@ -347,7 +363,14 @@ class Dictionary:
                     frequency = -1
 
                 index += 1
-                vocab["vocab"].append({"token": token, "index": idx, "frequency": frequency, "ngram": ngram})
+                vocab["vocab"].append(
+                    {
+                        "token": token,
+                        "index": idx,
+                        "frequency": frequency,
+                        "ngram": ngram,
+                    }
+                )
 
         with open(vocab_file, "w", encoding="utf-8") as writer:
             json.dump(vocab, writer, indent=4, ensure_ascii=False)
@@ -357,12 +380,17 @@ class Dictionary:
         line: Union[str, List[str]],
         id_type=torch.int64,
         return_tensor: Optional[str] = None,
+        suffix_token: Optional[str] = None,
         with_text: bool = True,
     ) -> dict:
         if self.ngme in ["dense", "explicit"]:
-            return self._tokenize_line_explicit(line, id_type, return_tensor, with_text)
+            return self._tokenize_line_explicit(
+                line, id_type, return_tensor, suffix_token, with_text
+            )
         elif self.ngme in ["sparse", "compositional"]:
-            return self._tokenize_line_compositional(line, id_type, return_tensor, with_text)
+            return self._tokenize_line_compositional(
+                line, id_type, return_tensor, suffix_token, with_text
+            )
         else:
             raise ValueError(f"Unknown NGME type: {self.ngme}")
 
@@ -371,6 +399,7 @@ class Dictionary:
         line: Union[str, List[str]],
         id_type,
         return_tensor: str = "list",
+        suffix_token: Optional[str] = None,
         with_text=True,
     ):
         ngram_sequences = []
@@ -381,6 +410,9 @@ class Dictionary:
             # Adding start offsets for all ngrams
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(line))
+
+            if suffix_token:
+                words.extend(suffix_token)
 
             ids = []
             length = 0
@@ -404,11 +436,8 @@ class Dictionary:
                 min_length = length
 
             ngram_sequences.append(seq)
-
-            try:
-                s = self.shift_left(seq, n)
-            except IndexError:
-                s = seq
+            
+            s = self.shift_left(seq, n)
             ngram_target_sequences.append(s)
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
@@ -424,6 +453,13 @@ class Dictionary:
             return_value = {"source": sequence, "target": target}
 
         return self.convert_return_value(return_value, return_tensor)
+
+    def decode(self, tokens):
+        """Just take the unigram tokens and decode"""
+        decoded = []
+        for n_gram_seq in tokens:
+            decoded.append("".join([self.get_item_for_index(idx) for idx in n_gram_seq]))
+        return decoded
 
     @staticmethod
     def convert_return_value(return_dict, return_tensor):
@@ -468,7 +504,12 @@ class Dictionary:
         return list(tensor)
 
     def _tokenize_line_compositional(
-        self, line: Union[str, List[str]], id_type, return_tensor, with_text=True
+        self,
+        line: Union[str, List[str]],
+        id_type,
+        return_tensor,
+        suffix_token: Optional[str] = None,
+        with_text=True,
     ):
         """
 
@@ -491,6 +532,9 @@ class Dictionary:
             words = ["<start>" for _ in range(1, n)]
 
             words.extend(list(line))
+
+            if suffix_token:
+                words.extend(suffix_token)
 
             ids = []
             length = 0
@@ -549,19 +593,18 @@ class Dictionary:
         if isinstance(t, list):
             t = torch.tensor(t)
 
-        # Apply padding later!
-        # for i in range(1, shifts + 1):
-        #     st[0][-i] = self.ngram2word2idx[i]["<pad>"]
-        return torch.roll(t, -shifts, 1)
+        shifted_t =  torch.roll(t, -shifts, 1)
 
-    def create_weight_tensor(
-        self, unigram_ppl: bool, weighted_loss: bool = True
-    ) -> torch.Tensor:
+        shifted_t[0][-shifts:-1] = self.ngram2word2idx[shifts]["<pad>"]
+        shifted_t[0][-1] = self.ngram2word2idx[shifts]["<pad>"]
+        return shifted_t
+
+    def create_weight_tensor(self, weighted_loss: bool = True) -> torch.Tensor:
         unked_freqs = self.frequencies.most_common(self.max_dict_size)
 
-        t = torch.ones(len(self.ngram2idx2word[1])) if unigram_ppl else torch.ones(len(self))
+        t = torch.ones(len(self))
 
-        if not unigram_ppl and weighted_loss:
+        if weighted_loss:
             for token, freq in unked_freqs:
                 t[self.ngram2word2idx[self.token_to_n_order(token)][token]] = freq
 
@@ -614,13 +657,16 @@ class Dictionary:
         for seq in seqs:
             print(seq)
 
+
 def collect_ngrams(line, n):
     """Collect ngrams from a line of text"""
     return ["".join(ngram) for ngram in nltk.ngrams(line, n)]
 
+
 def add_ngrams_from_text(text: str, ngrams: List[int]):
     """Add ngrams from a text to a ngram dictionary"""
     return {ngram: collect_ngrams(text, ngram) for ngram in ngrams}
+
 
 def get_unigram_tokens() -> List[str]:
     """Get unigram tokens from flair"""

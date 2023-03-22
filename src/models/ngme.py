@@ -58,7 +58,6 @@ def soft_n_hot(
     num_classes: int,
     strategy: str,
     weighted=False,
-    unigram_ppl=False,
     packed=False,
 ):
     if packed:
@@ -76,9 +75,6 @@ def soft_n_hot(
         soft_labels = soft_dist(input.size()[0])
 
     for i, t in enumerate(input):
-        if unigram_ppl and i == 0:
-            ret.scatter_(-1, t.unsqueeze(-1), 1)
-            break
         ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
     return ret

@@ -26,7 +26,7 @@ def filter_empty_row(example):
 
 def tokenize(row, dictionary: Dictionary):
     result = dictionary.tokenize_line(
-        row["text"], id_type=torch.int16, return_tensor="np"
+        row["text"], id_type=torch.int16, return_tensor="np", suffix_token="\n"
     )
     return {**result, "text_len": len(row["text"])}
 
@@ -463,6 +463,7 @@ class SplitProcessor(Processor):
         for idx, ds in enumerate(dataset):
             print(f"Processing split {idx}")
             print("-"*80)
+            print(dataset)
             ds = self.process_data(ds)
             self._write_dataset(ds, idx)
             print("-"*80)

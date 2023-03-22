@@ -130,11 +130,6 @@ def argparser_train() -> argparse.Namespace:
 
     parser.add_argument("--ngram", type=int, help="N-Grams used")
     parser.add_argument(
-        "--fallback",
-        action="store_true",
-        help="Fallback on n-1-gram if UNK for n-gram",
-    )
-    parser.add_argument(
         "--weighted-loss",
         action="store_true",
         help="Use a weighted loss for n-gram",

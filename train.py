@@ -28,8 +28,9 @@ torch.set_float32_matmul_precision("medium")
 def pl_callbacks():
     """Return a list of callbacks for the trainer"""
     checkpoint_callback = ModelCheckpoint(
-        monitor="train/loss",
-        save_on_train_epoch_end=True,
+        monitor="epoch",
+        every_n_epochs=10,
+        mode="max",
         dirpath="checkpoints",
         filename=args.save,
         verbose=True
@@ -45,7 +46,7 @@ def pl_callbacks():
 
     early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.3)
 
-    text_gen_callback = TextGenerationCallback(interval=5)
+    text_gen_callback = TextGenerationCallback(interval=10)
 
     return [
         checkpoint_callback,

@@ -44,7 +44,6 @@ class RNNModel(pl.LightningModule):
         is_forward_lm=True,
         document_delimiter: str = "\n",
         dropout=0.25,
-        unigram_ppl: bool = False,
         weighted_loss: bool = False,
         weighted_labels: bool = False,
         strategy: str = "const",
@@ -70,7 +69,6 @@ class RNNModel(pl.LightningModule):
         self.weighted_labels = weighted_labels
         self.weighted_loss = weighted_loss
         self.strategy = strategy
-        self.unigram_ppl = unigram_ppl
         self.lr = lr
 
         self.criterion = None
@@ -103,8 +101,6 @@ class RNNModel(pl.LightningModule):
         self.decoder = nn.Linear(
             hidden_size * 2 if self.bidirectional else hidden_size,
             self.ntokens
-            if not self.unigram_ppl
-            else len(self.dictionary.ngram2idx2word[1]),
         )
 
         self.save_hyperparameters()
@@ -122,7 +118,7 @@ class RNNModel(pl.LightningModule):
     def setup(self, stage) -> None:
         self.criterion = CrossEntropyLossSoft(
             weight=self.dictionary.create_weight_tensor(
-                self.unigram_ppl, self.weighted_loss
+                self.weighted_loss
             ),
         )
 
@@ -142,7 +138,7 @@ class RNNModel(pl.LightningModule):
             "min",
             factor=0.25,
             verbose=True,
-            patience=50
+            patience=120
         )
         return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss"}]
     
@@ -172,7 +168,6 @@ class RNNModel(pl.LightningModule):
             self.ntokens,
             self.strategy,
             self.weighted_labels,
-            self.unigram_ppl,
             self.encoder.packed,
         )
         target = target.view(-1, self.ntokens)
@@ -330,13 +325,7 @@ class RNNModel(pl.LightningModule):
 
         self.rnn.flatten_parameters()
         output, hidden = self.rnn(emb, hidden)
-
-        decoded = self.decoder(output)
-
-        if self.unigram_ppl:
-            decoded = decoded.view(-1, len(self.dictionary.ngram2idx2word[1]))
-        else:
-            decoded = decoded.view(-1, self.ntokens)
+        decoded = self.decoder(output).view(-1, self.ntokens)
 
         return decoded, hidden
 
@@ -525,3 +514,46 @@ class RNNModel(pl.LightningModule):
         output = torch.cat(output_parts)
 
         return output
+
+try:
+    import lm_eval
+    from lm_eval.base import BaseLM
+
+    from einops import rearrange
+
+    def decode(dictionary, tokens):
+        """Just take the unigram tokens and decode"""
+        unigram_tokens = tokens[0]
+        return "".join([dictionary.get_item_for_index(idx) for idx in unigram_tokens])
+
+    class EvalRNNModel(BaseLM):
+
+        def __init__(self, ckpt_path: str):
+            super().__init__()
+            self.model = RNNModel.load_from_checkpoint(ckpt_path)
+
+        def _model_call(self, inps):
+            # inps: [batch, ngram, sequence] -> [ngram, sequence, batch]
+            inps = rearrange(inps, "b n s -> n s b")
+            with torch.no_grad():
+                output =  self.model(inps)
+                print(output.size())
+                return output
+
+        def tok_encode(self, string: str):
+            return self.model.dictionary.tokenize_line(string)
+
+        def tok_decode(self, tokens):
+            return decode(self.model.dictionary, tokens)
+
+        def _model_generate(self, context, max_length, eos_token_id):
+            self.model.chars_to_gen = max_length
+            return self.model.generate_text()
+            
+
+
+
+
+
+except ImportError:
+    pass

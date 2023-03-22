@@ -25,6 +25,7 @@ def main():
         args.ngme,
         args.ngram,
         args.max_dict_size,
+        args.min_frequency,
         args.cpus,
         args.is_forward,
         args.packed,

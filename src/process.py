@@ -14,7 +14,7 @@ from src.processor import Processor
 
 def dataset_iterator(paths):
     for path in paths:
-        yield ld("text", data_files={"train": path})
+        yield ld("text", data_files={"train": path}) #, sample_by="document")
 
 
 def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict], DatasetDict], str]:
@@ -69,6 +69,7 @@ def process_tokenized_dataset(
     ngme: str,
     ngram: int,
     max_dict_size: int,
+    min_frequency: int,
     num_proc: int,
     is_forward: bool,
     packed: bool,
@@ -87,7 +88,7 @@ def process_tokenized_dataset(
         print("Building dictionary...", end="")
         # This might take some while...
         dictionary, dataset = Dictionary.build_from_dataset(
-            dataset, ngram, max_dict_size, ngme, packed
+            dataset, ngram, max_dict_size, min_frequency, ngme, packed
         )
         print("Done")
 

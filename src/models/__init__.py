@@ -5,7 +5,6 @@ from src.models.rnn import RNNModel
 from src.models.transformer.configuration_transformer import TransformerConfig
 from src.models.transformer.transformer import TransformerLightningModule
 from src.utils import count_parameters
-from src.models import llama
 
 
 def load_model(dictionary, args: Namespace, print_params: bool = True):
@@ -22,7 +21,6 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
                 None,
                 args.embedding_size,
                 args.lr,
-                unigram_ppl=args.unigram_ppl,
                 weighted_loss=args.weighted_loss,
                 weighted_labels=args.weighted_labels,
                 strategy=args.weight_strat,
@@ -37,7 +35,7 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
         # Adjust args
         args.ntoken = len(dictionary)
         args.weight_tensor = dictionary.create_weight_tensor(
-            args.unigram_ppl, args.weighted_loss
+            args.weighted_loss
         ).tolist()
 
         args.ngram_indexes = dictionary.ngram_indexes
