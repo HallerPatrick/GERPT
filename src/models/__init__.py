@@ -53,3 +53,10 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
             print(count_parameters(model))
 
     return model
+
+from src.models.transformer.configuration_transformer import GPTNeoXConfig
+from src.models.transformer.modelling_transformer import GPTNeoXModel, GPTNeoXForCausalLM
+from src.models.transformer.tokenization_transformer import GPTNeoXTokenizerFast
+
+# Export load_model and all HF transformer files
+__all__ = ["load_model", "GPTNeoXConfig", "GPTNeoXModel", "GPTNeoXTokenizerFast", "GPTNeoXForCausalLM"]
