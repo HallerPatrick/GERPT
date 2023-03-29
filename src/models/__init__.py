@@ -54,9 +54,17 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
 
     return model
 
-from src.models.transformer.configuration_transformer import GPTNeoXConfig
-from src.models.transformer.modelling_transformer import GPTNeoXModel, GPTNeoXForCausalLM
-from src.models.transformer.tokenization_transformer import GPTNeoXTokenizerFast
+from transformers import AutoConfig, AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
+from src.models.transformer.configuration_transformer import GPTNGMEConfig
+from src.models.transformer.modelling_transformer import GPTNGMEModel, GPTNGMEForCausalLM, GPTNGMEForSequenceClassification
+from src.models.transformer.tokenization_transformer import GPTNGMETokenizerFast, GPTNGMETokenizer
+
+AutoConfig.register("gpt_ngme", GPTNGMEConfig)
+AutoTokenizer.register(GPTNGMEConfig, slow_tokenizer_class=GPTNGMETokenizerFast)
+AutoModel.register(GPTNGMEConfig, GPTNGMEModel)
+# AutoModel.register(GPTNGMEConfig, GPTNGMEForCausalLM)
+AutoModelForCausalLM.register(GPTNGMEConfig, GPTNGMEForCausalLM)
+AutoModelForSequenceClassification.register(GPTNGMEConfig, GPTNGMEForSequenceClassification)
 
 # Export load_model and all HF transformer files
-__all__ = ["load_model", "GPTNeoXConfig", "GPTNeoXModel", "GPTNeoXTokenizerFast", "GPTNeoXForCausalLM"]
+__all__ = ["load_model", "GPTNGMEConfig", "GPTNGMEModel", "GPTNGMETokenizer", "GPTNGMEForCausalLM"]

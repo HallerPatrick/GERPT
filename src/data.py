@@ -64,13 +64,13 @@ local_dataset_mapper = {
         "train": baby_lm_train("babylm_10M"),
         "test": baby_lm_test(),
         # For the pipeline, which expects a validation set
-        "valid": baby_lm_dev(),
+        "validation": baby_lm_dev(),
     },
     "babylm100M": {
         "train": baby_lm_train("babylm_100M"),
         "test": baby_lm_test(),
         # For the pipeline, which expects a validation set
-        "valid": baby_lm_dev(),
+        "validation": baby_lm_dev(),
     },
     # # HC
     # "cc100_german": {

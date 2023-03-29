@@ -1,11 +1,15 @@
 import logging
+import math
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional
 import sys
 import os
 
+
+import wandb
 import datasets
+import evaluate
 from datasets import load_dataset
 import transformers
 from transformers import (
@@ -14,20 +18,24 @@ from transformers import (
     AutoModelForCausalLM,
     set_seed,
     Trainer,
-    default_data_collator
+    default_data_collator,
+    AutoTokenizer,
+    TrainerCallback,
+    StoppingCriteriaList,
+    MaxLengthCriteria
 )
+from transformers.integrations import WandbCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.testing_utils import CaptureLogger
 
 from src.models import (
-    GPTNeoXTokenizerFast,
-    GPTNeoXConfig,
-    GPTNeoXModel,
-    GPTNeoXForCausalLM,
+    GPTNGMEConfig, GPTNGMETokenizer
 )
+from src.data import local_dataset_mapper
 
 logger = logging.getLogger(__name__)
 
+USE_NGME = False
 
 @dataclass
 class DataTrainingArguments:
@@ -128,10 +136,73 @@ class DataTrainingArguments:
                 ], "`validation_file` should be a csv, a json or a txt file."
 
 
+class TextGenerationCallback(WandbCallback):
+
+    def __init__(self, tokenizer, model):
+        super().__init__()
+        self.tokenizer = tokenizer
+        self.model = model
+
+    def on_log(self, args: TrainingArguments, state, control, **kwargs):
+
+        super().on_log(args, state, control, **kwargs)
+        # Generate text and log it
+        self.model.eval()
+
+        self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
+        input_prompt = "It might be possible to"
+
+        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(self.model.device)
+
+        stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
+
+        outputs = self.model.sample(
+            input_ids,
+            do_sample=True,
+            stopping_criteria=stopping_criteria,
+        )
+
+        self.model.train()
+
+        text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+        
+        table = wandb.Table(columns=["epoch", "text"], data=[[state.global_step, text]])
+        self._wandb.log({"text_generation": table})
+
+class _TextGenerationCallback(TrainerCallback):
+
+    def __init__(self, tokenizer, model):
+        self.tokenizer = tokenizer
+        self.model = model
+
+    def on_epoch_end(self, args: TrainingArguments, state, control, **kwargs):
+        # Generate text and log it
+        self.model.eval()
+
+        self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
+        input_prompt = "It might be possible to"
+
+        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(self.model.device)
+
+        stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
+
+        outputs = self.model.sample(
+            input_ids,
+            do_sample=True,
+            stopping_criteria=stopping_criteria,
+        )
+
+        print(self.tokenizer.batch_decode(outputs, skip_special_tokens=True))
+
+        self.model.train()
+
+        return super().on_epoch_end(args, state, control, **kwargs)
+
+
 def main():
 
-    # config = GPTNeoXConfig()
-    # model = GPTNeoXModel(config)
+    # config = GPTNGMEConfig()
+    # model = GPTNGMEModel(config)
 
     parser = HfArgumentParser((DataTrainingArguments, TrainingArguments))
 
@@ -187,7 +258,11 @@ def main():
     set_seed(training_args.seed)
 
     # download the dataset.
-    if data_args.dataset_name is not None:
+    if data_args.dataset_name.startswith("babylm"):
+        local_dataset = local_dataset_mapper[data_args.dataset_name]
+        raw_datasets = load_dataset("text", data_files=local_dataset)
+
+    elif data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
         raw_datasets = load_dataset(
             data_args.dataset_name,
@@ -239,11 +314,23 @@ def main():
                 split=f"train[{data_args.validation_split_percentage}%:]",
                 **dataset_args,
             )
+    
+    if USE_NGME:
+        tokenizer = GPTNGMETokenizer(vocab_file="data/data-dict-2")
+    else:
+        tokenizer = AutoTokenizer.from_pretrained("google/byt5-base")
 
-    config = GPTNeoXConfig()
+    config = GPTNGMEConfig(
+        vocab_size=tokenizer.vocab_size,
+        hidden_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        intermediate_size=512,
+        eos_token_id=tokenizer.eos_token_id,
+        use_ngme=USE_NGME,
+    )
 
-    tokenizer = GPTNeoXTokenizerFast.from_pretrained("gpt2")
-    model = AutoModelForCausalLM.from_pretrained("gpt_neox")
+    model = AutoModelForCausalLM.from_config(config)
 
     n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
     logger.info(
@@ -299,6 +386,7 @@ def main():
                 " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
                 " override this default with `--block_size xxx`."
             )
+            logger.warning(f"Tokenizer block size is {block_size}")
             block_size = 1024
     else:
         if data_args.block_size > tokenizer.model_max_length:
@@ -347,6 +435,31 @@ def main():
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
 
+    if training_args.do_eval:
+        if "validation" not in tokenized_datasets:
+            raise ValueError("--do_eval requires a validation dataset")
+        eval_dataset = lm_datasets["validation"]
+        if data_args.max_eval_samples is not None:
+            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+            eval_dataset = eval_dataset.select(range(max_eval_samples))
+
+        def preprocess_logits_for_metrics(logits, labels):
+            if isinstance(logits, tuple):
+                # Depending on the model and config, logits may contain extra tensors,
+                # like past_key_values, but logits always come first
+                logits = logits[0]
+            return logits.argmax(dim=-1)
+
+        metric = evaluate.load("accuracy")
+
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            return metric.compute(predictions=preds, references=labels)
+
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -356,13 +469,13 @@ def main():
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
         data_collator=default_data_collator,
-        compute_metrics=compute_metrics
-        if training_args.do_eval and not is_torch_tpu_available()
-        else None,
+        compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
-        if training_args.do_eval and not is_torch_tpu_available()
+        if training_args.do_eval
         else None,
     )
+
+    trainer.add_callback(TextGenerationCallback(tokenizer, model))
 
     # Training
     if training_args.do_train:
@@ -377,13 +490,32 @@ def main():
         metrics = train_result.metrics
 
         max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+            data_args.max_train_samples
+            if data_args.max_train_samples is not None
+            else len(train_dataset)
         )
         metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
+
+        # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+
+        metrics = trainer.evaluate()
+
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+        try:
+            perplexity = math.exp(metrics["eval_loss"])
+        except OverflowError:
+            perplexity = float("inf")
+        metrics["perplexity"] = perplexity
+
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
 
 if __name__ == "__main__":

@@ -43,8 +43,7 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
-
-class GPTNeoXConfig(PretrainedConfig):
+class GPTNGMEConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`GPTNeoXModel`]. It is used to instantiate an
     GPTNeoX model according to the specified arguments, defining the model architecture. Instantiating a configuration
@@ -101,19 +100,19 @@ class GPTNeoXConfig(PretrainedConfig):
     >>> # Accessing the model configuration
     >>> configuration = model.config  # doctest: +SKIP
     ```"""
-    model_type = "gpt_neox"
+    model_type = "gpt_ngme"
 
     def __init__(
         self,
-        vocab_size=50432,
-        hidden_size=128,
-        num_hidden_layers=1,
-        num_attention_heads=1,
-        intermediate_size=256,
+        vocab_size=384,
+        hidden_size=1024,
+        num_hidden_layers=4,
+        num_attention_heads=4,
+        intermediate_size=1024,
         hidden_act="gelu",
         rotary_pct=0.25,
         rotary_emb_base=10000,
-        max_position_embeddings=1024,
+        max_position_embeddings=2048,
         initializer_range=0.02,
         layer_norm_eps=1e-5,
         use_cache=True,
@@ -121,9 +120,11 @@ class GPTNeoXConfig(PretrainedConfig):
         eos_token_id=2,
         tie_word_embeddings=False,
         use_parallel_residual=True,
+        use_ngme=False,
         **kwargs,
     ):
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
+        self.use_ngme = use_ngme
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size

@@ -1,9 +1,9 @@
 import os
-import string
-import sys
 from typing import Dict, List, Optional, Tuple, Union
 
 from pathlib import Path
+
+import torch
 
 from nltk import ngrams as ngram_tokenizer
 from tokenizers import AddedToken
@@ -12,7 +12,7 @@ from transformers.tokenization_utils_base import BatchEncoding, EncodedInput
 from transformers.utils.generic import PaddingStrategy, TensorType, to_py_obj
 
 
-from src.dictionary import load_vocab
+from src.dictionary import load_vocab, Dictionary
 
 
 class NGMETokenizer(PreTrainedTokenizer):
@@ -435,6 +435,7 @@ class NGMETokenizer(PreTrainedTokenizer):
                     index += 1
         return (vocab_file,)
 
+
 # coding=utf-8
 # Copyright 2022 EleutherAI and The HuggingFace Inc. team. All rights reserved.
 #
@@ -456,6 +457,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 from tokenizers import pre_tokenizers
 
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizer
 from transformers.utils import logging
 
 
@@ -465,10 +467,14 @@ if TYPE_CHECKING:
 
 logger = logging.get_logger(__name__)
 
-VOCAB_FILES_NAMES = {"vocab_file": "vocab.json", "merges_file": "merges.txt", "tokenizer_file": "tokenizer.json"}
+VOCAB_FILES_NAMES = {
+    "vocab_file": "vocab.json",
+    "merges_file": "merges.txt",
+    "tokenizer_file": "tokenizer.json",
+}
 
 
-class GPTNeoXTokenizerFast(PreTrainedTokenizerFast):
+class GPTNGMETokenizerFast(PreTrainedTokenizer):
     """
     Construct a "fast" GPT-NeoX-20B tokenizer (backed by HuggingFace's *tokenizers* library). Based on byte-level
     Byte-Pair-Encoding.
@@ -554,7 +560,9 @@ class GPTNeoXTokenizerFast(PreTrainedTokenizerFast):
 
         self.add_prefix_space = add_prefix_space
 
-    def save_vocabulary(self, save_directory: str, filename_prefix: Optional[str] = None) -> Tuple[str]:
+    def save_vocabulary(
+        self, save_directory: str, filename_prefix: Optional[str] = None
+    ) -> Tuple[str]:
         files = self._tokenizer.model.save(save_directory, name=filename_prefix)
         return tuple(files)
 
@@ -562,9 +570,70 @@ class GPTNeoXTokenizerFast(PreTrainedTokenizerFast):
         """This corresponds to DialoGPT variants of models."""
         input_ids = []
         for is_user, text in conversation.iter_texts():
-            input_ids.extend(self.encode(text, add_special_tokens=False) + [self.eos_token_id])
+            input_ids.extend(
+                self.encode(text, add_special_tokens=False) + [self.eos_token_id]
+            )
 
         if len(input_ids) > self.model_max_length:
             input_ids = input_ids[-self.model_max_length :]
         return input_ids
 
+
+class GPTNGMETokenizer(PreTrainedTokenizer):
+
+    model_input_names = ["input_ids", "attention_mask"]
+
+    def __init__(self, vocab_file, **kwargs):
+        if vocab_file.endswith(".json"):
+            self.dictionary = Dictionary.load_from_file(vocab_file)
+        else:
+            self.dictionary = torch.load(vocab_file)
+
+        self.eos_token_id = self.dictionary.ngram2word2idx[1]["\n"]
+
+        super().__init__(**kwargs)
+
+    def vocab_size(self):
+        return len(self.dictionary)
+
+    def name_or_path(self):
+        return ""
+
+    def _tokenize(self, text):
+        ngram_sequences = []
+        for n in range(1, self.dictionary.ngram + 1):
+
+            words = ["<start>" for _ in range(1, n)]
+            words.extend(list(text))
+
+            tokens = []
+            for i, word in enumerate(ngram_tokenizer(words, n)):
+                if "<start>" in word:
+                    word = [w for w in list(word) if w != "<start>"]
+                tokens.append("".join(word))
+
+            ngram_sequences.append(tokens)
+
+        print(ngram_sequences)
+        return ngram_sequences
+
+    def get_idx(self, token) -> int:
+        for ngram in range(1, self.dictionary.ngram + 1):
+            if token in self.dictionary.ngram2word2idx[ngram]:
+                return self.dictionary.ngram2word2idx[ngram][token]
+        return self.dictionary.ngram2word2idx[1]["<unk>"]
+
+    def _convert_ngram_tokens_to_ids(self, ngram_tokens: List[str]) -> List[int]:
+
+        return [self.get_idx(token) for token in ngram_tokens]
+
+    def convert_tokens_to_ids(self, tokens: List[List[str]]):
+        return [
+            self._convert_ngram_tokens_to_ids(ngram_tokens) for ngram_tokens in tokens
+        ]
+
+    def __call__(self, *args, **kwargs):
+        output = super().__call__(*args, **kwargs)
+        # Hacky: Just return the attention mask of the first ngram sequence, they should all be the same
+        output["attention_mask"] = output["attention_mask"][0]
+        return output

@@ -7,3 +7,4 @@ from src.models.transformer.tokenization_transformer import NGMETokenizer
 AutoConfig.register("ngme-transformer", TransformerConfig)
 AutoTokenizer.register(TransformerConfig, NGMETokenizer)
 AutoModel.register(TransformerConfig, TransformerTransformer)
+

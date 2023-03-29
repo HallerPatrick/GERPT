@@ -7,7 +7,10 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from transformers import PreTrainedModel
+from transformers.modeling_outputs import SequenceClassifierOutputWithPast
 import flair
+
+from torch.nn import BCEWithLogitsLoss
 
 from src.loss import CrossEntropyLossSoft
 from src.models.ngme import NGramsEmbedding
@@ -258,20 +261,20 @@ from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
-from .configuration_transformer import GPTNeoXConfig
+from .configuration_transformer import GPTNGMEConfig
 
 logger = logging.get_logger(__name__)
 
-class GPTNeoXPreTrainedModel(PreTrainedModel):
+class GPTNGMEPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
-    config_class = GPTNeoXConfig
-    base_model_prefix = "gpt_neox"
+    config_class = GPTNGMEConfig
+    base_model_prefix = "gpt_ngme"
     supports_gradient_checkpointing = True
-    _no_split_modules = ["GPTNeoXLayer"]
+    _no_split_modules = ["GPTNGMELayer"]
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -513,7 +516,7 @@ class GPTNeoXMLP(nn.Module):
         return hidden_states
 
 
-class GPTNeoXLayer(nn.Module):
+class GPTNGMELayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.use_parallel_residual = config.use_parallel_residual
@@ -611,16 +614,13 @@ GPT_NEOX_INPUTS_DOCSTRING = r"""
 """
 
 
-class GPTNeoXModel(GPTNeoXPreTrainedModel):
+class GPTNGMEModel(GPTNGMEPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
         
-        print("Init embed")
         self.embed_in = nn.Embedding(config.vocab_size, config.hidden_size)
-        print("Init layers")
-        self.layers = nn.ModuleList([GPTNeoXLayer(config) for _ in range(config.num_hidden_layers)])
-        print("Init final layer")
+        self.layers = nn.ModuleList([GPTNGMELayer(config) for _ in range(config.num_hidden_layers)])
         self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         self.gradient_checkpointing = False
@@ -768,13 +768,13 @@ class GPTNeoXModel(GPTNeoXPreTrainedModel):
         )
 
 
-class GPTNeoXForCausalLM(GPTNeoXPreTrainedModel):
+class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
     def __init__(self, config):
         super().__init__(config)
 
-        self.gpt_neox = GPTNeoXModel(config)
+        self.gpt_neox = GPTNGMEModel(config)
         self.embed_out = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # Initialize weights and apply final processing
@@ -899,3 +899,101 @@ class GPTNeoXForCausalLM(GPTNeoXPreTrainedModel):
                 tuple(past_state.index_select(0, beam_idx) for past_state in layer_past[:2]) + layer_past[2:],
             )
         return reordered_past
+
+class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.model = GPTNGMEModel(config)
+        self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
+
+        self.post_init()
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
+            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        transformer_outputs = self.model(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        hidden_states = transformer_outputs[0]
+        logits = self.score(hidden_states)
+
+        if input_ids is not None:
+            batch_size, sequence_length = input_ids.shape[:2]
+        else:
+            batch_size, sequence_length = inputs_embeds.shape[:2]
+
+        if self.config.pad_token_id is None:
+            sequence_lengths = -1
+        else:
+            if input_ids is not None:
+                sequence_lengths = (torch.ne(input_ids, self.config.pad_token_id).sum(-1) - 1).to(logits.device)
+            else:
+                sequence_lengths = -1
+                logger.warning(
+                    f"{self.__class__.__name__} will not detect padding tokens in `inputs_embeds`. Results may be "
+                    "unexpected if using padding tokens in conjunction with `inputs_embeds.`"
+                )
+
+        pooled_logits = logits[torch.arange(batch_size, device=logits.device), sequence_lengths]
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(pooled_logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(pooled_logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(pooled_logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(pooled_logits, labels)
+        if not return_dict:
+            output = (pooled_logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SequenceClassifierOutputWithPast(
+            loss=loss,
+            logits=pooled_logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+        )
