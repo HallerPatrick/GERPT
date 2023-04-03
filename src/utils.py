@@ -2,7 +2,7 @@ import sys
 import timeit
 from math import log as math_log
 from datetime import timedelta
-from typing import Any, Callable, Optional, List
+from typing import Any, Callable, Optional, List, Union
 
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
@@ -75,6 +75,15 @@ def pack_tensor(tensor: Tensor) -> Tensor:
 
     return torch.tensor([pack(tensor[:, col_i]) for col_i in range(tensor.size(1))])
 
+def pack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
+
+    if isinstance(sequence, Tensor):
+        return pack_tensor(sequence)
+
+    sequence = np.array(sequence)
+
+    return [pack(sequence[:, col_i]) for col_i in range(sequence.shape[1])]
+
 
 def unpack(packed_integer):
     """Unpack a list of integers. Maximum integer value is ~60000 and up to 4 in a list"""
@@ -92,6 +101,13 @@ def unpack_tensor(tensor: Tensor) -> Tensor:
     unpacked_sequence = [unpack(i) for i in tensor]
 
     return torch.tensor(unpacked_sequence, dtype=torch.int64).t().to(tensor.device)
+
+def unpack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
+
+    if isinstance(sequence, Tensor):
+        return unpack_tensor(sequence)
+
+    return [unpack(i) for i in sequence]
 
 
 def unpack_batched_tensor(tensor: Tensor) -> Tensor:
@@ -162,14 +178,18 @@ class EarlyStoppingOnLRCallback(Callback):
 
 
 class TextGenerationCallback(Callback):
-    def __init__(self, interval: int) -> None:
+    def __init__(self, interval: int, enabled: bool) -> None:
         super().__init__()
 
         self.interval = interval
+        self.enabled = enabled
 
     def on_train_epoch_end(
         self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
     ) -> None:
+        if not self.enabled:
+            return super().on_train_epoch_end(trainer, pl_module)
+
         if (
             trainer.current_epoch != 0
             and trainer.lightning_module.generate

@@ -92,6 +92,9 @@ def process_tokenized_dataset(
         )
         print("Done")
 
+    if not dictionary._is_contiguous(dictionary):
+        dictionary = dictionary.unking(len(dictionary), dictionary.ngram, 0, False)
+
     processor = Processor.from_strategy(write_strategy)(
         target_path,
         dictionary,

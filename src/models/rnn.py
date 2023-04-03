@@ -29,6 +29,12 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
+def bce_loss(pred, target):
+    pred = F.logsigmoid(pred)
+    loss = torch.mean(-(target * torch.log(pred) + (1 - target) * torch.log(1 - pred)))
+    return loss
+
+
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
@@ -56,7 +62,9 @@ class RNNModel(pl.LightningModule):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-        self.encoder = NGramsEmbedding(len(dictionary), embedding_size, packed=packed)
+        self.encoder = NGramsEmbedding(
+            len(dictionary), embedding_size, packed=packed, freeze=False
+        )
         self.ngrams = ngrams
         self.dictionary = dictionary
         self.nlayers = nlayers
@@ -99,8 +107,7 @@ class RNNModel(pl.LightningModule):
 
         self.drop = nn.Dropout(dropout)
         self.decoder = nn.Linear(
-            hidden_size * 2 if self.bidirectional else hidden_size,
-            self.ntokens
+            hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
         )
 
         self.save_hyperparameters()
@@ -116,11 +123,23 @@ class RNNModel(pl.LightningModule):
         self.proj = None
 
     def setup(self, stage) -> None:
-        self.criterion = CrossEntropyLossSoft(
-            weight=self.dictionary.create_weight_tensor(
-                self.weighted_loss
-            ),
+        # self.criterion = CrossEntropyLossSoft(
+        #     weight=self.dictionary.create_weight_tensor(
+        #         self.weighted_loss
+        #     ),
+        # )
+
+        # self.criterion = torch.nn.CrossEntropyLoss(
+            # weight=self.dictionary.create_weight_tensor(
+            #     self.weighted_loss
+            # ),
+        # )
+
+        self.criterion = torch.nn.BCEWithLogitsLoss(
+            pos_weight=self.dictionary.create_weight_tensor(self.weighted_loss)
         )
+
+        # self.criterion = bce_loss
 
     @staticmethod
     def initialize(matrix):
@@ -134,14 +153,10 @@ class RNNModel(pl.LightningModule):
         #     optimizer, milestones=[4, 5, 6, 7], gamma=0.25, verbose=True
         # )
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            "min",
-            factor=0.25,
-            verbose=True,
-            patience=120
+            optimizer, "min", factor=0.25, verbose=True, patience=120
         )
         return [optimizer], [{"scheduler": lr_scheduler, "monitor": "train/loss"}]
-    
+
     def _debug_input(self, source, target):
         print("Source:")
         self.dictionary.print_batch(source)
@@ -155,25 +170,85 @@ class RNNModel(pl.LightningModule):
         if DEBUG:
             self._debug_input(source, target)
 
-        batch_size = source.size(2)
-
         if not self.hidden:
+            batch_size = source.size(2)
             self.hidden = self.init_hidden(batch_size)
 
         decoded, hidden = self.forward(source, self.hidden)
         self.hidden = repackage_hidden(hidden)
 
+        # target: [ngram, seq, batch]
         target = soft_n_hot(
             target,
             self.ntokens,
-            self.strategy,
+            # self.strategy,
+            "linear",
             self.weighted_labels,
             self.encoder.packed,
         )
-        target = target.view(-1, self.ntokens)
+
+        # subsets = self._subset_logits(decoded)
+        
+        target = target.reshape((target.size(0), -1))
+
+        # losses = []
+        # for subset, n_gram_target in zip(subsets, self._map_n_gram_id(target)):
+        #     loss = self.criterion(subset, n_gram_target)
+        #     losses.append(loss)
+        # 
+        # for n, loss in enumerate(losses):
+        #     self.log(f"train/{n+1}-ngram-loss", loss)
+        #
+        # loss = sum(losses)
+        
+        print(decoded)
+        print(decoded.shape)
+        print(torch.sigmoid(decoded))
+        print(torch.nn.functional.logsigmoid(decoded))
 
         loss = self.criterion(decoded, target)
+
         return loss, decoded, target
+
+    def _map_n_gram_id(self, tensor):
+        """
+        To calculate the cross entropy of our subset probabilities against target,
+        we have to map the n-gram ids of the target tensor to the subset.
+
+        E.g.:
+
+            1-ngram: [0, 100],
+            2-ngram: [101, 300],
+            3-ngram: [301, 500]
+            
+            2-gram id: 101 -> 0
+            2-gram id: 224 -> 123
+        """
+
+        subsets = []
+        for n, tensor in enumerate(tensor):
+            smallest_ngram_idx = list(self.dictionary.ngram2idx2word[n+1].keys())[0]
+            subset_tensor = torch.sub(tensor, smallest_ngram_idx)
+
+            subsets.append(subset_tensor)
+
+        return subsets
+
+    def _subset_logits(self, logits) -> List[torch.Tensor]:
+        """
+        logits: [seq, vocab]
+        """
+
+        subsets = []
+
+        for n_gram in range(self.dictionary.ngram):
+            n_gram_idxs = torch.tensor(
+                list(self.dictionary.ngram2idx2word[n_gram + 1].keys())
+            ).to(logits.device)
+            subset = torch.index_select(logits, 1, n_gram_idxs)
+            subsets.append(subset)
+
+        return subsets
 
     def training_step(self, batch, batch_idx):
         loss, decoded, target = self._step(batch)
@@ -239,19 +314,17 @@ class RNNModel(pl.LightningModule):
                     word = self.dictionary.get_item_for_index(ngram_idx.item())
                 else:
                     output = F.log_softmax(output, dim=0)
+                    # output = torch.sigmoid(output)
+                    # idx = torch.argmax(output)
+                    # print(output)
+                    # output = torch.nn.functional.logsigmoid(output)
 
                     word_weights = output.squeeze().div(self.temperature).exp().detach()
 
                     # multinomial over all tokens
-                    # To avoid unk gens, take ( n*unique_unks_in_dict )+1 
+                    # To avoid unk gens, take ( n*unique_unks_in_dict )+1
                     # Probe for first non unk token
                     ngram_idx = torch.multinomial(word_weights, 1)[0].item()
-
-                    # ngram_idx = None
-                    # for idx in ngram_idxs:
-                    #     idx = idx.item()
-                    #     if self.dictionary.get_item_for_index(idx) != "<unk>":
-                    #         ngram_idx = idx
 
                     ngram_order = self.dictionary.get_ngram_order(ngram_idx)
                     ngrams_idxs = [ngram_idx]
@@ -316,9 +389,6 @@ class RNNModel(pl.LightningModule):
         nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
     def forward(self, input, hidden):
-
-        # print(self.optimizers().param_groups[0]["lr"])
-        # exit()
         # [#ngram, #seq_len, #batch_size]
         emb = self.encoder(input)
         emb = self.drop(emb)
@@ -515,6 +585,7 @@ class RNNModel(pl.LightningModule):
 
         return output
 
+
 try:
     import lm_eval
     from lm_eval.base import BaseLM
@@ -527,7 +598,6 @@ try:
         return "".join([dictionary.get_item_for_index(idx) for idx in unigram_tokens])
 
     class EvalRNNModel(BaseLM):
-
         def __init__(self, ckpt_path: str):
             super().__init__()
             self.model = RNNModel.load_from_checkpoint(ckpt_path)
@@ -536,7 +606,7 @@ try:
             # inps: [batch, ngram, sequence] -> [ngram, sequence, batch]
             inps = rearrange(inps, "b n s -> n s b")
             with torch.no_grad():
-                output =  self.model(inps)
+                output = self.model(inps)
                 print(output.size())
                 return output
 
@@ -549,11 +619,6 @@ try:
         def _model_generate(self, context, max_length, eos_token_id):
             self.model.chars_to_gen = max_length
             return self.model.generate_text()
-            
-
-
-
-
 
 except ImportError:
     pass

@@ -96,7 +96,7 @@ class Dictionary:
         # Check if we need to apply unking
         if dictionary.max_dict_size == 0:
             dictionary.max_dict_size = len(dictionary)
-        
+
         if dictionary.max_dict_size < len(dictionary):
             print("Apply unking...", end="")
             dictionary = dictionary.unking()
@@ -212,19 +212,23 @@ class Dictionary:
 
     def _remove_whitespace_tokens(self):
         """Remove n+1gram tokens that contain unigram tokens we dont want"""
-        special_tokens = [" ", "\n"]
+        special_tokens = [" ", "\n", ".", ","]
         # Ignore ungiram
         for ngram in range(2, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].copy().items():
                 for special_token in special_tokens:
-                    if special_token in token:
+                    if special_token in token and idx in self.ngram2idx2word[ngram]:
                         self.ngram2idx2word[ngram].pop(idx)
                         self.ngram2word2idx[ngram].pop(token)
                         self.current_max_idx -= 1
                         del self.frequencies[token]
 
     def unking(
-            self, new_max_dict_size: Optional[int] = None, ngrams: Optional[int] = None, min_frequency: Optional[int] = None
+        self,
+        new_max_dict_size: Optional[int] = None,
+        ngrams: Optional[int] = None,
+        min_frequency: Optional[int] = None,
+        remove_whitespace_tokens: bool = False,
     ):
         """Trim the dictionary size to `new_max_dict_size` or self.max_dict_size.
 
@@ -239,11 +243,13 @@ class Dictionary:
 
         print(f"Total count: {len(self)}")
 
-        self._remove_whitespace_tokens()
-        print(f"Removed whitespaces: {len(self)}")
+        if remove_whitespace_tokens:
+            self._remove_whitespace_tokens()
+            print(f"Removed whitespaces: {len(self)}")
 
+        # TODO: This should ignore special tokens
         min_frequency = {k: v for k, v in self.frequencies.items() if v > min_frequency}
-        print(f"Min occurence 10 000: {len(min_frequency)}")
+        print(f"Min occurence {min_frequency}: {len(min_frequency)}")
 
         # Pre-define the number of tokens per ngram
         if ngrams <= 4:
@@ -319,9 +325,15 @@ class Dictionary:
 
         dictionary.frequencies = new_frequency
 
-        print(dictionary.ngram2word2idx)
+        assert self._is_contiguous(dictionary), dictionary.ngram2word2idx
 
         return dictionary
+
+    def _is_contiguous(self, dictionary):
+        vocab_size = len(dictionary)
+        return list(range(vocab_size)) == [
+            idx for idx, token in dictionary.get_all_tokens()
+        ]
 
     def get_marker_tokens(self) -> Iterator[int]:
         """Return an iterator over the marker tokens."""
@@ -337,7 +349,7 @@ class Dictionary:
         for idxs in self.ngram2idx2word.values():
             if idx in idxs:
                 return idxs[idx]
-        return None
+        return "<unk>"
 
     def save_vocabulary(
         self,
@@ -436,7 +448,7 @@ class Dictionary:
                 min_length = length
 
             ngram_sequences.append(seq)
-            
+
             s = self.shift_left(seq, n)
             ngram_target_sequences.append(s)
 
@@ -458,7 +470,9 @@ class Dictionary:
         """Just take the unigram tokens and decode"""
         decoded = []
         for n_gram_seq in tokens:
-            decoded.append("".join([self.get_item_for_index(idx) for idx in n_gram_seq]))
+            decoded.append(
+                "".join([self.get_item_for_index(idx) for idx in n_gram_seq])
+            )
         return decoded
 
     @staticmethod
@@ -593,7 +607,7 @@ class Dictionary:
         if isinstance(t, list):
             t = torch.tensor(t)
 
-        shifted_t =  torch.roll(t, -shifts, 1)
+        shifted_t = torch.roll(t, -shifts, 1)
 
         shifted_t[0][-shifts:-1] = self.ngram2word2idx[shifts]["<pad>"]
         shifted_t[0][-1] = self.ngram2word2idx[shifts]["<pad>"]

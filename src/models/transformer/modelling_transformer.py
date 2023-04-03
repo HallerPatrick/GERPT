@@ -1,253 +1,14 @@
-import math
-from typing import List
+import pandas as pd
 
-import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from torch import nn
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from transformers import PreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutputWithPast
-import flair
 
 from torch.nn import BCEWithLogitsLoss
 
 from src.loss import CrossEntropyLossSoft
-from src.models.ngme import NGramsEmbedding
-from src.models.transformer.configuration_transformer import TransformerConfig
-
-
-class TransformerTransformer(PreTrainedModel):
-
-    config_class = TransformerConfig
-
-    def __init__(self, config: TransformerConfig):
-        super().__init__(config)
-
-        self.ntoken = config.ntoken
-        self.ngrams = config.ngrams
-        self.unk_t = config.unk_t
-        self.nlayers = config.nlayers
-        self.dropout = config.dropout
-
-        self.hidden_size = config.hidden_size
-        self.nhead = config.nhead
-
-        self.model_type = "Transformer"
-        self.src_mask = None
-        self.pos_encoder = PositionalEncoding(config.embedding_size, config.dropout)
-        encoder_layers = TransformerEncoderLayer(
-            config.embedding_size, config.nhead, self.hidden_size, config.dropout
-        )
-        self.transformer_encoder = TransformerEncoder(encoder_layers, config.nlayers)
-        self.encoder = NGramsEmbedding(self.ntoken, config.embedding_size)
-        self.embedding_size = config.embedding_size
-        self.decoder = nn.Linear(config.embedding_size, self.ntoken)
-
-        self.unigram_ppl = config.unigram_ppl
-
-        self.weighted_labels = config.weighted_labels
-
-        self.criterion = CrossEntropyLossSoft(
-            weight=torch.tensor(config.weight_tensor).to(self.device)
-        )
-
-        self.init_weights()
-
-    def _generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = (
-            mask.float()
-            .masked_fill(mask == 0, float("-inf"))
-            .masked_fill(mask == 1, float(0.0))
-        )
-        return mask
-
-    def init_weights(self):
-        initrange = 0.1
-        nn.init.uniform_(self.encoder.weight, -initrange, initrange)
-        nn.init.zeros_(self.decoder.bias)
-        nn.init.uniform_(self.decoder.weight, -initrange, initrange)
-
-    def forward(self, src, has_mask=True, **kwargs):
-
-        # (ngram, seq, batch)
-        if has_mask:
-            if self.src_mask is None or self.src_mask.size(0) != src.size(1):
-                mask = self._generate_square_subsequent_mask(src.size(1)).to(
-                    self.device
-                )
-                self.src_mask = mask
-        else:
-            self.src_mask = None
-
-        src = self.encoder(src) * math.sqrt(self.embedding_size)
-        src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, self.src_mask)
-        output = self.decoder(output)
-        return output
-
-    def forward_hidden(self, src, has_mask=True, **kwargs):
-        # if "attention_mask" in kwargs:
-        #     src = src.squeeze(0).unsqueeze(-1)
-
-        if has_mask:
-            if self.src_mask is None or self.src_mask.size(0) != src.size(1):
-                mask = self._generate_square_subsequent_mask(src.size(1)).to(
-                    self.device
-                )
-                self.src_mask = mask
-        else:
-            self.src_mask = None
-        
-        # in: [ngram, seq, batch]
-
-        src = self.encoder(src)
-        # out: [seq, batch, emb]
-
-        src = src * math.sqrt(self.embedding_size)
-        # out: [seq, batch, emb]
-
-        src = self.pos_encoder(src)
-        # out: [seq, batch, emb]
-
-        output = self.transformer_encoder(src, self.src_mask)
-
-        return output
-
-    def get_representation(
-        self,
-        strings: List[str],
-        start_marker: str,
-        end_marker: str,
-        chars_per_chunk: int = 512,
-    ):
-
-        len_longest_str: int = len(max(strings, key=len))
-
-        # pad strings with whitespaces to longest sentence
-        padded_strings: List[str] = []
-
-        for string in strings:
-            if not self.is_forward_lm:
-                string = string[::-1]
-
-            padded = f"{start_marker}{string}{end_marker}"
-            padded_strings.append(padded)
-
-        # cut up the input into chunks of max charlength = chunk_size
-        chunks = []
-        splice_begin = 0
-        longest_padded_str: int = len_longest_str + len(start_marker) + len(end_marker)
-        for splice_end in range(chars_per_chunk, longest_padded_str, chars_per_chunk):
-            chunks.append([text[splice_begin:splice_end] for text in padded_strings])
-            splice_begin = splice_end
-
-        chunks.append(
-            [text[splice_begin:longest_padded_str] for text in padded_strings]
-        )
-
-        batches: List[torch.Tensor] = []
-    
-        # push each chunk through the RNN language model
-        for chunk in chunks:
-            len_longest_chunk: int = len(max(chunk, key=len))
-            sequences_as_char_indices: List[torch.Tensor] = []
-
-            for string in chunk:
-                chars = list(string) + [" "] * (len_longest_chunk - len(string))
-
-                chars = "".join(chars)
-
-                # [ngram, 1, sequence]
-                # self.dictionary.ngme = "dense"
-                n_gram_char_indices = self.tokenizer(
-                    chars, return_tensors="pt"
-                )["input_ids"]
-
-                sequences_as_char_indices.append(n_gram_char_indices)
-
-            # [ngram, batch_size, sequence]
-            batches.append(torch.cat(sequences_as_char_indices, dim=0))
-
-        output_parts = []
-        for batch in batches:
-            
-            # batch: [batch, ngram, seq]
-            batch = torch.permute(batch, ( 1, 2, 0 )).to(flair.device)
-            # batch: [batch, sequence, batch_size]
-        
-            # hidden: [seq_len, ngram, hidden]
-            hidden = self.forward_hidden(batch)
-            
-            output_parts.append(hidden)
-
-        # concatenate all chunks to make final output
-        output = torch.cat(output_parts)
-
-        return output
-
-
-# Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
-class PositionalEncoding(pl.LightningModule):
-    r"""Inject some information about the relative or absolute position of the tokens in the sequence.
-        The positional encodings have the same dimension as the embeddings, so that the two can be summed.
-        Here, we use sine and cosine functions of different frequencies.
-    .. math:
-        \text{PosEncoder}(pos, 2i) = sin(pos/10000^(2i/d_model))
-        \text{PosEncoder}(pos, 2i+1) = cos(pos/10000^(2i/d_model))
-        \text{where pos is the word position and i is the embed idx)
-    Args:
-        d_model: the embed dim (required).
-        dropout: the dropout value (default=0.1).
-        max_len: the max. length of the incoming sequence (default=5000).
-    Examples:
-        >>> pos_encoder = PositionalEncoding(d_model)
-    """
-
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super(PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-        r"""Inputs of forward function
-        Args:
-            x: the sequence fed to the positional encoder model (required).
-        Shape:
-            x: [sequence length, batch size, embed dim]
-            output: [sequence length, batch size, embed dim]
-        Examples:
-            >>> output = pos_encoder(x)
-        """
-
-        x = x + self.pe[: x.size(0), :]
-        return self.dropout(x)
-
-# coding=utf-8
-# Copyright 2022 EleutherAI The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" PyTorch GPTNeoX model."""
+from src.models.ngme import NGramsEmbedding, soft_n_hot
 
 from typing import Optional, Tuple, Union
 
@@ -258,12 +19,16 @@ from torch.nn import CrossEntropyLoss
 
 from transformers.activations import ACT2FN
 
-from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 from .configuration_transformer import GPTNGMEConfig
 
 logger = logging.get_logger(__name__)
+
 
 class GPTNGMEPreTrainedModel(PreTrainedModel):
     """
@@ -305,15 +70,19 @@ class GPTNeoXAttention(nn.Module):
         max_positions = config.max_position_embeddings
         self.register_buffer(
             "bias",
-            torch.tril(torch.ones((max_positions, max_positions), dtype=torch.bool)).view(
-                1, 1, max_positions, max_positions
-            ),
+            torch.tril(
+                torch.ones((max_positions, max_positions), dtype=torch.bool)
+            ).view(1, 1, max_positions, max_positions),
         )
         self.register_buffer("masked_bias", torch.tensor(-1e9))
         self.rotary_emb = RotaryEmbedding(
-            self.rotary_ndims, config.max_position_embeddings, base=config.rotary_emb_base
+            self.rotary_ndims,
+            config.max_position_embeddings,
+            base=config.rotary_emb_base,
         )
-        self.norm_factor = torch.sqrt(torch.tensor(self.head_size, dtype=torch.float32)).to(torch.get_default_dtype())
+        self.norm_factor = torch.sqrt(
+            torch.tensor(self.head_size, dtype=torch.float32)
+        ).to(torch.get_default_dtype())
         self.query_key_value = nn.Linear(config.hidden_size, 3 * config.hidden_size)
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
 
@@ -369,10 +138,14 @@ class GPTNeoXAttention(nn.Module):
         present = (key, value) if use_cache else None
 
         # Compute attention
-        attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+        attn_output, attn_weights = self._attn(
+            query, key, value, attention_mask, head_mask
+        )
 
         # Reshape outputs
-        attn_output = self._merge_heads(attn_output, self.num_attention_heads, self.head_size)
+        attn_output = self._merge_heads(
+            attn_output, self.num_attention_heads, self.head_size
+        )
         attn_output = self.dense(attn_output)
 
         outputs = (attn_output, present)
@@ -402,7 +175,9 @@ class GPTNeoXAttention(nn.Module):
         # tensor [bs, num_attention_heads, seq_len, attn_head_size]
         tensor = tensor.permute(0, 2, 1, 3).contiguous()
         # -> [bs, seq_len, num_attention_heads, attn_head_size]
-        tensor = tensor.view(tensor.size(0), tensor.size(1), num_attention_heads * attn_head_size)
+        tensor = tensor.view(
+            tensor.size(0), tensor.size(1), num_attention_heads * attn_head_size
+        )
         # -> [bs, seq_len, hidden_size]
         return tensor
 
@@ -412,9 +187,13 @@ class GPTNeoXAttention(nn.Module):
         batch_size, num_attention_heads, query_length, attn_head_size = query.size()
         key_length = key.size(-2)
 
-        causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
+        causal_mask = self.bias[
+            :, :, key_length - query_length : key_length, :key_length
+        ]
 
-        query = query.view(batch_size * num_attention_heads, query_length, attn_head_size)
+        query = query.view(
+            batch_size * num_attention_heads, query_length, attn_head_size
+        )
         key = key.view(batch_size * num_attention_heads, key_length, attn_head_size)
         attn_scores = torch.zeros(
             batch_size * num_attention_heads,
@@ -428,14 +207,23 @@ class GPTNeoXAttention(nn.Module):
             query,
             key.transpose(1, 2),
             beta=1.0,
-            alpha=(torch.tensor(1.0, dtype=self.norm_factor.dtype, device=self.norm_factor.device) / self.norm_factor),
+            alpha=(
+                torch.tensor(
+                    1.0, dtype=self.norm_factor.dtype, device=self.norm_factor.device
+                )
+                / self.norm_factor
+            ),
         )
-        attn_scores = attn_scores.view(batch_size, num_attention_heads, query_length, key_length)
+        attn_scores = attn_scores.view(
+            batch_size, num_attention_heads, query_length, key_length
+        )
 
         mask_value = torch.finfo(attn_scores.dtype).min
         # Need to be a tensor, otherwise we get error: `RuntimeError: expected scalar type float but found double`.
         # Need to be on the same device, otherwise `RuntimeError: ..., x and y to be on the same device`
-        mask_value = torch.tensor(mask_value, dtype=attn_scores.dtype).to(attn_scores.device)
+        mask_value = torch.tensor(mask_value, dtype=attn_scores.dtype).to(
+            attn_scores.device
+        )
         attn_scores = torch.where(causal_mask, attn_scores, mask_value)
 
         if attention_mask is not None:
@@ -466,7 +254,11 @@ class RotaryEmbedding(torch.nn.Module):
 
         # Build here to make `torch.jit.trace` work.
         self.max_seq_len_cached = max_position_embeddings
-        t = torch.arange(self.max_seq_len_cached, device=self.inv_freq.device, dtype=self.inv_freq.dtype)
+        t = torch.arange(
+            self.max_seq_len_cached,
+            device=self.inv_freq.device,
+            dtype=self.inv_freq.dtype,
+        )
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -478,13 +270,17 @@ class RotaryEmbedding(torch.nn.Module):
         # This `if` block is unlikely to be run after we build sin/cos in `__init__`. Keep the logic here just in case.
         if seq_len > self.max_seq_len_cached:
             self.max_seq_len_cached = seq_len
-            t = torch.arange(self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype)
+            t = torch.arange(
+                self.max_seq_len_cached, device=x.device, dtype=self.inv_freq.dtype
+            )
             freqs = torch.einsum("i,j->ij", t, self.inv_freq)
             # Different from paper, but it uses a different permutation in order to obtain the same calculation
             emb = torch.cat((freqs, freqs), dim=-1).to(x.device)
             self.cos_cached = emb.cos()[None, None, :, :]
             self.sin_cached = emb.sin()[None, None, :, :]
-        return self.cos_cached[:seq_len, ...].to(x.device), self.sin_cached[:seq_len, ...].to(x.device)
+        return self.cos_cached[:seq_len, ...].to(x.device), self.sin_cached[
+            :seq_len, ...
+        ].to(x.device)
 
 
 def rotate_half(x):
@@ -520,8 +316,12 @@ class GPTNGMELayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.use_parallel_residual = config.use_parallel_residual
-        self.input_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.input_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
+        self.post_attention_layernorm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
         self.attention = GPTNeoXAttention(config)
         self.mlp = GPTNeoXMLP(config)
 
@@ -542,7 +342,9 @@ class GPTNGMELayer(nn.Module):
             use_cache=use_cache,
             output_attentions=output_attentions,
         )
-        attn_output = attention_layer_outputs[0]  # output_attn: attn_output, present, (attn_weights)
+        attn_output = attention_layer_outputs[
+            0
+        ]  # output_attn: attn_output, present, (attn_weights)
         outputs = attention_layer_outputs[1:]
 
         if self.use_parallel_residual:
@@ -559,7 +361,9 @@ class GPTNGMELayer(nn.Module):
             hidden_states = mlp_output + attn_output
 
         if use_cache:
-            outputs = (hidden_states,) + outputs  # hidden_states, present, (attn_weights)
+            outputs = (
+                hidden_states,
+            ) + outputs  # hidden_states, present, (attn_weights)
         else:
             outputs = (hidden_states,) + outputs[1:]  # hidden_states, (attn_weights)
 
@@ -618,10 +422,17 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        
-        self.embed_in = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList([GPTNGMELayer(config) for _ in range(config.num_hidden_layers)])
-        self.final_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
+        if self.config.use_ngme:
+            self.embed_in = NGramsEmbedding(config.vocab_size, config.hidden_size)
+        else:
+            self.embed_in = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.layers = nn.ModuleList(
+            [GPTNGMELayer(config) for _ in range(config.num_hidden_layers)]
+        )
+        self.final_layer_norm = nn.LayerNorm(
+            config.hidden_size, eps=config.layer_norm_eps
+        )
 
         self.gradient_checkpointing = False
 
@@ -656,23 +467,38 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding (see
             `past_key_values`).
         """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-
+        
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+            raise ValueError(
+                "You cannot specify both input_ids and inputs_embeds at the same time"
+            )
         elif input_ids is not None:
             input_shape = input_ids.size()
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.size()[:-1]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
+    
+        # if self.config.use_ngme:
+        #     batch_size, ngram, seq_length = input_shape.size(0)
+        # else:
+        #     batch_size, seq_length = input_shape
 
-        batch_size, seq_length = input_shape
+        batch_size = input_shape[0]
 
         if past_key_values is None:
             past_key_values = tuple([None] * self.config.num_hidden_layers)
@@ -704,6 +530,9 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
         if inputs_embeds is None:
+            # Switch first and second dimension, so that ngram is first
+            if self.config.use_ngme:
+                input_ids = input_ids.permute(1, 0, 2).contiguous()
             inputs_embeds = self.embed_in(input_ids)
 
         hidden_states = inputs_embeds
@@ -758,7 +587,11 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, presents, all_hidden_states, all_attentions] if v is not None)
+            return tuple(
+                v
+                for v in [hidden_states, presents, all_hidden_states, all_attentions]
+                if v is not None
+            )
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
@@ -838,8 +671,10 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
         >>> prediction_logits = outputs.logits
         ```"""
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+        
         outputs = self.gpt_neox(
             input_ids,
             attention_mask=attention_mask,
@@ -859,9 +694,26 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         if labels is not None:
             # we are doing next-token prediction; shift prediction scores and input ids by one
             shift_logits = lm_logits[:, :-1, :].contiguous()
-            labels = labels[:, 1:].contiguous()
-            loss_fct = CrossEntropyLoss()
-            lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+
+            if self.config.use_ngme:
+                loss_fct = CrossEntropyLossSoft()
+                labels = labels[:, :, 1:].contiguous()
+
+                labels = soft_n_hot(
+                    labels.permute(1, 0, 2).contiguous(),
+                    self.config.vocab_size,
+                    strategy="exp",
+                )
+
+                lm_loss = loss_fct(
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    labels.view(-1, labels.size(-1)),
+                )
+            else:
+                loss_fct = CrossEntropyLoss()
+                labels = labels[:, 1:].contiguous()
+                lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
+
 
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
@@ -875,12 +727,18 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             attentions=outputs.attentions,
         )
 
-    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, **model_kwargs):
+    def prepare_inputs_for_generation(
+        self, input_ids, past_key_values=None, attention_mask=None, **model_kwargs
+    ):
+        # input_shape(ngme): [batch, ngram, seq]
         input_shape = input_ids.shape
 
         # if model is used as a decoder in encoder-decoder model, the decoder attention mask is created on the fly
         if attention_mask is None:
-            attention_mask = input_ids.new_ones(input_shape)
+            if self.config.use_ngme:
+                attention_mask = input_ids.new_ones((input_ids.size(0), input_ids.size(2)))
+            else:
+                attention_mask = input_ids.new_ones(input_shape)
 
         # cut decoder_input_ids if past is used
         if past_key_values and past_key_values[0] is not None:
@@ -896,12 +754,84 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         reordered_past = ()
         for layer_past in past_key_values:
             reordered_past += (
-                tuple(past_state.index_select(0, beam_idx) for past_state in layer_past[:2]) + layer_past[2:],
+                tuple(
+                    past_state.index_select(0, beam_idx)
+                    for past_state in layer_past[:2]
+                )
+                + layer_past[2:],
             )
         return reordered_past
 
-class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
+    def sample(self, input_ids, tokenizer, chars=10):
 
+        assert len(input_ids.size()) == 2, "sample only supports a single batch item"
+
+        ntokens = len(tokenizer.dictionary)
+        
+        generated_output = tokenizer.decode(input_ids)
+        # printed_output = tokenizer.dictionary.get_item_for_index(idx.item())
+
+        iterations = []
+
+        choices_per_step = 4
+
+        with torch.no_grad():
+            self.eval()
+            for i in range(chars):
+                iteration = {}
+                
+                iteration["input"] = tokenizer.decode(input_ids)
+                
+                # One batch
+                input_ids = input_ids.unsqueeze(0)
+
+                output = self.gpt_neox(input_ids, output_hidden_states=True)
+                next_token_logits = output.hidden_states[0][0, -1, :]
+
+                if self.config.temperature == 0.0:
+                    # output = F.softmax(output, dim=0).cpu()
+                    # Just get highest confidence
+                    ngram_idx = torch.argmax(output)
+                else:
+                    next_token_probs = torch.softmax(next_token_logits, dim=-1)
+
+                    next_token_probs_gen = next_token_probs.div(0.7).exp().cpu()
+
+                    target_idx = torch.multinomial(next_token_probs_gen, 1)
+
+                    sorted_ids = torch.argsort(next_token_probs, dim=-1, descending=True)
+                    
+                    for choice_idx in range(choices_per_step):
+                        token_id = sorted_ids[choice_idx]
+                        token_prob = next_token_probs[token_id].cpu().numpy()
+                        token_choice = tokenizer.dictionary.get_item_for_index(token_id.item())
+                        token_choice = f"{token_choice} ({token_prob:.4f})"
+                        iteration[f"choice_{choice_idx}"] = token_choice
+                
+                iterations.append(iteration)
+
+                # # Get ngram word
+                word = tokenizer.dictionary.get_item_for_index(target_idx.item())
+                print("Word: ", word)
+                #
+                # # Append to generated sequence
+                generated_output = generated_output + word
+
+                # Use last 200 chars as sequence for new input
+                input_ids = (
+                    tokenizer(
+                        generated_output, return_tensors="pt"
+                    )["input_ids"]
+                ).to(self.device).squeeze(0)
+                
+                print("Generated output: ", generated_output)
+
+        print(pd.DataFrame(iterations))
+
+        return generated_output
+
+
+class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
@@ -929,8 +859,9 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         transformer_outputs = self.model(
             input_ids,
             past_key_values=past_key_values,
@@ -954,7 +885,9 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
             sequence_lengths = -1
         else:
             if input_ids is not None:
-                sequence_lengths = (torch.ne(input_ids, self.config.pad_token_id).sum(-1) - 1).to(logits.device)
+                sequence_lengths = (
+                    torch.ne(input_ids, self.config.pad_token_id).sum(-1) - 1
+                ).to(logits.device)
             else:
                 sequence_lengths = -1
                 logger.warning(
@@ -962,14 +895,18 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
                     "unexpected if using padding tokens in conjunction with `inputs_embeds.`"
                 )
 
-        pooled_logits = logits[torch.arange(batch_size, device=logits.device), sequence_lengths]
+        pooled_logits = logits[
+            torch.arange(batch_size, device=logits.device), sequence_lengths
+        ]
 
         loss = None
         if labels is not None:
             if self.config.problem_type is None:
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                elif self.num_labels > 1 and (
+                    labels.dtype == torch.long or labels.dtype == torch.int
+                ):
                     self.config.problem_type = "single_label_classification"
                 else:
                     self.config.problem_type = "multi_label_classification"
@@ -982,7 +919,9 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
                     loss = loss_fct(pooled_logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss()
-                loss = loss_fct(pooled_logits.view(-1, self.num_labels), labels.view(-1))
+                loss = loss_fct(
+                    pooled_logits.view(-1, self.num_labels), labels.view(-1)
+                )
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(pooled_logits, labels)

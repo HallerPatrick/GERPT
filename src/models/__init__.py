@@ -2,8 +2,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from src.models.rnn import RNNModel
-from src.models.transformer.configuration_transformer import TransformerConfig
-from src.models.transformer.transformer import TransformerLightningModule
+# from src.models.transformer.transformer import TransformerLightningModule
 from src.utils import count_parameters
 
 
@@ -41,9 +40,9 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
         args.ngram_indexes = dictionary.ngram_indexes
         # args.pad_token_id = dictionary.word2idx["<pad>"]
 
-        model = TransformerLightningModule(
-            TransformerConfig.from_args(args), dictionary=dictionary
-        )
+        # model = TransformerLightningModule(
+        #     TransformerConfig.from_args(args), dictionary=dictionary
+        # )
 
     if print_params:
         # Print Parameters
@@ -57,10 +56,11 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
 from transformers import AutoConfig, AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
 from src.models.transformer.configuration_transformer import GPTNGMEConfig
 from src.models.transformer.modelling_transformer import GPTNGMEModel, GPTNGMEForCausalLM, GPTNGMEForSequenceClassification
-from src.models.transformer.tokenization_transformer import GPTNGMETokenizerFast, GPTNGMETokenizer
+from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
 
 AutoConfig.register("gpt_ngme", GPTNGMEConfig)
-AutoTokenizer.register(GPTNGMEConfig, slow_tokenizer_class=GPTNGMETokenizerFast)
+# AutoTokenizer.register(GPTNGMEConfig, slow_tokenizer_class=GPTNGMETokenizerFast)
+AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
 AutoModel.register(GPTNGMEConfig, GPTNGMEModel)
 # AutoModel.register(GPTNGMEConfig, GPTNGMEForCausalLM)
 AutoModelForCausalLM.register(GPTNGMEConfig, GPTNGMEForCausalLM)

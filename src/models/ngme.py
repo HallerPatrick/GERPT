@@ -72,8 +72,8 @@ def soft_n_hot(
     if weighted:
         soft_labels = n_dist(input.size(0), strategy)
     else:
-        soft_labels = soft_dist(input.size()[0])
-
+        soft_labels = [1] * input.size(0)
+    
     for i, t in enumerate(input):
         ret.scatter_(-1, t.unsqueeze(-1), soft_labels[i])
 
@@ -96,6 +96,7 @@ class NGramsEmbedding(nn.Embedding):
         device=None,
         dtype=None,
         packed=False,
+        freeze: bool = False,
     ) -> None:
         super().__init__(
             num_embeddings,
@@ -110,9 +111,10 @@ class NGramsEmbedding(nn.Embedding):
             dtype=dtype,
         )
 
-        # self.embedding = nn.Embedding(num_embeddings, embedding_dim)
         self.num_classes = num_embeddings
         self.packed = packed
+        
+        self.weight.requires_grad = not freeze
 
     def forward(self, input: torch.Tensor, **kwargs):
         return self._forward(

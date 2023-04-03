@@ -2,11 +2,12 @@ import logging
 import math
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Optional
+from typing import Any, Optional, Dict, Mapping
 import sys
 import os
 
-
+import torch
+import numpy as np
 import wandb
 import datasets
 import evaluate
@@ -22,20 +23,21 @@ from transformers import (
     AutoTokenizer,
     TrainerCallback,
     StoppingCriteriaList,
-    MaxLengthCriteria
+    MaxLengthCriteria,
 )
 from transformers.integrations import WandbCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.testing_utils import CaptureLogger
 
-from src.models import (
-    GPTNGMEConfig, GPTNGMETokenizer
-)
+from src.models import GPTNGMEConfig, GPTNGMETokenizer
 from src.data import local_dataset_mapper
+from src.models.ngme import soft_n_hot
+from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
 
-USE_NGME = False
+USE_NGME = True
+
 
 @dataclass
 class DataTrainingArguments:
@@ -137,8 +139,7 @@ class DataTrainingArguments:
 
 
 class TextGenerationCallback(WandbCallback):
-
-    def __init__(self, tokenizer, model):
+    def __init__(self, tokenizer, model: GPTNGMEForCausalLM):
         super().__init__()
         self.tokenizer = tokenizer
         self.model = model
@@ -152,25 +153,28 @@ class TextGenerationCallback(WandbCallback):
         self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
         input_prompt = "It might be possible to"
 
-        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(self.model.device)
+        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
+            self.model.device
+        )
 
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
 
         outputs = self.model.sample(
-            input_ids,
-            do_sample=True,
-            stopping_criteria=stopping_criteria,
+            input_ids[0],
+            self.tokenizer
+            # do_sample=True,
+            # stopping_criteria=stopping_criteria,
         )
 
         self.model.train()
 
         text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
-        
+
         table = wandb.Table(columns=["epoch", "text"], data=[[state.global_step, text]])
         self._wandb.log({"text_generation": table})
 
-class _TextGenerationCallback(TrainerCallback):
 
+class _TextGenerationCallback(TrainerCallback):
     def __init__(self, tokenizer, model):
         self.tokenizer = tokenizer
         self.model = model
@@ -180,9 +184,11 @@ class _TextGenerationCallback(TrainerCallback):
         self.model.eval()
 
         self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
-        input_prompt = "It might be possible to"
+        input_prompt = ["It might be possible to"]
 
-        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(self.model.device)
+        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
+            self.model.device
+        )
 
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
 
@@ -192,11 +198,54 @@ class _TextGenerationCallback(TrainerCallback):
             stopping_criteria=stopping_criteria,
         )
 
-        print(self.tokenizer.batch_decode(outputs, skip_special_tokens=True))
+        # print(self.tokenizer.batch_decode(outputs, skip_special_tokens=True))
 
         self.model.train()
 
         return super().on_epoch_end(args, state, control, **kwargs)
+
+
+def ngme_data_collator(features) -> Dict[str, Any]:
+    # features: list
+
+    if not isinstance(features[0], Mapping):
+        features = [vars(f) for f in features]
+    first = features[0]
+    batch = {}
+
+    # Special handling for labels.
+    # Ensure that tensor is created with the correct type
+    # (it should be automatically the case, but let's make sure of it.)
+    if "label" in first and first["label"] is not None:
+        label = (
+            first["label"].item()
+            if isinstance(first["label"], torch.Tensor)
+            else first["label"]
+        )
+        dtype = torch.long if isinstance(label, int) else torch.float
+        batch["labels"] = torch.tensor([f["label"] for f in features], dtype=dtype)
+    elif "label_ids" in first and first["label_ids"] is not None:
+        if isinstance(first["label_ids"], torch.Tensor):
+            batch["labels"] = torch.stack([f["label_ids"] for f in features])
+        else:
+            dtype = torch.long if type(first["label_ids"][0]) is int else torch.float
+            batch["labels"] = torch.tensor(
+                [f["label_ids"] for f in features], dtype=dtype
+            )
+
+    # Handling of all other possible keys.
+    # Again, we will use the first element to figure out which key/values are not None for this model.
+    for k, v in first.items():
+        if k not in ("label", "label_ids") and v is not None and not isinstance(v, str):
+            if isinstance(v, torch.Tensor):
+                batch[k] = torch.stack([f[k] for f in features])
+            elif isinstance(v, np.ndarray):
+                batch[k] = torch.tensor(np.stack([f[k] for f in features]))
+            else:
+                batch[k] = torch.stack([torch.tensor(f[k]) for f in features], dim=0)
+                # batch[k]: [batch_size, seq_len]
+
+    return batch
 
 
 def main():
@@ -314,7 +363,7 @@ def main():
                 split=f"train[{data_args.validation_split_percentage}%:]",
                 **dataset_args,
             )
-    
+
     if USE_NGME:
         tokenizer = GPTNGMETokenizer(vocab_file="data/data-dict-2")
     else:
@@ -353,6 +402,21 @@ def main():
     def tokenize_function(examples):
         with CaptureLogger(tok_logger) as cl:
             output = tokenizer(examples[text_column_name])
+            # output input_ids should be same amount as examples to tokenizer
+
+            if USE_NGME:
+                assert len(examples[text_column_name]) == len(output["input_ids"])
+                # Attention mask should be as long as first input ids
+                if len(output["input_ids"][0]) > 0:
+                    assert len(output["input_ids"][0][0]) == len(
+                        output["attention_mask"][0]
+                    )
+
+                    # print(f"Number of examples: {len(examples[text_column_name])}")
+                    # print(f"Ngrams: {len(output['input_ids'][0])}")
+                    # print(f"Length of first example: {len(output['input_ids'][0][0])}")
+                    # print(f"Length of attention mask first example: {len(output['attention_mask'][0])}")
+
         # clm input could be much much longer than block_size
         if "Token indices sequence length is longer than the" in cl.out:
             tok_logger.warning(
@@ -360,6 +424,8 @@ def main():
                 " before being passed to the model."
             )
         return output
+
+    tokenize_function.i = 0
 
     with training_args.main_process_first(desc="dataset map tokenization"):
         if not data_args.streaming:
@@ -398,17 +464,36 @@ def main():
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
+
+        concatenated_examples = {}
+        for k in examples.keys():
+            if USE_NGME and k == "input_ids":
+                concatenated_examples[k] = np.concatenate(
+                    [np.array(example) for example in examples[k] if len(example) > 0],
+                    axis=1,
+                )
+            else:
+                concatenated_examples[k] = list(chain(*examples[k]))
+
+        total_length = len(concatenated_examples["attention_mask"])
         # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
         # customize this part to your needs.
         if total_length >= block_size:
             total_length = (total_length // block_size) * block_size
+
+        result = {}
+
         # Split by chunks of max_len.
-        result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
+        for k, t in concatenated_examples.items():
+            if k == "input_ids" and USE_NGME:
+                result[k] = [
+                     t[:, i : i + block_size] for i in range(0, total_length, block_size)
+                ]
+            else:
+                result[k] = [
+                     t[i : i + block_size] for i in range(0, total_length, block_size)
+                ]
+
         result["labels"] = result["input_ids"].copy()
         return result
 
@@ -456,8 +541,12 @@ def main():
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
+            if USE_NGME:
+                labels = soft_n_hot(torch.tensor(labels).permute(1, 0, 2).contiguous(), tokenizer.vocab_size, strategy="exp")
             labels = labels[:, 1:].reshape(-1)
             preds = preds[:, :-1].reshape(-1)
+
+            print(labels.shape, preds.shape)
             return metric.compute(predictions=preds, references=labels)
 
     # Initialize our Trainer
@@ -468,7 +557,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=default_data_collator,
+        data_collator=ngme_data_collator,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval
@@ -476,7 +565,7 @@ def main():
     )
 
     trainer.add_callback(TextGenerationCallback(tokenizer, model))
-
+ 
     # Training
     if training_args.do_train:
         checkpoint = None
@@ -506,7 +595,11 @@ def main():
 
         metrics = trainer.evaluate()
 
-        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        max_eval_samples = (
+            data_args.max_eval_samples
+            if data_args.max_eval_samples is not None
+            else len(eval_dataset)
+        )
         metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
         try:
             perplexity = math.exp(metrics["eval_loss"])
