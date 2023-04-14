@@ -600,6 +600,29 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             attentions=all_attentions,
         )
 
+def shift_inplace(tensor):
+
+    shifted_labels = []
+    for i in range(tensor.size(1)):
+        shifted = tensor[:, i, (i+1):].squeeze(0)
+
+        if i == 0:
+            shifted_labels.append(shifted)
+            continue
+
+        seq_size = tensor.size(2) - 1
+
+        missing_idxs = torch.arange(seq_size-(i), seq_size).to(tensor.device)
+
+        # Shifted labels[0] -> [batch, seq]
+        if shifted.dim == 1:
+            shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=0)
+        else:
+            shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1)
+
+        shifted_labels.append(shifted)
+    
+    return torch.stack(shifted_labels, dim=1)
 
 class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
@@ -693,23 +716,27 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         lm_loss = None
         if labels is not None:
             # we are doing next-token prediction; shift prediction scores and input ids by one
-            shift_logits = lm_logits[:, :-1, :].contiguous()
 
             if self.config.use_ngme:
+                
+                shift_logits = lm_logits[:, :-1, :].contiguous()
+
                 loss_fct = CrossEntropyLossSoft()
-                labels = labels[:, :, 1:].contiguous()
+                labels = shift_inplace(labels)
+                # labels = labels[:, :, 1:].contiguous()
 
                 labels = soft_n_hot(
                     labels.permute(1, 0, 2).contiguous(),
                     self.config.vocab_size,
                     strategy="exp",
                 )
-
+                
                 lm_loss = loss_fct(
                     shift_logits.view(-1, shift_logits.size(-1)),
                     labels.view(-1, labels.size(-1)),
                 )
             else:
+                shift_logits = lm_logits[:, :-1, :].contiguous()
                 loss_fct = CrossEntropyLoss()
                 labels = labels[:, 1:].contiguous()
                 lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
@@ -736,7 +763,10 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         # if model is used as a decoder in encoder-decoder model, the decoder attention mask is created on the fly
         if attention_mask is None:
             if self.config.use_ngme:
-                attention_mask = input_ids.new_ones((input_ids.size(0), input_ids.size(2)))
+                if len(input_shape) == 3:
+                    attention_mask = input_ids.new_ones((input_ids.size(0), input_ids.size(2)))
+                else:
+                    attention_mask = input_ids.new_ones(input_ids.size(1))
             else:
                 attention_mask = input_ids.new_ones(input_shape)
 
@@ -762,7 +792,9 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             )
         return reordered_past
 
-    def sample(self, input_ids, tokenizer, chars=10):
+    def sample(self, input_ids, tokenizer=None, chars=10, **kwargs):
+        if not self.config.use_ngme:
+            return super().sample(input_ids, **kwargs)
 
         assert len(input_ids.size()) == 2, "sample only supports a single batch item"
 
@@ -780,6 +812,8 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             for i in range(chars):
                 iteration = {}
                 
+                input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
+
                 iteration["input"] = tokenizer.decode(input_ids)
                 
                 # One batch

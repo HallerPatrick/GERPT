@@ -36,7 +36,7 @@ from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
 
-USE_NGME = True
+USE_NGME = False
 
 
 @dataclass
@@ -158,55 +158,33 @@ class TextGenerationCallback(WandbCallback):
         )
 
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
-
-        outputs = self.model.sample(
-            input_ids[0],
-            self.tokenizer
-            # do_sample=True,
-            # stopping_criteria=stopping_criteria,
-        )
+            
+        if USE_NGME:
+            outputs = self.model.sample(
+                input_ids[0],
+                self.tokenizer
+                # do_sample=True,
+                # stopping_criteria=stopping_criteria,
+            )
+        else:
+            outputs = self.model.sample(
+                input_ids,
+                do_sample=True,
+                stopping_criteria=stopping_criteria,
+            )
 
         self.model.train()
 
         text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
-
-        table = wandb.Table(columns=["epoch", "text"], data=[[state.global_step, text]])
+        
+        print(text)
+        table = wandb.Table(columns=["global_step", "text"], data=[[state.global_step, text]])
         self._wandb.log({"text_generation": table})
-
-
-class _TextGenerationCallback(TrainerCallback):
-    def __init__(self, tokenizer, model):
-        self.tokenizer = tokenizer
-        self.model = model
-
-    def on_epoch_end(self, args: TrainingArguments, state, control, **kwargs):
-        # Generate text and log it
-        self.model.eval()
-
-        self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
-        input_prompt = ["It might be possible to"]
-
-        input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
-            self.model.device
-        )
-
-        stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
-
-        outputs = self.model.sample(
-            input_ids,
-            do_sample=True,
-            stopping_criteria=stopping_criteria,
-        )
-
-        # print(self.tokenizer.batch_decode(outputs, skip_special_tokens=True))
-
-        self.model.train()
-
-        return super().on_epoch_end(args, state, control, **kwargs)
 
 
 def ngme_data_collator(features) -> Dict[str, Any]:
     # features: list
+
 
     if not isinstance(features[0], Mapping):
         features = [vars(f) for f in features]
@@ -373,7 +351,7 @@ def main():
         vocab_size=tokenizer.vocab_size,
         hidden_size=512,
         num_hidden_layers=2,
-        num_attention_heads=8,
+        num_attention_heads=2,
         intermediate_size=512,
         eos_token_id=tokenizer.eos_token_id,
         use_ngme=USE_NGME,
@@ -546,7 +524,6 @@ def main():
             labels = labels[:, 1:].reshape(-1)
             preds = preds[:, :-1].reshape(-1)
 
-            print(labels.shape, preds.shape)
             return metric.compute(predictions=preds, references=labels)
 
     # Initialize our Trainer
@@ -557,7 +534,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=ngme_data_collator,
+        data_collator=ngme_data_collator if USE_NGME else default_data_collator,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval

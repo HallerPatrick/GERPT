@@ -351,6 +351,9 @@ class Dictionary:
                 return idxs[idx]
         return "<unk>"
 
+    def vocab_size_per_ngram(self):
+        return [len(self.ngram2word2idx[ngram]) for ngram in range(1, self.ngram + 1)]
+
     def save_vocabulary(
         self,
         vocab_file: str,
@@ -435,7 +438,7 @@ class Dictionary:
                 try:
                     ids.append(self.ngram2word2idx[n]["".join(word)])
                 except KeyError:
-                    ids.append(self.ngram2word2idx[n]["<unk>"])
+                    ids.append(self.ngram2word2idx[1]["<unk>"])
 
                 length += 1
 
@@ -625,7 +628,8 @@ class Dictionary:
             normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
         else:
             normed_weights = t
-
+        
+        # Instead of explicit ignore indexes, we use the weight vector and set target idxs to 0
         for marker in self.get_marker_tokens():
             if (
                 marker < len(normed_weights)

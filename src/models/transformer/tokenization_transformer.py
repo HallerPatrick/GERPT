@@ -567,6 +567,8 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
     def _decode(
         self, token_ids: List[List[int]], skip_special_tokens: bool = False, **kwargs
     ) -> str:
+        print(token_ids)
+
         return "".join(
             [self._convert_id_to_token(token_id) for token_id in token_ids[0]]
         )
@@ -911,7 +913,10 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         )
 
         pair = bool(pair_ids is not None)
-        len_ids = len(ids[0])
+        if len(ids) == 0:
+            len_ids = 0
+        else:
+            len_ids = len(ids[0])
         len_pair_ids = len(pair_ids) if pair else 0
 
         if return_token_type_ids and not add_special_tokens:

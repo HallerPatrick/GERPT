@@ -144,6 +144,11 @@ def argparser_train() -> argparse.Namespace:
         type=str
     )
 
+    parser.add_argument(
+        "--loss-type",
+        type=str
+    )
+
     parser.add_argument("--embedding-size", type=int, help="size of word embeddings")
     parser.add_argument(
         "--expected-size", type=int, help="Size of model adjusted by tuning hidden size"

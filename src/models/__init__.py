@@ -29,6 +29,7 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
                 is_forward_lm=args.is_forward,
                 cell_type=args.model,
                 packed=args.packed,
+                loss_type=args.loss_type,
             )
     else:
         # Adjust args

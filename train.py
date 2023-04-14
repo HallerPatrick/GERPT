@@ -9,21 +9,32 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBar
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy
-from pytorch_lightning.strategies.deepspeed import DeepSpeedStrategy
-from pytorch_lightning.utilities.deepspeed import \
-    convert_zero_checkpoint_to_fp32_state_dict
 
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.models import load_model
-from src.models.transformer import NGMETokenizer
+from src.models.knnlm import KEY_TYPE, KNNSaver
+from src.dictionary import Dictionary
+
 from src.train_strategy import TrainStrategy
-from src.utils import TextGenerationCallback, TimePerEpochCallback, EarlyStoppingOnLRCallback
+from src.utils import (
+    TextGenerationCallback,
+    TimePerEpochCallback,
+    EarlyStoppingOnLRCallback,
+)
 from train_ds import train_ds
 
 TEST = False
 
 torch.set_float32_matmul_precision("medium")
+
+
+class KnnLMArgs:
+    use_knn = False
+    dstore_size = 1024
+    dstore_dir = "dstore"
+    key_type = KEY_TYPE.last_ffn_input
+
 
 def pl_callbacks():
     """Return a list of callbacks for the trainer"""
@@ -33,7 +44,7 @@ def pl_callbacks():
         mode="max",
         dirpath="checkpoints",
         filename=args.save,
-        verbose=True
+        verbose=True,
     )
 
     # Peformance
@@ -44,9 +55,9 @@ def pl_callbacks():
 
     learning_rate_callback = LearningRateMonitor()
 
-    early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.3)
+    early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.01)
 
-    text_gen_callback = TextGenerationCallback(interval=10)
+    text_gen_callback = TextGenerationCallback(interval=1, enabled=True)
 
     return [
         checkpoint_callback,
@@ -54,7 +65,7 @@ def pl_callbacks():
         rick_prog_bar_callback,
         learning_rate_callback,
         early_stopping_callback,
-        text_gen_callback
+        text_gen_callback,
     ]
 
 
@@ -84,15 +95,29 @@ if __name__ == "__main__":
     )
 
     if torch.cuda.is_available():
-        strategy = DDPStrategy(
-            find_unused_parameters=False
-        )
+        strategy = DDPStrategy(find_unused_parameters=False)
     else:
         strategy = None
 
     # --- Load Dictionary & Model ---
-    dictionary = torch.load(args.saved_dict)
+    if args.saved_dict.endswith(".json"):
+        dictionary = Dictionary.load_from_file(args.saved_dict)
+        dictionary.ngme = "explicit"
+        dictionary = dictionary.unking(100_000, 4, 2000, True)
+    else:
+        dictionary = torch.load(args.saved_dict)
+
     model = load_model(dictionary, args, print_params=True)
+
+    if KnnLMArgs.use_knn:
+        knn_wrapper = KNNSaver(
+            KnnLMArgs.dstore_size,
+            KnnLMArgs.dstore_dir,
+            args.hidden_size,
+            KnnLMArgs.key_type,
+        )
+
+        knn_wrapper.break_into(model)
 
     # --- Training ---
     trainer = Trainer(
@@ -121,6 +146,9 @@ if __name__ == "__main__":
     last_ckpt_path = "checkpoints/" + args.save + ".last.ckpt"
 
     trainer.save_checkpoint(last_ckpt_path)
+    
+    if KnnLMArgs.use_knn:
+        knn_wrapper.build_index()
 
     # Custom save for flair embeddings
     if args.model == "lstm":
@@ -128,23 +156,24 @@ if __name__ == "__main__":
 
     # Transformer is wrapped in huggingface PreTrainedModel
     elif args.model == "transformer":
-        trainer.lightning_module.model.save_pretrained(
-            "checkpoints" / Path(args.save), ngram=args.ngram
-        )
-
-        if not args.reuse_dict:
-            # Save vocab file
-            vocab_file = dictionary.save_vocabulary(
-                "checkpoints"
-                / Path(args.save)
-                / (NGMETokenizer.vocab_file_name + ".dict"),
-                args.ngram,
-            )
-        else:
-            vocab_file = args.reuse_dict
-
-        # Save HF tokenizer
-        NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
+        pass
+        # trainer.lightning_module.model.save_pretrained(
+        #     "checkpoints" / Path(args.save), ngram=args.ngram
+        # )
+        #
+        # if not args.reuse_dict:
+        #     # Save vocab file
+        #     vocab_file = dictionary.save_vocabulary(
+        #         "checkpoints"
+        #         / Path(args.save)
+        #         / (NGMETokenizer.vocab_file_name + ".dict"),
+        #         args.ngram,
+        #     )
+        # else:
+        #     vocab_file = args.reuse_dict
+        #
+        # # Save HF tokenizer
+        # NGMETokenizer(vocab_file).save_pretrained("checkpoints" / Path(args.save))
 
     try:
         # Save wandb run id in config for fine tuning run
@@ -157,9 +186,7 @@ if __name__ == "__main__":
     print("Training done")
     print("=" * 80)
     print("Saving:")
-    print(
-        f"Flair Model:     {'checkpoints' / Path('flair_' + args.save)}"
-    )
+    print(f"Flair Model:     {'checkpoints' / Path('flair_' + args.save)}")
     print(
         f"Last Checkpoint: {last_ckpt_path}{'(deepspeed folder)' if strategy else ''}"
     )

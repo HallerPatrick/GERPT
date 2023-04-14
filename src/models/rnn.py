@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import math
 from pathlib import Path
 from typing import List, Union
@@ -9,12 +10,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning.utilities import rank_zero
-from rich.panel import Panel
 
-from src import utils
-from src.loss import CrossEntropyLossSoft
+from src.loss import AdaptiveLogSoftmaxWithLossSoft, CrossEntropyLossSoft
 
-from .ngme import NGramsEmbedding, soft_n_hot
+from .ngme import NGramsEmbedding, soft_n_hot, CanineEmbeddings
 
 
 DEBUG = False
@@ -58,13 +57,16 @@ class RNNModel(pl.LightningModule):
         chars_to_gen: int = 1000,
         cell_type: str = "lstm",
         packed: bool = False,
+        loss_type: str = "cross_entropy",
     ):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
         self.encoder = NGramsEmbedding(
-            len(dictionary), embedding_size, packed=packed, freeze=False
+            len(dictionary), embedding_size, packed=packed, freeze=True
         )
+        # self.encoder = CanineEmbeddings(embedding_size, 8, 50_000)
+
         self.ngrams = ngrams
         self.dictionary = dictionary
         self.nlayers = nlayers
@@ -78,6 +80,7 @@ class RNNModel(pl.LightningModule):
         self.weighted_loss = weighted_loss
         self.strategy = strategy
         self.lr = lr
+        self.loss_type = loss_type
 
         self.criterion = None
         self.bidirectional = False
@@ -106,9 +109,11 @@ class RNNModel(pl.LightningModule):
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
 
         self.drop = nn.Dropout(dropout)
-        self.decoder = nn.Linear(
-            hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
-        )
+
+        if loss_type != "adaptive_softmax":
+            self.decoder = nn.Linear(
+                hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
+            )
 
         self.save_hyperparameters()
         self.init_weights()
@@ -123,23 +128,39 @@ class RNNModel(pl.LightningModule):
         self.proj = None
 
     def setup(self, stage) -> None:
-        # self.criterion = CrossEntropyLossSoft(
-        #     weight=self.dictionary.create_weight_tensor(
-        #         self.weighted_loss
-        #     ),
-        # )
 
-        # self.criterion = torch.nn.CrossEntropyLoss(
-            # weight=self.dictionary.create_weight_tensor(
-            #     self.weighted_loss
-            # ),
-        # )
+        if self.loss_type == "cross_entropy":
+            self.criterion = CrossEntropyLossSoft(
+                weight=self.dictionary.create_weight_tensor(self.weighted_loss),
+            )
+        elif self.loss_type == "adaptive_softmax":
 
-        self.criterion = torch.nn.BCEWithLogitsLoss(
-            pos_weight=self.dictionary.create_weight_tensor(self.weighted_loss)
-        )
+            # Using len of ngram vocabs as cutoffs
+            vocabs = self.dictionary.vocab_size_per_ngram()
 
-        # self.criterion = bce_loss
+            del vocabs[-1]
+            cutoffs = [vocabs[0]]
+            for i, vocab in enumerate(vocabs[1:]):
+                cutoffs.append(vocab + cutoffs[i])
+
+            self.criterion = AdaptiveLogSoftmaxWithLossSoft(
+                in_features=self.hidden_size,
+                n_classes=self.ntokens,
+                cutoffs=cutoffs,
+                weight=self.dictionary.create_weight_tensor(self.weighted_loss)
+            )
+
+        elif self.loss_type == "split_cross_entropy":
+            # TODO: Ideally we apply the same weights as for normal cross_entropy to all subsets
+            self.criterion = []
+            weights = self.dictionary.create_weight_tensor(self.weighted_loss)
+            weights = self._subset_logits(weights.unsqueeze(0))
+            for weight_tensor in weights:
+                self.criterion.append(
+                    nn.CrossEntropyLoss(weight=weight_tensor.squeeze(0))
+                )
+        else:
+            raise ValueError("Loss not supported")
 
     @staticmethod
     def initialize(matrix):
@@ -178,37 +199,73 @@ class RNNModel(pl.LightningModule):
         self.hidden = repackage_hidden(hidden)
 
         # target: [ngram, seq, batch]
-        target = soft_n_hot(
-            target,
-            self.ntokens,
-            # self.strategy,
-            "linear",
-            self.weighted_labels,
-            self.encoder.packed,
-        )
+        if self.loss_type == "cross_entropy":
+            target = soft_n_hot(
+                target,
+                self.ntokens,
+                # self.strategy,
+                "linear",
+                self.weighted_labels,
+                False,
+                # self.encoder.packed,
+            )
+            # [seq, vocab]
+            target = target.reshape((-1, target.size(-1)))
+            loss = self.criterion(decoded, target)
+            # 158 secs
+        elif self.loss_type == "split_cross_entropy":
+            target = target.reshape((target.size(0), -1))
+            loss = self.subset_cross_entropy(decoded, target)
 
-        # subsets = self._subset_logits(decoded)
-        
-        target = target.reshape((target.size(0), -1))
-
-        # losses = []
-        # for subset, n_gram_target in zip(subsets, self._map_n_gram_id(target)):
-        #     loss = self.criterion(subset, n_gram_target)
-        #     losses.append(loss)
-        # 
-        # for n, loss in enumerate(losses):
-        #     self.log(f"train/{n+1}-ngram-loss", loss)
-        #
-        # loss = sum(losses)
-        
-        print(decoded)
-        print(decoded.shape)
-        print(torch.sigmoid(decoded))
-        print(torch.nn.functional.logsigmoid(decoded))
-
-        loss = self.criterion(decoded, target)
+        elif self.loss_type == "adaptive_softmax":
+            target = target.reshape((target.size(0), -1))
+            decoded = decoded.reshape((-1, decoded.size(-1)))
+            output, loss = self.criterion(decoded, target)
+        else:
+            raise ValueError("Loss not supported")
 
         return loss, decoded, target
+
+    def adaptive_softmax_loss(self, decoded, target):
+        subsets = self._subset_logits(decoded)
+
+        losses = []
+        for i, (subset, n_gram_target) in enumerate(
+            zip(subsets, self._map_n_gram_id(target))
+        ):
+
+            if self.criterion[i].head.weight.device != subset.device:
+                self.criterion[i].head.to(subset.device)
+                self.criterion[i].tail.to(subset.device)
+
+            output, loss = self.criterion[i](subset, n_gram_target.reshape(-1))
+            losses.append(loss)
+
+        for n, loss in enumerate(losses):
+            self.log(f"train/{n+1}-ngram-loss", loss)
+
+        loss = sum(losses)
+        return loss
+
+    def subset_cross_entropy(self, decoded, target):
+        subsets = self._subset_logits(decoded)
+
+        losses = []
+        for i, (subset, n_gram_target) in enumerate(
+            zip(subsets, self._map_n_gram_id(target))
+        ):
+
+            if self.criterion[i].weight.device != subset.device:
+                self.criterion[i].weight = self.criterion[i].weight.to(subset.device)
+            
+            loss = self.criterion[i](subset, n_gram_target) * (i+1)
+            losses.append(loss)
+
+        for n, loss in enumerate(losses):
+            self.log(f"train/{n+1}-ngram-loss", loss)
+
+        loss = sum(losses)
+        return loss
 
     def _map_n_gram_id(self, tensor):
         """
@@ -220,16 +277,15 @@ class RNNModel(pl.LightningModule):
             1-ngram: [0, 100],
             2-ngram: [101, 300],
             3-ngram: [301, 500]
-            
+
             2-gram id: 101 -> 0
             2-gram id: 224 -> 123
         """
 
         subsets = []
         for n, tensor in enumerate(tensor):
-            smallest_ngram_idx = list(self.dictionary.ngram2idx2word[n+1].keys())[0]
+            smallest_ngram_idx = list(self.dictionary.ngram2idx2word[n + 1].keys())[0]
             subset_tensor = torch.sub(tensor, smallest_ngram_idx)
-
             subsets.append(subset_tensor)
 
         return subsets
@@ -281,7 +337,7 @@ class RNNModel(pl.LightningModule):
         #    where: L_T, number of tokens, L_B number of UTF-8 encoded bytes, l = NLL
         # source = batch[0]
         # num_tokens = source.size(1)
-        # num_bytes = None
+        # num_bycross_entropytes = None
         # print(batch.size())
 
     def training_epoch_end(self, _) -> None:
@@ -305,26 +361,60 @@ class RNNModel(pl.LightningModule):
                 output, hidden = self(inp, hidden)
 
                 # Only use the generated ngrams
-                output = output[-1]
 
                 if self.temperature == 0.0:
+                    output = output[-1]
                     output = F.softmax(output, dim=0).detach()
                     # Just get highest confidence
                     ngram_idx = torch.argmax(output)
                     word = self.dictionary.get_item_for_index(ngram_idx.item())
                 else:
-                    output = F.log_softmax(output, dim=0)
-                    # output = torch.sigmoid(output)
-                    # idx = torch.argmax(output)
-                    # print(output)
-                    # output = torch.nn.functional.logsigmoid(output)
+                    output = output[-1]
 
-                    word_weights = output.squeeze().div(self.temperature).exp().detach()
+                    if self.loss_type in ["split_cross_entropy"]:
+                        subsets = self._subset_logits(output.unsqueeze(0))
 
-                    # multinomial over all tokens
-                    # To avoid unk gens, take ( n*unique_unks_in_dict )+1
-                    # Probe for first non unk token
-                    ngram_idx = torch.multinomial(word_weights, 1)[0].item()
+                        ngram_idxs = []
+                        for n, subset in enumerate(subsets):
+                            subset_output = F.log_softmax(subset.squeeze(0), dim=0)
+
+                            word_weights = (
+                                subset_output.squeeze()
+                                .div(self.temperature)
+                                .exp()
+                                .detach()
+                            )
+                            subset_ngram_idx = torch.multinomial(word_weights, 1)[
+                                0
+                            ].item()
+                            smallest_ngram_idx = list(
+                                self.dictionary.ngram2idx2word[n + 1].keys()
+                            )[0]
+                            ngram_idx = subset_ngram_idx + smallest_ngram_idx
+                            output_probability = word_weights[subset_ngram_idx].item()
+                            ngram_idxs.append((ngram_idx, output_probability))
+
+                        # ngram_idx = list(sorted(ngram_idxs, key=lambda x: x[1], reverse=True))[0][0]
+                        ngram_idx = ngram_idxs[0][0]
+                    elif self.loss_type == "adaptive_softmax":
+                        output = self.criterion.log_prob(output)
+                        output = F.log_softmax(output.squeeze(0), dim=0)
+                        word_weights = (
+                            output.squeeze().div(self.temperature).exp().detach()
+                        )
+                        ngram_idx = torch.multinomial(word_weights, 1)[0].item()
+                    else:
+                        # output = output[-1]
+                        output = F.log_softmax(output, dim=0)
+
+                        word_weights = (
+                            output.squeeze().div(self.temperature).exp().detach()
+                        )
+
+                        # multinomial over all tokens
+                        # To avoid unk gens, take ( n*unique_unks_in_dict )+1
+                        # Probe for first non unk token
+                        ngram_idx = torch.multinomial(word_weights, 1)[0].item()
 
                     ngram_order = self.dictionary.get_ngram_order(ngram_idx)
                     ngrams_idxs = [ngram_idx]
@@ -384,9 +474,10 @@ class RNNModel(pl.LightningModule):
 
     def init_weights(self):
         initrange = 0.1
-        nn.init.uniform_(self.encoder.weight, -initrange, initrange)
-        nn.init.zeros_(self.decoder.weight)
-        nn.init.uniform_(self.decoder.weight, -initrange, initrange)
+        # nn.init.uniform_(self.encoder.weight, -initrange, initrange)
+        if hasattr(self, "decoder"):
+            nn.init.zeros_(self.decoder.weight)
+            nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
     def forward(self, input, hidden):
         # [#ngram, #seq_len, #batch_size]
@@ -395,9 +486,11 @@ class RNNModel(pl.LightningModule):
 
         self.rnn.flatten_parameters()
         output, hidden = self.rnn(emb, hidden)
-        decoded = self.decoder(output).view(-1, self.ntokens)
 
-        return decoded, hidden
+        if hasattr(self, "decoder"):
+            output = self.decoder(output).view(-1, self.ntokens)
+
+        return output, hidden
 
     def forward2(self, input, hidden, ordered_sequence_lengths=None):
         # input: [ngram, sequence_length, batch]
