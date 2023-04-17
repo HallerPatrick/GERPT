@@ -260,21 +260,22 @@ def patch_flair_lstm():
     @wrapt.patch_function_wrapper(flair.models.LanguageModel, "load_language_model")
     def load_language_model(wrapped, instance, args, kwargs):
         """Monkey patch load_language_model to load our RNNModel"""
-
-        state = torch.load(str(args[0]), map_location=flair.device)
-
-        model = RNNModel(
-            dictionary=state["dictionary"],
-            nlayers=state["nlayers"],
-            ngrams=state["ngrams"],
-            hidden_size=state["hidden_size"],
-            nout=state["nout"],
-            embedding_size=state["embedding_size"],
-            is_forward_lm=state["is_forward_lm"],
-            document_delimiter=state["document_delimiter"],
-            dropout=state["dropout"],
-        )
-        model.load_state_dict(state["state_dict"])
+        
+        model = RNNModel.load_from_checkpoint(args[0], strict=False)
+        # state = torch.load(str(args[0]), map_location=flair.device)
+        #
+        # model = RNNModel(
+        #     dictionary=state["dictionary"],
+        #     nlayers=state["nlayers"],
+        #     ngrams=state["ngrams"],
+        #     hidden_size=state["hidden_size"],
+        #     nout=state["nout"],
+        #     embedding_size=state["embedding_size"],
+        #     is_forward_lm=state["is_forward_lm"],
+        #     document_delimiter=state["document_delimiter"],
+        #     dropout=state["dropout"],
+        # )
+        # model.load_state_dict(state["state_dict"])
         model.eval()
         model.to(flair.device)
 

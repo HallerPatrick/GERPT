@@ -487,6 +487,10 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             self.dictionary = torch.load(vocab_file)
 
         super().__init__(**kwargs)
+
+        if "\n" not in self.dictionary.ngram2word2idx[1]:
+            self.dictionary.add_ngram("\n", 1)
+
         self.eos_token_id = self.dictionary.ngram2word2idx[1]["\n"]
         self._pad_token_id = self.dictionary.ngram2word2idx[1]["\n"]
         self.unk_token_id = self.dictionary.ngram2word2idx[1]["<unk>"]

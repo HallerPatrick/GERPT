@@ -13,11 +13,11 @@ from pytorch_lightning.strategies import DDPStrategy
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
 from src.models import load_model
-from src.models.knnlm import KEY_TYPE, KNNSaver
 from src.dictionary import Dictionary
 
 from src.train_strategy import TrainStrategy
 from src.utils import (
+    FlairDownstreamCallback,
     TextGenerationCallback,
     TimePerEpochCallback,
     EarlyStoppingOnLRCallback,
@@ -27,14 +27,6 @@ from train_ds import train_ds
 TEST = False
 
 torch.set_float32_matmul_precision("medium")
-
-
-class KnnLMArgs:
-    use_knn = False
-    dstore_size = 1024
-    dstore_dir = "dstore"
-    key_type = KEY_TYPE.last_ffn_input
-
 
 def pl_callbacks():
     """Return a list of callbacks for the trainer"""
@@ -57,7 +49,9 @@ def pl_callbacks():
 
     early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.01)
 
-    text_gen_callback = TextGenerationCallback(interval=1, enabled=True)
+    text_gen_callback = TextGenerationCallback(interval=20, enabled=True)
+
+    flair_callback = FlairDownstreamCallback(interval=10, enabled=True)
 
     return [
         checkpoint_callback,
@@ -66,6 +60,7 @@ def pl_callbacks():
         learning_rate_callback,
         early_stopping_callback,
         text_gen_callback,
+        flair_callback
     ]
 
 
@@ -109,16 +104,6 @@ if __name__ == "__main__":
 
     model = load_model(dictionary, args, print_params=True)
 
-    if KnnLMArgs.use_knn:
-        knn_wrapper = KNNSaver(
-            KnnLMArgs.dstore_size,
-            KnnLMArgs.dstore_dir,
-            args.hidden_size,
-            KnnLMArgs.key_type,
-        )
-
-        knn_wrapper.break_into(model)
-
     # --- Training ---
     trainer = Trainer(
         # resume_from_checkpoint=args.continue_from
@@ -146,9 +131,6 @@ if __name__ == "__main__":
     last_ckpt_path = "checkpoints/" + args.save + ".last.ckpt"
 
     trainer.save_checkpoint(last_ckpt_path)
-    
-    if KnnLMArgs.use_knn:
-        knn_wrapper.build_index()
 
     # Custom save for flair embeddings
     if args.model == "lstm":

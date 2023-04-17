@@ -247,7 +247,6 @@ class CrossEntropyLossSoft(nn.Module):
                 self.weight = self.weight.to(logprobs.device)
 
             if not disable_weight:
-                print(logprobs.shape, self.weight.shape)
                 logprobs = logprobs * self.weight
 
         # Calculate loss

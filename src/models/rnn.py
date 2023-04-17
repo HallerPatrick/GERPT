@@ -34,6 +34,17 @@ def bce_loss(pred, target):
     return loss
 
 
+class Decoder(pl.LightningModule):
+    
+    def __init__(self, weight) -> None:
+        super().__init__()
+        self.weight = weight
+        self.bias = nn.Parameter(torch.zeros(self.weight.size(0)))
+    
+    def forward(self, x):
+        return torch.mm(x, self.weight.t()) + self.bias
+
+
 class RNNModel(pl.LightningModule):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
@@ -58,6 +69,7 @@ class RNNModel(pl.LightningModule):
         cell_type: str = "lstm",
         packed: bool = False,
         loss_type: str = "cross_entropy",
+        has_decoder: bool = True
     ):
         super(RNNModel, self).__init__()
 
@@ -65,6 +77,7 @@ class RNNModel(pl.LightningModule):
         self.encoder = NGramsEmbedding(
             len(dictionary), embedding_size, packed=packed, freeze=True
         )
+        self.has_decoder = has_decoder
         # self.encoder = CanineEmbeddings(embedding_size, 8, 50_000)
 
         self.ngrams = ngrams
@@ -109,11 +122,17 @@ class RNNModel(pl.LightningModule):
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
 
         self.drop = nn.Dropout(dropout)
-
+        
+        # self.decoder = Decoder(self.encoder.weight)
         if loss_type != "adaptive_softmax":
             self.decoder = nn.Linear(
                 hidden_size * 2 if self.bidirectional else hidden_size, self.ntokens
             )
+        else:
+            self.has_decoder = False
+            self.decoder = None
+        #
+        # self.decoder.weight = self.encoder.weight
 
         self.save_hyperparameters()
         self.init_weights()
@@ -474,10 +493,10 @@ class RNNModel(pl.LightningModule):
 
     def init_weights(self):
         initrange = 0.1
-        # nn.init.uniform_(self.encoder.weight, -initrange, initrange)
-        if hasattr(self, "decoder"):
-            nn.init.zeros_(self.decoder.weight)
-            nn.init.uniform_(self.decoder.weight, -initrange, initrange)
+        self.encoder.weight.detach().uniform_(-initrange, initrange)
+        if self.has_decoder:
+            self.decoder.bias.detach().fill_(0)
+            self.decoder.weight.detach().uniform_(-initrange, initrange)
 
     def forward(self, input, hidden):
         # [#ngram, #seq_len, #batch_size]
@@ -487,8 +506,8 @@ class RNNModel(pl.LightningModule):
         self.rnn.flatten_parameters()
         output, hidden = self.rnn(emb, hidden)
 
-        if hasattr(self, "decoder"):
-            output = self.decoder(output).view(-1, self.ntokens)
+        if self.has_decoder:
+            output = self.decoder(output.view(-1, output.size(-1))) # .view(-1, self.ntokens)
 
         return output, hidden
 
@@ -503,14 +522,18 @@ class RNNModel(pl.LightningModule):
 
         if self.proj is not None:
             output = self.proj(output)
-
-        decoded = self.decoder(
-            output.view(output.size(0) * output.size(1), output.size(2))
-        )
+    
+        if self.has_decoder:
+            decoded = self.decoder(
+                output.view(output.size(0) * output.size(1), output.size(2))
+            )
+            decoded = decoded.view(output.size(0), output.size(1), decoded.size(1))
+        else:
+            decoded = None
 
         # output: [seq_len, batch_size, ntokens]
         return (
-            decoded.view(output.size(0), output.size(1), decoded.size(1)),
+            decoded,
             output,
             hidden,
         )
@@ -549,6 +572,7 @@ class RNNModel(pl.LightningModule):
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
+            "has_decoder": self.decoder is not None,
         }
 
         return model_state
@@ -567,9 +591,12 @@ class RNNModel(pl.LightningModule):
                 is_forward_lm=d["is_forward_lm"],
                 document_delimiter=d["document_delimiter"],
                 dropout=d["dropout"],
+                has_decoder=d["has_decoder"]
             )
-
-            language_model.load_state_dict(d["state_dict"])
+            
+            print("Loading state dict")
+            print(d)
+            language_model.load_state_dict(d["state_dict"], strict=False)
 
             # copy over state dictionary to self
             for key in language_model.__dict__.keys():
@@ -594,6 +621,7 @@ class RNNModel(pl.LightningModule):
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
+            "has_decoder": self.has_decoder
         }
 
         if isinstance(file, str):
@@ -604,6 +632,7 @@ class RNNModel(pl.LightningModule):
 
         print(f"Save flair model state: {str(file)}")
         torch.save(model_state, str(file), pickle_protocol=4)
+        return str(file)
 
     def get_representation(
         self,
@@ -700,7 +729,6 @@ try:
             inps = rearrange(inps, "b n s -> n s b")
             with torch.no_grad():
                 output = self.model(inps)
-                print(output.size())
                 return output
 
         def tok_encode(self, string: str):

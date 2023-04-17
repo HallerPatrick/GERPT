@@ -532,8 +532,11 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
         if inputs_embeds is None:
             # Switch first and second dimension, so that ngram is first
             if self.config.use_ngme:
-                input_ids = input_ids.permute(1, 0, 2).contiguous()
-            inputs_embeds = self.embed_in(input_ids)
+                input_ids = input_ids.permute(1, 2, 0).contiguous()
+
+                inputs_embeds = self.embed_in(input_ids).permute(1, 0, 2).contiguous()
+            else:
+                inputs_embeds = self.embed_in(input_ids)
 
         hidden_states = inputs_embeds
 
@@ -698,6 +701,15 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
         
+        # print("input_ids")
+        # self.config.dictionary.print_sequence(input_ids[0][0], 1)
+
+        
+        for i, seq in enumerate(attention_mask):
+            print(f"Num of ones in batch {i}:", len(seq[seq == 1]))
+
+        print(attention_mask.shape)
+        print(attention_mask[0])
         outputs = self.gpt_neox(
             input_ids,
             attention_mask=attention_mask,
@@ -719,14 +731,23 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
             if self.config.use_ngme:
                 
+                print("lm_logits", lm_logits.shape)
                 shift_logits = lm_logits[:, :-1, :].contiguous()
+                print("shifted_logits", shift_logits.shape)
 
                 loss_fct = CrossEntropyLossSoft()
+                print("labels", labels.shape)
+                self.config.dictionary.print_sequence(labels[0][0], 1)
+
                 labels = shift_inplace(labels)
+                print("shifted labels", labels.shape)
+                self.config.dictionary.print_sequence(labels[0][0], 1)
+                exit()
+                # self.config.dictionary.print_sequence(labels[0][0], 1)
                 # labels = labels[:, :, 1:].contiguous()
 
                 labels = soft_n_hot(
-                    labels.permute(1, 0, 2).contiguous(),
+                    labels.permute(1, 2, 0).contiguous(),
                     self.config.vocab_size,
                     strategy="exp",
                 )
@@ -793,14 +814,16 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         return reordered_past
 
     def sample(self, input_ids, tokenizer=None, chars=10, **kwargs):
-        if not self.config.use_ngme:
-            return super().sample(input_ids, **kwargs)
+        # if not self.config.use_ngme:
+        #     return super().sample(input_ids, **kwargs)
 
-        assert len(input_ids.size()) == 2, "sample only supports a single batch item"
-
-        ntokens = len(tokenizer.dictionary)
+        # assert len(input_ids.size()) == 2, "sample only supports a single batch item"
         
-        generated_output = tokenizer.decode(input_ids)
+        if isinstance(input_ids, str):
+            generated_output = input_ids
+            input_ids = tokenizer.encode(input_ids, return_tensors="pt").to(self.device)
+        else:
+            generated_output = tokenizer.decode(input_ids)
         # printed_output = tokenizer.dictionary.get_item_for_index(idx.item())
 
         iterations = []
@@ -813,6 +836,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 iteration = {}
                 
                 input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
+                print(input_ids)
 
                 iteration["input"] = tokenizer.decode(input_ids)
                 
@@ -828,6 +852,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     ngram_idx = torch.argmax(output)
                 else:
                     next_token_probs = torch.softmax(next_token_logits, dim=-1)
+                    print(next_token_probs)
 
                     next_token_probs_gen = next_token_probs.div(0.7).exp().cpu()
 
@@ -836,9 +861,13 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     sorted_ids = torch.argsort(next_token_probs, dim=-1, descending=True)
                     
                     for choice_idx in range(choices_per_step):
-                        token_id = sorted_ids[choice_idx]
+                        token_id = sorted_ids[choice_idx].item()
                         token_prob = next_token_probs[token_id].cpu().numpy()
-                        token_choice = tokenizer.dictionary.get_item_for_index(token_id.item())
+                        if hasattr(tokenizer, "dictionary"):
+                            token_choice = tokenizer.dictionary.get_item_for_index(token_id)
+                        else:
+                            token_choice = tokenizer._convert_id_to_token(token_id)
+
                         token_choice = f"{token_choice} ({token_prob:.4f})"
                         iteration[f"choice_{choice_idx}"] = token_choice
                 

@@ -1,11 +1,13 @@
 import sys
 import timeit
+from argparse import Namespace
 from math import log as math_log
 from datetime import timedelta
 from typing import Any, Callable, Optional, List, Union
 
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
+from sqlitedict import tempfile
 import torch
 from torch import Tensor
 
@@ -29,6 +31,12 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.utilities.rank_zero import rank_prefixed_message
 from lightning_fabric.utilities.rank_zero import _get_rank
+from flair.embeddings.document import DocumentRNNEmbeddings
+
+from torch import manual_seed
+from flair import set_seed
+
+from src.models.flair_models import (load_corpus, patch_flair_lstm, patch_flair_trans)
 
 strats = {
     "linear": lambda x: x,
@@ -44,6 +52,116 @@ def n_dist(n: int, strategy: str) -> List[float]:
     result = list(map(lambda x: x / sum(xs), xs))
     return result
 
+def train_task(task_settings, seed, model_name, saved_model):
+    # Seed everything
+    set_seed(int(seed))
+    manual_seed(int(seed))
+
+    # Has to be called first, before importing flair modules
+    if model_name == "rnn":
+        patch_flair_lstm()
+    else:
+        patch_flair_trans()
+    from flair.embeddings import FlairEmbeddings, StackedEmbeddings
+    from flair.models import SequenceTagger, TextClassifier
+    from flair.trainers import ModelTrainer
+
+    settings = task_settings
+
+    corpus = load_corpus(settings.dataset, settings.base_path)
+
+    label_dict = corpus.make_label_dictionary(label_type=settings.task_name)
+
+    if settings.task_name in ["ner", "upos"]:
+
+        if model_name == "rnn":
+            
+            # if hasattr(args, "saved_model_backward"):
+            #     print("Using forward and backwards models")
+            #     embds = [
+            #         FlairEmbeddings(saved_model),
+            #         FlairEmbeddings(args.saved_model_backward),
+            #         WordEmbeddings("glove")
+            #     ]
+            # else:
+            embds = [
+                FlairEmbeddings(saved_model),
+                # WordEmbeddings("glove")
+            ]
+                
+            embeddings = StackedEmbeddings(
+                embeddings=embds
+            )
+        else:
+
+            embeddings = FlairEmbeddings(saved_model)
+            # embeddings = NGMETransformerWordEmbeddings(
+            #     args.saved_model,
+            #     vocab_file=args.saved_model + "/vocab.txt",
+            #     layers="all",
+            #     subtoken_pooling="first",
+            #     fine_tune=False,
+            #     use_context=False,
+            # )
+
+        task_model = SequenceTagger(
+            hidden_size=settings.hidden_size,
+            embeddings=embeddings,
+            tag_dictionary=label_dict,
+            tag_type=settings.task_name,
+        )
+
+    elif settings.task_name in ["sentiment", "class"]:
+
+        if model_name in ["rnn", "lstm"]:
+            document_embeddings = DocumentRNNEmbeddings(
+                embeddings=[FlairEmbeddings(saved_model)]
+            )
+        else:
+            document_embeddings = DocumentRNNEmbeddings(
+                embeddings=[FlairEmbeddings(saved_model)]
+            )
+            # document_embeddings = NGMETransformerWordEmbeddings(
+            #     args.saved_model, vocab_file=args.saved_model + "/vocab.txt"
+            # )
+
+        task_model = TextClassifier(
+            document_embeddings=document_embeddings,
+            label_dictionary=label_dict,
+            label_type=settings.task_name,
+        )
+    else:
+        print(f"Task {settings.task_name} not supported")
+        exit()
+
+    # Initialize trainer
+    trainer = ModelTrainer(task_model, corpus)
+
+    # Start training
+    score = trainer.train(
+        settings.save,
+        learning_rate=settings.lr,
+        mini_batch_size=settings.mini_batch_size,
+        max_epochs=settings.max_epochs,
+        use_final_model_for_eval=True
+    )
+
+    if isinstance(score, dict):
+        test_score = score["test_score"]
+        # dev_scores = score["dev_score_history"]
+        # data = [[epoch+1, score] for epoch, score in enumerate(dev_scores)]
+        # table = wandb.Table(data=data, columns=["epoch", "f1-score(dev)"])
+        # fields = {"x": "epoch", "value": "f1-score(dev)"}
+        # chart = wandb.plot_table(
+        #     vega_spec_name=f"{settings.task_name}/f1-score",
+        #     data_table=table,
+        #     fields=fields
+        # )
+        # charts.append(chart)
+
+        return f"{settings.task_name}/f1-score", test_score
+    else:
+        raise ValueError("Score is not a dict")
 
 def split_range(i, ds_split, num_splits):
     split_len = len(ds_split)
@@ -176,6 +294,60 @@ class EarlyStoppingOnLRCallback(Callback):
         if rank is None or not log_rank_zero_only or rank == 0:
             print(message)
 
+class FlairDownstreamCallback(Callback):
+
+    def __init__(self, interval: int, enabled: bool) -> None:
+        super().__init__()
+
+        self.interval = interval
+        self.enabled = enabled
+
+        task_settings = {
+            "base_path": "data",
+            "dataset": "conll_03",
+            "hidden_size": 512,
+            "lr": 0.1,
+            "max_epochs": 1,
+            "mini_batch_size": 32,
+            "save": "resources/taggers/conll_03-ner",
+            "task_name": "ner",
+            "use": True
+        }
+        self.task_settings = Namespace(**task_settings)
+
+    def on_train_epoch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        if not self.enabled:
+            return super().on_train_epoch_end(trainer, pl_module)
+
+        if (
+            trainer.current_epoch != 0
+            and trainer.current_epoch % self.interval == 0
+        ):
+            if torch.cuda.is_available():
+
+                @rank_zero_only
+                def _train_ds():
+                    result = self._train_downstream(trainer) 
+                    return result
+
+                task, score = _train_ds()
+            else:
+                task, score = self._train_downstream(trainer)
+            
+            trainer.logger.log_metrics({task: score}, step=trainer.global_step)
+
+            trainer.lightning_module.train()
+
+        return super().on_train_epoch_end(trainer, pl_module)
+
+    def _train_downstream(self, trainer: "pl.Trainer"):
+        file_path = "tmp_flair_model"
+        trainer.save_checkpoint(file_path)
+        print(f"Train downstream!")
+        return train_task(self.task_settings, 1111, "rnn", file_path)
+            
 
 class TextGenerationCallback(Callback):
     def __init__(self, interval: int, enabled: bool) -> None:
