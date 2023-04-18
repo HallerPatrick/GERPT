@@ -21,7 +21,6 @@ from transformers import (
     Trainer,
     default_data_collator,
     AutoTokenizer,
-    TrainerCallback,
     StoppingCriteriaList,
     MaxLengthCriteria,
 )
@@ -36,7 +35,7 @@ from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
 
-USE_NGME = False
+USE_NGME = True
 
 
 @dataclass
@@ -150,7 +149,8 @@ class TextGenerationCallback(WandbCallback):
         # Generate text and log it
         self.model.eval()
 
-        self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
+        self.model.config.pad_token_id = self.tokenizer.eos_token_id
+        self.model.generation_config.pad_token_id = self.tokenizer.eos_token_id
         input_prompt = "It might be possible to"
 
         input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
@@ -158,33 +158,36 @@ class TextGenerationCallback(WandbCallback):
         )
 
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
-            
+        
         if USE_NGME:
             outputs = self.model.sample(
-                input_ids[0],
+                input_ids,
                 self.tokenizer
                 # do_sample=True,
                 # stopping_criteria=stopping_criteria,
             )
+            text = self.tokenizer.batch_decode([outputs], skip_special_tokens=True)[0]
         else:
             outputs = self.model.sample(
                 input_ids,
+                tokenizer=self.tokenizer,
                 do_sample=True,
                 stopping_criteria=stopping_criteria,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
+            text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
 
         self.model.train()
-
-        text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
         
         print(text)
+        
         table = wandb.Table(columns=["global_step", "text"], data=[[state.global_step, text]])
         self._wandb.log({"text_generation": table})
 
 
 def ngme_data_collator(features) -> Dict[str, Any]:
     # features: list
-
 
     if not isinstance(features[0], Mapping):
         features = [vars(f) for f in features]
@@ -220,8 +223,9 @@ def ngme_data_collator(features) -> Dict[str, Any]:
             elif isinstance(v, np.ndarray):
                 batch[k] = torch.tensor(np.stack([f[k] for f in features]))
             else:
+                # features[0][k]: [ngram, seq_len]
                 batch[k] = torch.stack([torch.tensor(f[k]) for f in features], dim=0)
-                # batch[k]: [batch_size, seq_len]
+                # batch[k]: [batch_size, ngram, seq_len]
 
     return batch
 
@@ -343,9 +347,12 @@ def main():
             )
 
     if USE_NGME:
-        tokenizer = GPTNGMETokenizer(vocab_file="data/data-dict-2")
+        # tokenizer = GPTNGMETokenizer(vocab_file="data/data-dict-2")
+        tokenizer = GPTNGMETokenizer(vocab_file="./../../Temp/flair/vocabs/vocab-2.json")
+
     else:
-        tokenizer = AutoTokenizer.from_pretrained("google/byt5-base")
+        # tokenizer = AutoTokenizer.from_pretrained("google/byt5-base")
+        tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
     config = GPTNGMEConfig(
         vocab_size=tokenizer.vocab_size,
@@ -355,7 +362,11 @@ def main():
         intermediate_size=512,
         eos_token_id=tokenizer.eos_token_id,
         use_ngme=USE_NGME,
+        unk_token_id=tokenizer.dictionary.ngram2word2idx[1]["<unk>"] if hasattr(tokenizer, "dictionary") else None
+        # dictionary=tokenizer.dictionary
     )
+
+    print("UNK IDX: ", config.unk_token_id)
 
     model = AutoModelForCausalLM.from_config(config)
 
@@ -403,8 +414,6 @@ def main():
             )
         return output
 
-    tokenize_function.i = 0
-
     with training_args.main_process_first(desc="dataset map tokenization"):
         if not data_args.streaming:
             tokenized_datasets = raw_datasets.map(
@@ -414,6 +423,7 @@ def main():
                 remove_columns=column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on dataset",
+                drop_last_batch=True
             )
         else:
             tokenized_datasets = raw_datasets.map(
@@ -541,7 +551,7 @@ def main():
         else None,
     )
 
-    trainer.add_callback(TextGenerationCallback(tokenizer, model))
+    # trainer.add_callback(TextGenerationCallback(tokenizer, model))
  
     # Training
     if training_args.do_train:

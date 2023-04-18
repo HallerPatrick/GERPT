@@ -426,7 +426,9 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
         if self.config.use_ngme:
             self.embed_in = NGramsEmbedding(config.vocab_size, config.hidden_size)
         else:
-            self.embed_in = nn.Embedding(config.vocab_size, config.hidden_size)
+            self.embed_in = NGramsEmbedding(config.vocab_size, config.hidden_size)
+            # self.embed_in = nn.Embedding(config.vocab_size, config.hidden_size)
+
         self.layers = nn.ModuleList(
             [GPTNGMELayer(config) for _ in range(config.num_hidden_layers)]
         )
@@ -532,11 +534,20 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
         if inputs_embeds is None:
             # Switch first and second dimension, so that ngram is first
             if self.config.use_ngme:
-                input_ids = input_ids.permute(1, 2, 0).contiguous()
+                # raw input_ids: [batch_size, ngram, seq_length]
 
-                inputs_embeds = self.embed_in(input_ids).permute(1, 0, 2).contiguous()
-            else:
+                if input_ids.dim() == 2:
+                    input_ids = input_ids.unsqueeze(0)
+                else:
+                    input_ids = input_ids.permute(1, 0, 2).contiguous()
+                # formatted: [ngram, batch_size, seq_length]]
+
                 inputs_embeds = self.embed_in(input_ids)
+                # oute: [batch_size, seq_length, embed_size]
+            else:
+                # inp: [batch_size, seq_length]
+                inputs_embeds = self.embed_in(input_ids.unsqueeze(0))
+                # oute: [batch_size, seq_length, embed_size]
 
         hidden_states = inputs_embeds
 
@@ -608,7 +619,7 @@ def shift_inplace(tensor):
     shifted_labels = []
     for i in range(tensor.size(1)):
         shifted = tensor[:, i, (i+1):].squeeze(0)
-
+        
         if i == 0:
             shifted_labels.append(shifted)
             continue
@@ -616,12 +627,20 @@ def shift_inplace(tensor):
         seq_size = tensor.size(2) - 1
 
         missing_idxs = torch.arange(seq_size-(i), seq_size).to(tensor.device)
-
+        
         # Shifted labels[0] -> [batch, seq]
         if shifted.dim == 1:
             shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=0)
         else:
-            shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1)
+            try:
+                shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1)
+            except IndexError as e:
+                print(tensor.shape)
+                print(e)
+                print(shifted.shape)
+                print(shifted_labels[0])
+                exit()
+
 
         shifted_labels.append(shifted)
     
@@ -701,15 +720,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
         
-        # print("input_ids")
-        # self.config.dictionary.print_sequence(input_ids[0][0], 1)
 
-        
-        for i, seq in enumerate(attention_mask):
-            print(f"Num of ones in batch {i}:", len(seq[seq == 1]))
-
-        print(attention_mask.shape)
-        print(attention_mask[0])
         outputs = self.gpt_neox(
             input_ids,
             attention_mask=attention_mask,
@@ -731,30 +742,23 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
             if self.config.use_ngme:
                 
-                print("lm_logits", lm_logits.shape)
                 shift_logits = lm_logits[:, :-1, :].contiguous()
-                print("shifted_logits", shift_logits.shape)
 
-                loss_fct = CrossEntropyLossSoft()
-                print("labels", labels.shape)
-                self.config.dictionary.print_sequence(labels[0][0], 1)
+                loss_fct = CrossEntropyLossSoft(
+                    ignore_index=self.config.unk_token_id
+                )
 
                 labels = shift_inplace(labels)
-                print("shifted labels", labels.shape)
-                self.config.dictionary.print_sequence(labels[0][0], 1)
-                exit()
-                # self.config.dictionary.print_sequence(labels[0][0], 1)
-                # labels = labels[:, :, 1:].contiguous()
-
+                
                 labels = soft_n_hot(
                     labels.permute(1, 2, 0).contiguous(),
                     self.config.vocab_size,
                     strategy="exp",
                 )
-                
+
                 lm_loss = loss_fct(
-                    shift_logits.view(-1, shift_logits.size(-1)),
-                    labels.view(-1, labels.size(-1)),
+                    shift_logits,
+                    labels.permute(1, 0, 2).contiguous(),
                 )
             else:
                 shift_logits = lm_logits[:, :-1, :].contiguous()
@@ -814,6 +818,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         return reordered_past
 
     def sample(self, input_ids, tokenizer=None, chars=10, **kwargs):
+        return super().sample(input_ids, **kwargs)
         # if not self.config.use_ngme:
         #     return super().sample(input_ids, **kwargs)
 
@@ -836,6 +841,8 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 iteration = {}
                 
                 input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
+
+                print(input_ids.shape)
                 print(input_ids)
 
                 iteration["input"] = tokenizer.decode(input_ids)
@@ -844,7 +851,10 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 input_ids = input_ids.unsqueeze(0)
 
                 output = self.gpt_neox(input_ids, output_hidden_states=True)
+                print("output", output)
                 next_token_logits = output.hidden_states[0][0, -1, :]
+                print("next_token_logits", next_token_logits)
+                print("next_token_logits.shape", next_token_logits.shape)
 
                 if self.config.temperature == 0.0:
                     # output = F.softmax(output, dim=0).cpu()
@@ -852,7 +862,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     ngram_idx = torch.argmax(output)
                 else:
                     next_token_probs = torch.softmax(next_token_logits, dim=-1)
-                    print(next_token_probs)
 
                     next_token_probs_gen = next_token_probs.div(0.7).exp().cpu()
 

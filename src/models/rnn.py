@@ -219,6 +219,8 @@ class RNNModel(pl.LightningModule):
 
         # target: [ngram, seq, batch]
         if self.loss_type == "cross_entropy":
+            print(target.shape)
+            exit()
             target = soft_n_hot(
                 target,
                 self.ntokens,

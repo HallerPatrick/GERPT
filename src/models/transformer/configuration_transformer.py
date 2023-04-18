@@ -85,7 +85,8 @@ class GPTNGMEConfig(PretrainedConfig):
         tie_word_embeddings=False,
         use_parallel_residual=True,
         use_ngme=False,
-        dictionary=None,
+        # dictionary=None,
+        unk_token_id=-1,
         **kwargs,
     ):
         super().__init__(
@@ -108,4 +109,5 @@ class GPTNGMEConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.tie_word_embeddings = tie_word_embeddings
         self.use_parallel_residual = use_parallel_residual
-        self.dictionary = dictionary
+        # self.dictionary = dictionary
+        self.unk_token_id = unk_token_id
