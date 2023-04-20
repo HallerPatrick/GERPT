@@ -1,0 +1,199 @@
+\documentclass[11pt]{article}
+
+\usepackage{sectsty}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{listings}
+\usepackage{xparse}
+
+% Margins
+\topmargin=-0.45in
+\evensidemargin=0in
+\oddsidemargin=0in
+\textwidth=6.5in
+\textheight=9.0in
+\headsep=0.25in
+
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\NewDocumentCommand{\codeword}{v}{%
+\texttt{\textcolor{blue}{#1}}%
+}
+
+\lstset{style=pythonstyle}
+
+% Not indentation for new paragraphs
+\setlength{\parindent}{0pt}
+
+\title{Rolling Report: N-Gram Multi Hot Encoding}
+\author{ Patrick Haller }
+\date{\today}
+
+\begin{document}
+\maketitle	
+
+% Optional TOC
+% \tableofcontents
+% \pagebreak
+
+%--Paper--
+
+\section{Introduction}
+
+Following document is a rolling report on the N-Gram Multi Hot Encoding. I will use it
+to document approaches and results as I work on the project. It will give me a
+chance to reflect on the work and to share my findings with others. I will also help me
+to improve my writing skills.
+
+\section{Setups}
+Throughout most experiments I am mostly using the same setup. I will therefore shortly
+describe the setups that will be used in the following experiments.
+
+\subsection{Pre-Training}
+
+I am using the \codeword{NGramsEmbedding}
+class aswell as a \textit{LSTM} or \textit{Transformer} model. We switch out the Pytorch \codeword{nn.Embedding}
+layer with the \codeword{NGramsEmbedding} class. 
+The \codeword{NGramsEmbedding} class is a PyTorch module that implements the N-Gram Multi Hot Encoding.
+The language models following a standard implementation otherwise.
+
+\subsubsection{Model Configurations}
+
+\begin{table}
+\centering
+\begin{tabular}{|l|l|l|l|l|l|l|}
+\hline
+Model & Embedding & Hidden & Layers & Dropout & Batch Size & Epochs \\ \hline
+$LSTM_{Standard}$ & 512 & 2048 & 1 & 0.2 & 100 & 10 \\ \hline
+% $LSTM_{Large}$ & 1024 & 4096 & 1 & 0.2 & 100 & 10 \\ \hline
+% $Transformer_{Standard}$ & 512 & 2048 & 6 & 0.2 & 100 & 10 \\ \hline
+% $Transformer_{Large}$ & 1024 & 4096 & 6 & 0.2 & 100 & 10 \\ \hline
+\end{tabular}
+\caption{Model Configurations}
+\label{tab:model-configurations}
+\end{table}
+
+\subsection{Downstream}
+
+\section{Optimizations}
+
+\subsection{Optimizations towards a gigantic vocabulary}
+
+The following section in concern with optimizations that will help to reduce training time and
+model size given a large vocabulary. The vocabulary size mainly effects the encoder and decoder
+layers of a language model. The encoder layer is responsible for the embedding of the input
+sequence. It maps the input sequence to a vector space and therefore needs to be able to
+represent all words in the vocabulary. The decoder layer takes the hidden state of the
+LSTM or transformer and maps, or decodes, it to the vocabulary space. It is therefore also affected
+by the vocabulary size.\\
+
+\textbf{Example:}
+Given a vocabulary of size $V$, the encoder layer will have a weight matrix of size
+$V \times d$ where $d$ is the dimension of the embedding space. The decoder layer will have a
+weight matrix of size $d \times V$. The decoder layer will also have a bias vector of size $V$.
+
+Suppose we have a vocabulary size of 100,000 words. The encoder layer will have a weight matrix
+of size $100,000 \times 768$. The decoder layer will have a weight matrix of size $768 \times 100,000$
+and a bias vector of size $100,000$. The total size of the encoder and decoder layers is
+$100,000 \times 768 + 768 \times 100,000 + 100,000 = 77,440,000$.\\
+
+In the following we will look at different approaches to reduce the size of the encoder and decoder
+layers.
+
+\subsubsection{Hashed Embeddings}
+
+Hashed embeddings are a way to reduce the size of the embedding matrix to a constant value.
+The idea is to hash the words in the vocabulary to a fixed size integer
+and use this integer as the index of the embedding vector. The embedding vector is then stored
+in a hash table. The hash table is a data structure that maps a key to a value. In our case the
+key is the hashed word and the value is the embedding vector.
+I first came across this idea in the \textit{CANINE} paper \cite{clarkCANINEPretrainingEfficient2022a}.
+\textit{CANINE} is a tokenizer-free language model that operates on raw unicode code points.
+Because there are a huge amount of code points in unicode, the authors of \textit{CANINE} use
+hashed embeddings to reduce the size of the embedding matrix. The hashed embeddings approach was
+first introduced by \cite{svenstrupHashEmbeddingsEfficient2017}.\\
+
+\textbf{Implementation:}\\
+I re-implemented the \textit{CANINE} embedding layer in PyTorch that internally uses the \codeword{NGramsEmbedding}
+class. The hashing embedding layer provides two hyperparameters besides the embedding dimension.
+The first hyperparameter is the number of buckets. The number of buckets is the input feature size 
+for the embedding layers. The second hyperparameter is the number of
+hash functions and the number of embedding layers. The number of hash functions is the number of times the word is hashed. The
+embedding vector is then the concatentation of the embedding vectors of the hashed words.\\
+
+Given an embedding size of 400 and 4 hash functions, the embedding layer will have 4 embedding layers
+with an input feature size of num buckets and an output feature size of $400 \div 4 = 100$.\\
+
+\textbf{Experiment:}\\
+We evaluate the hashed embeddings approach in the following experiment. 
+
+\begin{enumerate}
+    \item We train a language model with a regular vocabulary size of 10,000 words, that is comparable
+    to previous experiments.
+    \item We train a language model with a vocabulary size of 100,000 words. A size that would be
+    too large for a regular embedding layer.
+\end{enumerate}
+
+We use the same hyperparameters for both experiments. The hyperparameters are listed in
+Table \ref{tab:hashed-embeddings-hyperparameters}. The $LSTM_{Standard}$ model is used for both experiments 
+trained on the OBW dataset with 100 even splits.\\
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{Model} & \textbf{Vocab Size} & \textbf{Embedding Size} & \textbf{\# Hash Functions} & \textbf{\# Buckets} \\ \hline
+\textbf{Regular} & 1,000 & 512 & - & -      \\ \hline
+\textbf{Hashed}  & 1,000  & 512 & 4 & 10,000 \\ \hline
+\textbf{Hashed}  & 100,000 & 512 & 4 & 10,000 \\ \hline
+\end{tabular}
+\caption{Hyperparameters for the Hashed Embeddings Experiment}
+\label{tab:hashed-embeddings-hyperparameters}
+\end{table}
+
+
+\textbf{Results:}\\
+The results of the experiment are shown in Table \ref{tab:hashed-embeddings-results}. 
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+\textbf{Model} & \textbf{Vocab Size} & \textbf{Time per Split} & \textbf{Embedding Size} & \textbf{$NER_{ConLL}$} \\ \hline
+\textbf{Regular $LSTM_{Standard}$} & ??? & ???   & ???    & 89.16 \\ \hline
+\textbf{Hashed $LSTM_{Standard}$}  & ??? & 8 min & 5.1M   & \\ \hline
+\textbf{Hashed $LSTM_{Standard}$}  & ??? & ???   & 5.1M   & \\ \hline
+\end{tabular}
+\caption{Results of the Hashed Embeddings Experiment}
+\label{tab:hashed-embeddings-results}
+\end{table}
+
+
+\bibliographystyle{apalike}
+\bibliography{main}
+
+\end{document}
