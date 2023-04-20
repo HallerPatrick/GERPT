@@ -754,11 +754,11 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     labels.permute(1, 2, 0).contiguous(),
                     self.config.vocab_size,
                     strategy="exp",
-                )
+                ).permute(1, 0, 2).contiguous()
 
                 lm_loss = loss_fct(
-                    shift_logits,
-                    labels.permute(1, 0, 2).contiguous(),
+                    shift_logits.view(-1, shift_logits.size(-1)),
+                    labels.view(-1, labels.size(-1)),
                 )
             else:
                 shift_logits = lm_logits[:, :-1, :].contiguous()

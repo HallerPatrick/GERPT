@@ -49,9 +49,9 @@ def pl_callbacks():
 
     early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.01)
 
-    text_gen_callback = TextGenerationCallback(interval=20, enabled=True)
+    text_gen_callback = TextGenerationCallback(interval=1, enabled=False)
 
-    flair_callback = FlairDownstreamCallback(interval=10, enabled=True)
+    flair_callback = FlairDownstreamCallback(interval=10, enabled=False)
 
     return [
         checkpoint_callback,

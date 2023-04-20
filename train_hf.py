@@ -529,9 +529,9 @@ def main():
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics but we need to shift the labels
-            if USE_NGME:
-                labels = soft_n_hot(torch.tensor(labels).permute(1, 0, 2).contiguous(), tokenizer.vocab_size, strategy="exp")
-            labels = labels[:, 1:].reshape(-1)
+
+            # Accuray over unigrams
+            labels = labels[:, 0, 1:].reshape(-1)
             preds = preds[:, :-1].reshape(-1)
 
             return metric.compute(predictions=preds, references=labels)

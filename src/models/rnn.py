@@ -74,11 +74,12 @@ class RNNModel(pl.LightningModule):
         super(RNNModel, self).__init__()
 
         self.ntokens = len(dictionary)
-        self.encoder = NGramsEmbedding(
-            len(dictionary), embedding_size, packed=packed, freeze=True
-        )
+        # self.encoder = NGramsEmbedding(
+        #     len(dictionary), embedding_size, packed=packed, freeze=True
+        # )
         self.has_decoder = has_decoder
-        # self.encoder = CanineEmbeddings(embedding_size, 8, 50_000)
+        self.encoder = CanineEmbeddings(embedding_size, 4, 5_000)
+        print(self.encoder)
 
         self.ngrams = ngrams
         self.dictionary = dictionary
@@ -219,8 +220,6 @@ class RNNModel(pl.LightningModule):
 
         # target: [ngram, seq, batch]
         if self.loss_type == "cross_entropy":
-            print(target.shape)
-            exit()
             target = soft_n_hot(
                 target,
                 self.ntokens,
@@ -495,7 +494,10 @@ class RNNModel(pl.LightningModule):
 
     def init_weights(self):
         initrange = 0.1
-        self.encoder.weight.detach().uniform_(-initrange, initrange)
+
+        if hasattr(self.encoder, "weight"):
+            self.encoder.weight.detach().uniform_(-initrange, initrange)
+
         if self.has_decoder:
             self.decoder.bias.detach().fill_(0)
             self.decoder.weight.detach().uniform_(-initrange, initrange)
