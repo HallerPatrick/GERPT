@@ -124,6 +124,44 @@ $100,000 \times 768 + 768 \times 100,000 + 100,000 = 77,440,000$.\\
 In the following we will look at different approaches to reduce the size of the encoder and decoder
 layers.
 
+\subsubsection{Splitted Cross Entropy}
+
+The NGME approach naturally increases the vocabulary size. The naive approach follows the standard
+way of minimizing the Cross Entropy Loss over the output probability over all tokens. Due to
+the unique encoding of $n$ different tokens per timestep the language modelling task is 
+expanded to a multi-label classification task. The standard approach shows that the model 
+is able to learn from all different $n$-gram ordered token and produce the most likely $n$-gram token.
+The multi-label setup allows us the eventually split the loss calculation into $n$ sub-loss calculations
+for every $n$-gram order. The final loss is the sum of all sub-losses.
+
+The motivation is mainly based on performance improvements. Dividing the softmax based loss calculation 
+into $n$ sub-losses reduces training times.\\
+
+\textbf{Implementation:}
+
+The sub loss calculations take the subset of the output logits for every $n$-gram order aswell as the target $n$-gram 
+target ids. We therefore have to keep track of each token and $n$-gram order.\\
+
+\textbf{Experiment:}
+
+We conduct the standard training routines with a $LSTM_{Standard}$ trained on the OBW corpus and downstream trained 
+on Named Entity Recognition on ConLL-03.\\
+
+\textbf{Results:}
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|l|l|l|l|l|l|}
+    \hline
+    Model                           & F1    & Epochs & Training Time \\ \hline
+    $LSTM_{Standard}$               & 0.953 & 10     & 1h 30min \\ \hline
+    $LSTM_{Standard}$ + $Split\_CE$ & 0.953 & 10     & 1h 30min \\ \hline
+  \end{tabular}
+  \caption{Results for the Splitted Cross Entropy Experiment}
+  \label{tab:hashed-embeddings-hyperparameters}
+\end{table}
+
+
+
 \subsubsection{Hashed Embeddings}
 
 Hashed embeddings are a way to reduce the size of the embedding matrix to a constant value.
