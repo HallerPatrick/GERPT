@@ -55,6 +55,10 @@ local_dataset_mapper = {
         "strategy": "split",
         "splits": {"train": "data/obw/train/news.en-{00001..00099}-of-00100"},
     },
+    "c4": {
+        "strategy": "split",
+        "splits": {"train": "data/c4/train/split-{001..364}-of-364"},
+    },
     "obw_news": {
         "train": "data/obw_news/train.txt",
         "test": "data/obw_news/test.txt",

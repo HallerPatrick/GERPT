@@ -49,7 +49,7 @@ def pl_callbacks():
 
     early_stopping_callback = EarlyStoppingOnLRCallback(lr_threshold=0.01)
 
-    text_gen_callback = TextGenerationCallback(interval=1, enabled=False)
+    text_gen_callback = TextGenerationCallback(interval=10, enabled=True)
 
     flair_callback = FlairDownstreamCallback(interval=10, enabled=False)
 
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(
         project="gerpt",
         offline=not args.online,
-        group=args.group,
+        group=args.group if hasattr(args, "group") else None,
         config={**vars(args)},
     )
 

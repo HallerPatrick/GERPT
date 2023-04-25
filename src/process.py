@@ -34,7 +34,7 @@ def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict],
 
     # Check if we have a local config for local dataset
     if prefix == "text" and subset in local_dataset_mapper:
-        if subset in ["obw", "cash_splits"]:
+        if subset in ["obw", "cash_splits", "c4"]:
             write_strategy = local_dataset_mapper[subset]["strategy"]
             train_paths = list(
                 braceexpand.braceexpand(local_dataset_mapper[subset]["splits"]["train"])
