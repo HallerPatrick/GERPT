@@ -4,9 +4,6 @@ from typing import Optional, Union
 import torch
 from torch import nn
 
-import functorch
-
-
 def logsigsoftmax(logits):
     """
     Computes sigsoftmax from the paper - https://arxiv.org/pdf/1805.10829.pdf
@@ -222,7 +219,6 @@ class CrossEntropyLossSoft(nn.Module):
         super(CrossEntropyLossSoft, self).__init__()
         self.ignore_index = ignore_index
         self.weight = weight
-        self.batched_sigmoid = functorch.vmap(nn.functional.logsigmoid)
 
     def forward(self, input, target, disable_weight=False):
         """

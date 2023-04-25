@@ -77,8 +77,8 @@ class RNNModel(pl.LightningModule):
         # self.encoder = NGramsEmbedding(
         #     len(dictionary), embedding_size, packed=packed, freeze=True
         # )
-        self.has_decoder = has_decoder
         self.encoder = CanineEmbeddings(embedding_size, 4, 5_000)
+        self.has_decoder = has_decoder
         print(self.encoder)
 
         self.ngrams = ngrams
@@ -177,7 +177,8 @@ class RNNModel(pl.LightningModule):
             weights = self._subset_logits(weights.unsqueeze(0))
             for weight_tensor in weights:
                 self.criterion.append(
-                    nn.CrossEntropyLoss(weight=weight_tensor.squeeze(0))
+                    # nn.CrossEntropyLoss(weight=weight_tensor.squeeze(0))
+                    CrossEntropyLossSoft(weight=weight_tensor.squeeze(0))
                 )
         else:
             raise ValueError("Loss not supported")
@@ -234,6 +235,8 @@ class RNNModel(pl.LightningModule):
             loss = self.criterion(decoded, target)
             # 158 secs
         elif self.loss_type == "split_cross_entropy":
+
+            # source = source.view((source.size(0), -1))
             target = target.reshape((target.size(0), -1))
             loss = self.subset_cross_entropy(decoded, target)
 
@@ -246,27 +249,6 @@ class RNNModel(pl.LightningModule):
 
         return loss, decoded, target
 
-    def adaptive_softmax_loss(self, decoded, target):
-        subsets = self._subset_logits(decoded)
-
-        losses = []
-        for i, (subset, n_gram_target) in enumerate(
-            zip(subsets, self._map_n_gram_id(target))
-        ):
-
-            if self.criterion[i].head.weight.device != subset.device:
-                self.criterion[i].head.to(subset.device)
-                self.criterion[i].tail.to(subset.device)
-
-            output, loss = self.criterion[i](subset, n_gram_target.reshape(-1))
-            losses.append(loss)
-
-        for n, loss in enumerate(losses):
-            self.log(f"train/{n+1}-ngram-loss", loss)
-
-        loss = sum(losses)
-        return loss
-
     def subset_cross_entropy(self, decoded, target):
         subsets = self._subset_logits(decoded)
 
@@ -275,10 +257,19 @@ class RNNModel(pl.LightningModule):
             zip(subsets, self._map_n_gram_id(target))
         ):
 
-            if self.criterion[i].weight.device != subset.device:
-                self.criterion[i].weight = self.criterion[i].weight.to(subset.device)
+            # if self.criterion[i].weight.device != subset.device:
+            #     self.criterion[i].weight = self.criterion[i].weight.to(subset.device)
+            n_gram_target = soft_n_hot(
+                n_gram_target.unsqueeze(0),
+                subset.size(-1),
+                # self.strategy,
+                "linear",
+                self.weighted_labels,
+                False,
+                # self.encoder.packed,
+            )
             
-            loss = self.criterion[i](subset, n_gram_target) * (i+1)
+            loss = self.criterion[i](subset, n_gram_target)
             losses.append(loss)
 
         for n, loss in enumerate(losses):

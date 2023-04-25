@@ -159,7 +159,7 @@ class CanineEmbeddings(nn.Module):
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
-        # self.LayerNorm = nn.LayerNorm(self.hidden_size, eps=self.layer_norm_eps)
+        self.LayerNorm = nn.LayerNorm(self.hidden_size, eps=self.layer_norm_eps)
         # self.dropout = nn.Dropout(self.hidden_dropout_prob)
 
     def _hash_bucket_tensors(self, input_ids, num_hashes: int, num_buckets: int):
@@ -213,6 +213,6 @@ class CanineEmbeddings(nn.Module):
             input_ids, self.hidden_size, self.num_hash_functions, self.num_hash_buckets
         )
 
-        # embeddings = self.LayerNorm(inputs_embeds)
+        embeddings = self.LayerNorm(inputs_embeds)
         # embeddings = self.dropout(embeddings)
-        return inputs_embeds
+        return embeddings

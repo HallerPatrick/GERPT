@@ -99,6 +99,10 @@ $LSTM_{Standard}$ & 512 & 2048 & 1 & 0.2 & 100 & 10 \\ \hline
 
 \subsection{Downstream}
 
+\section{Related Work}
+
+\input{related_work}
+
 \section{Optimizations}
 
 \subsection{Optimizations towards a gigantic vocabulary}
@@ -221,9 +225,9 @@ The results of the experiment are shown in Table \ref{tab:hashed-embeddings-resu
 \centering
 \begin{tabular}{|l|l|l|l|l|}
 \hline
-\textbf{Model} & \textbf{Vocab Size} & \textbf{Time per Split} & \textbf{Embedding Size} & \textbf{$NER_{ConLL}$} \\ \hline
-\textbf{Regular $LSTM_{Standard}$} & ??? & ???   & ???    & 89.16 \\ \hline
-\textbf{Hashed $LSTM_{Standard}$}  & ??? & 8 min & 5.1M   & \\ \hline
+\textbf{Model} & \textbf{Vocab Size} & \textbf{Time per Split} & \textbf{Embedding Size} & \textbf{$NER_{ConLL}$}(Epoch) \\ \hline
+\textbf{Regular $LSTM_{Standard}$} & ??? & ???   & ???    & 89.16(8) \\ \hline
+\textbf{Hashed $LSTM_{Standard}$}  & ??? & 8 min & 5.1M   & 83.3(2)\\ \hline
 \textbf{Hashed $LSTM_{Standard}$}  & ??? & ???   & 5.1M   & \\ \hline
 \end{tabular}
 \caption{Results of the Hashed Embeddings Experiment}

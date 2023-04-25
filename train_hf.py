@@ -159,31 +159,33 @@ class TextGenerationCallback(WandbCallback):
 
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
         
-        if USE_NGME:
+        self.model.tokenizer = self.tokenizer
+
+        text = self.model.sample(
+            input_ids,
+            tokenizer=self.tokenizer,
+            num_chars=1000
+        )
+        print("Generated Output:")
+        print(text)
+
+        # if not hasattr(self.tokenizer, "dictionary"):
+        if False:
             outputs = self.model.sample(
                 input_ids,
-                self.tokenizer
-                # do_sample=True,
-                # stopping_criteria=stopping_criteria,
-            )
-            text = self.tokenizer.batch_decode([outputs], skip_special_tokens=True)[0]
-        else:
-            outputs = self.model.sample(
-                input_ids,
-                tokenizer=self.tokenizer,
+                tokenizer=None,
                 do_sample=True,
                 stopping_criteria=stopping_criteria,
                 eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.pad_token_id,
             )
-            text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+            text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            print(text)
 
         self.model.train()
         
-        print(text)
-        
-        table = wandb.Table(columns=["global_step", "text"], data=[[state.global_step, text]])
-        self._wandb.log({"text_generation": table})
+        table = wandb.Table(columns=["global_step", "text"], data=[[state.global_step, str(text)]])
+        # self._wandb.log({"text_generation": table})
 
 
 def ngme_data_collator(features) -> Dict[str, Any]:
@@ -366,8 +368,6 @@ def main():
         # dictionary=tokenizer.dictionary
     )
 
-    print("UNK IDX: ", config.unk_token_id)
-
     model = AutoModelForCausalLM.from_config(config)
 
     n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
@@ -401,10 +401,6 @@ def main():
                         output["attention_mask"][0]
                     )
 
-                    # print(f"Number of examples: {len(examples[text_column_name])}")
-                    # print(f"Ngrams: {len(output['input_ids'][0])}")
-                    # print(f"Length of first example: {len(output['input_ids'][0][0])}")
-                    # print(f"Length of attention mask first example: {len(output['attention_mask'][0])}")
 
         # clm input could be much much longer than block_size
         if "Token indices sequence length is longer than the" in cl.out:
@@ -551,7 +547,7 @@ def main():
         else None,
     )
 
-    # trainer.add_callback(TextGenerationCallback(tokenizer, model))
+    trainer.add_callback(TextGenerationCallback(tokenizer, model))
  
     # Training
     if training_args.do_train:

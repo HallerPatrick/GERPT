@@ -224,10 +224,13 @@ class GPTNeoXAttention(nn.Module):
         mask_value = torch.tensor(mask_value, dtype=attn_scores.dtype).to(
             attn_scores.device
         )
+
         attn_scores = torch.where(causal_mask, attn_scores, mask_value)
 
         if attention_mask is not None:
             # Apply the attention mask
+
+            # torch.Size([1, 2, 1, 499]) torch.Size([1, 1, 1, 499])
             attn_scores = attn_scores + attention_mask
 
         attn_weights = nn.functional.softmax(attn_scores, dim=-1)
@@ -334,6 +337,7 @@ class GPTNGMELayer(nn.Module):
         layer_past=None,
         output_attentions=False,
     ):
+
         attention_layer_outputs = self.attention(
             self.input_layernorm(hidden_states),
             attention_mask=attention_mask,
@@ -483,7 +487,7 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             return_dict if return_dict is not None else self.config.use_return_dict
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
-        
+
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError(
                 "You cannot specify both input_ids and inputs_embeds at the same time"
@@ -494,7 +498,7 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             input_shape = inputs_embeds.size()[:-1]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
-    
+
         # if self.config.use_ngme:
         #     batch_size, ngram, seq_length = input_shape.size(0)
         # else:
@@ -614,37 +618,38 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
             attentions=all_attentions,
         )
 
+
 def shift_inplace(tensor):
 
     shifted_labels = []
     for i in range(tensor.size(1)):
-        shifted = tensor[:, i, (i+1):].squeeze(0)
-        
+        shifted = tensor[:, i, (i + 1) :].squeeze(0)
+
         if i == 0:
             shifted_labels.append(shifted)
             continue
 
         seq_size = tensor.size(2) - 1
 
-        missing_idxs = torch.arange(seq_size-(i), seq_size).to(tensor.device)
-        
+        missing_idxs = torch.arange(seq_size - (i), seq_size).to(tensor.device)
+
         # Shifted labels[0] -> [batch, seq]
         if shifted.dim == 1:
-            shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=0)
+            shifted = torch.concat(
+                (shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=0
+            )
         else:
             try:
-                shifted = torch.concat((shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1)
+                shifted = torch.concat(
+                    (shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1
+                )
             except IndexError as e:
-                print(tensor.shape)
-                print(e)
-                print(shifted.shape)
-                print(shifted_labels[0])
                 exit()
 
-
         shifted_labels.append(shifted)
-    
+
     return torch.stack(shifted_labels, dim=1)
+
 
 class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
@@ -719,7 +724,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         return_dict = (
             return_dict if return_dict is not None else self.config.use_return_dict
         )
-        
 
         outputs = self.gpt_neox(
             input_ids,
@@ -741,20 +745,22 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             # we are doing next-token prediction; shift prediction scores and input ids by one
 
             if self.config.use_ngme:
-                
+
                 shift_logits = lm_logits[:, :-1, :].contiguous()
 
-                loss_fct = CrossEntropyLossSoft(
-                    ignore_index=self.config.unk_token_id
-                )
+                loss_fct = CrossEntropyLossSoft(ignore_index=self.config.unk_token_id)
 
                 labels = shift_inplace(labels)
-                
-                labels = soft_n_hot(
-                    labels.permute(1, 2, 0).contiguous(),
-                    self.config.vocab_size,
-                    strategy="exp",
-                ).permute(1, 0, 2).contiguous()
+
+                labels = (
+                    soft_n_hot(
+                        labels.permute(1, 2, 0).contiguous(),
+                        self.config.vocab_size,
+                        strategy="exp",
+                    )
+                    .permute(1, 0, 2)
+                    .contiguous()
+                )
 
                 lm_loss = loss_fct(
                     shift_logits.view(-1, shift_logits.size(-1)),
@@ -764,8 +770,9 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 shift_logits = lm_logits[:, :-1, :].contiguous()
                 loss_fct = CrossEntropyLoss()
                 labels = labels[:, 1:].contiguous()
-                lm_loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-
+                lm_loss = loss_fct(
+                    shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1)
+                )
 
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
@@ -789,7 +796,9 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         if attention_mask is None:
             if self.config.use_ngme:
                 if len(input_shape) == 3:
-                    attention_mask = input_ids.new_ones((input_ids.size(0), input_ids.size(2)))
+                    attention_mask = input_ids.new_ones(
+                        (input_ids.size(0), input_ids.size(2))
+                    )
                 else:
                     attention_mask = input_ids.new_ones(input_ids.size(1))
             else:
@@ -797,12 +806,16 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
         # cut decoder_input_ids if past is used
         if past_key_values and past_key_values[0] is not None:
-            input_ids = input_ids[:, -1:]
+            if self.config.use_ngme:
+                input_ids = input_ids[:, :, -1:]
+            else:
+                input_ids = input_ids[:, -1:]
 
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
-            "past_key_values": past_key_values,
+            # "past_key_values": past_key_values,
+            "past_key_values": None,
         }
 
     def _reorder_cache(self, past_key_values, beam_idx):
@@ -817,19 +830,22 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             )
         return reordered_past
 
-    def sample(self, input_ids, tokenizer=None, chars=10, **kwargs):
-        return super().sample(input_ids, **kwargs)
-        # if not self.config.use_ngme:
-        #     return super().sample(input_ids, **kwargs)
+    def sample(self, input_ids, tokenizer=None, num_chars=20, **kwargs):
+
+        if not tokenizer:
+            return super().sample(input_ids, **kwargs)
+
+        input_ids = input_ids[0]
 
         # assert len(input_ids.size()) == 2, "sample only supports a single batch item"
-        
+
         if isinstance(input_ids, str):
             generated_output = input_ids
             input_ids = tokenizer.encode(input_ids, return_tensors="pt").to(self.device)
         else:
-            generated_output = tokenizer.decode(input_ids)
-        # printed_output = tokenizer.dictionary.get_item_for_index(idx.item())
+            generated_output = str(
+                tokenizer.decode(input_ids)
+            )  # .decode_ngram_sequence(1)
 
         iterations = []
 
@@ -839,66 +855,75 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             self.eval()
             for i in range(chars):
                 iteration = {}
-                
-                input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
 
-                print(input_ids.shape)
-                print(input_ids)
+                # input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
 
-                iteration["input"] = tokenizer.decode(input_ids)
-                
+                iteration["input"] = str(tokenizer.decode(input_ids))
+
                 # One batch
                 input_ids = input_ids.unsqueeze(0)
 
-                output = self.gpt_neox(input_ids, output_hidden_states=True)
-                print("output", output)
-                next_token_logits = output.hidden_states[0][0, -1, :]
-                print("next_token_logits", next_token_logits)
-                print("next_token_logits.shape", next_token_logits.shape)
+                output = self.forward(input_ids, return_dict=True)
+                next_token_logits = output.logits[0, -1, :]
 
                 if self.config.temperature == 0.0:
                     # output = F.softmax(output, dim=0).cpu()
                     # Just get highest confidence
                     ngram_idx = torch.argmax(output)
                 else:
+
+                    next_token_probs = (
+                        next_token_logits.squeeze().div(0.7).exp().cpu()
+                    )
+
                     next_token_probs = torch.softmax(next_token_logits, dim=-1)
 
-                    next_token_probs_gen = next_token_probs.div(0.7).exp().cpu()
+                    # next_token_probs_gen = (
+                    #     next_token_probs.squeeze().div(0.7).exp().cpu()
+                    # )
 
-                    target_idx = torch.multinomial(next_token_probs_gen, 1)
+                    target_idx = torch.multinomial(next_token_probs, 1)[0]
 
-                    sorted_ids = torch.argsort(next_token_probs, dim=-1, descending=True)
-                    
-                    for choice_idx in range(choices_per_step):
-                        token_id = sorted_ids[choice_idx].item()
-                        token_prob = next_token_probs[token_id].cpu().numpy()
-                        if hasattr(tokenizer, "dictionary"):
-                            token_choice = tokenizer.dictionary.get_item_for_index(token_id)
-                        else:
-                            token_choice = tokenizer._convert_id_to_token(token_id)
+                    sorted_ids = torch.argsort(
+                        next_token_probs, dim=-1, descending=True
+                    )
+                    # target_idx = sorted_ids[0]
 
-                        token_choice = f"{token_choice} ({token_prob:.4f})"
-                        iteration[f"choice_{choice_idx}"] = token_choice
-                
+                    # for choice_idx in range(choices_per_step):
+                    #     token_id = sorted_ids[choice_idx].item()
+                    #     token_prob = next_token_probs[token_id].cpu().numpy()
+                    #
+                    #     if hasattr(tokenizer, "dictionary"):
+                    #         token_choice = tokenizer.dictionary.get_item_for_index(
+                    #             token_id
+                    #         )
+                    #     else:
+                    #         token_choice = tokenizer.decode(token_id)
+                    #
+                    #     token_choice = f"{repr(token_choice)} ({token_prob:.4f})"
+                    #     iteration[f"choice_{choice_idx}"] = token_choice
+
                 iterations.append(iteration)
 
                 # # Get ngram word
-                word = tokenizer.dictionary.get_item_for_index(target_idx.item())
-                print("Word: ", word)
-                #
+                # word = tokenizer._convert_id_to_token(target_idx.item())
+                if hasattr(tokenizer, "dictionary"):
+                    word = tokenizer.dictionary.get_item_for_index(target_idx.item())
+                else:
+                    word = tokenizer.decode(target_idx.item())
+
                 # # Append to generated sequence
                 generated_output = generated_output + word
 
                 # Use last 200 chars as sequence for new input
                 input_ids = (
-                    tokenizer(
-                        generated_output, return_tensors="pt"
-                    )["input_ids"]
-                ).to(self.device).squeeze(0)
-                
-                print("Generated output: ", generated_output)
+                    (tokenizer(generated_output, return_tensors="pt")["input_ids"])
+                    .to(self.device)
+                    .squeeze(0)
+                )
 
-        print(pd.DataFrame(iterations))
+        # print(pd.DataFrame(iterations))
+        # print("Generated output: ", generated_output)
 
         return generated_output
 
