@@ -602,6 +602,7 @@ class Dictionary:
         1. "h"   "e"   "l"   "l"   "o"
         2. "he"  "el"  "ll"  "lo"  "o "  " w"
         3. "hel" "ell" "llo" "lo " "o w" " wo"
+
         1. "e"   "l"   "l"   "o"   " "
         2. "ll"  "lo"  "o "  " w"  :offset 2
         3. "lo " "o w" " wo"       :offset 3

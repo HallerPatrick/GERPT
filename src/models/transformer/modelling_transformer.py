@@ -849,11 +849,10 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
         iterations = []
 
-        choices_per_step = 4
+        self.eval()
 
         with torch.no_grad():
-            self.eval()
-            for i in range(chars):
+            for i in range(num_chars):
                 iteration = {}
 
                 # input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
@@ -873,7 +872,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 else:
 
                     next_token_probs = (
-                        next_token_logits.squeeze().div(0.7).exp().cpu()
+                        next_token_logits.squeeze().div(0.3)
                     )
 
                     next_token_probs = torch.softmax(next_token_logits, dim=-1)
