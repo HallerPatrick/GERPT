@@ -358,9 +358,9 @@ def main():
 
     config = GPTNGMEConfig(
         vocab_size=tokenizer.vocab_size,
-        hidden_size=512,
-        num_hidden_layers=2,
-        num_attention_heads=2,
+        hidden_size=1024,
+        num_hidden_layers=4,
+        num_attention_heads=4,
         intermediate_size=512,
         eos_token_id=tokenizer.eos_token_id,
         use_ngme=USE_NGME,
@@ -369,6 +369,8 @@ def main():
     )
 
     model = AutoModelForCausalLM.from_config(config)
+
+    model.set_tokenizer(tokenizer)
 
     n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
     logger.info(

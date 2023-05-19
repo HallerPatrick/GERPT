@@ -51,7 +51,7 @@ class Dictionary:
         ngme_type = vocab_file["ngme"]
 
         # TODO: Not sufficient, save more meta data in dict file
-        dictionary = cls(ngram, len(vocab_file["vocab"]), ngme_type, False)
+        dictionary = cls(ngram, len(vocab_file["vocab"]), 0, ngme_type, False)
 
         for token in vocab_file["vocab"]:
             dictionary.add_ngram(token["token"], token["ngram"])

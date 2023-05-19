@@ -62,6 +62,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         else:
             self.dictionary = torch.load(vocab_file)
 
+        self.dictionary = self.dictionary.unking()
         # self.dictionary = self.dictionary.unking(ngrams=2, new_max_dict_size=1000, min_frequency=1000)
 
         super().__init__(**kwargs)

@@ -644,6 +644,7 @@ def shift_inplace(tensor):
                     (shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1
                 )
             except IndexError as e:
+                print("shifting failed")
                 exit()
 
         shifted_labels.append(shifted)
@@ -663,8 +664,15 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
+        self.loss_fct = CrossEntropyLossSoft(ignore_index=self.config.unk_token_id)
+
     def get_output_embeddings(self):
         return self.embed_out
+
+    def set_tokenizer(self, tokenizer):
+        self.tokenizer = tokenizer
+        self.gpt_neox.tokenizer = tokenizer
+        self.loss_fct = CrossEntropyLossSoft(weight=self.tokenizer.dictionary.create_weight_tensor())
 
     def set_output_embeddings(self, new_embeddings):
         self.embed_out = new_embeddings
@@ -748,8 +756,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
                 shift_logits = lm_logits[:, :-1, :].contiguous()
 
-                loss_fct = CrossEntropyLossSoft(ignore_index=self.config.unk_token_id)
-
                 labels = shift_inplace(labels)
 
                 labels = (
@@ -762,7 +768,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     .contiguous()
                 )
 
-                lm_loss = loss_fct(
+                lm_loss = self.loss_fct(
                     shift_logits.view(-1, shift_logits.size(-1)),
                     labels.view(-1, labels.size(-1)),
                 )
@@ -872,7 +878,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 else:
 
                     next_token_probs = (
-                        next_token_logits.squeeze().div(0.3)
+                        next_token_logits.squeeze().div(0.7)
                     )
 
                     next_token_probs = torch.softmax(next_token_logits, dim=-1)

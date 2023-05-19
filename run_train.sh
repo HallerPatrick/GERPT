@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Run this script if argument is "train"
+WANDB_DISABLED=true
+
+rm -rf /tmp/test-clm
 
 if [ "$1" = "train" ]; then
     echo "Training model"
@@ -13,7 +16,8 @@ if [ "$1" = "train" ]; then
         --do_eval \
         --output_dir /tmp/test-clm \
         --overwrite_output_dir \
-        --num_train_epochs 2
+        --num_train_epochs 100 \
+        --logging_steps 4000 \
 
 
 # Else run generation script
