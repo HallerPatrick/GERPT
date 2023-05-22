@@ -644,8 +644,7 @@ def shift_inplace(tensor):
                     (shifted, shifted_labels[0].index_select(1, missing_idxs)), dim=1
                 )
             except IndexError as e:
-                print("shifting failed")
-                exit()
+                print(f"shifting failed: {e}")
 
         shifted_labels.append(shifted)
 
@@ -672,6 +671,9 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
     def set_tokenizer(self, tokenizer):
         self.tokenizer = tokenizer
         self.gpt_neox.tokenizer = tokenizer
+        print("Post-Setting tokenizer and calculating token weight tensor...")
+        print("This may take a while...")
+        print("Move this logic somewhere else")
         self.loss_fct = CrossEntropyLossSoft(weight=self.tokenizer.dictionary.create_weight_tensor())
 
     def set_output_embeddings(self, new_embeddings):
@@ -836,14 +838,13 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             )
         return reordered_past
 
-    def sample(self, input_ids, tokenizer=None, num_chars=20, **kwargs):
+    def sample(self, input_ids, tokenizer=None, max_length=20, temperature=0.7, token_divider=None,**kwargs):
 
         if not tokenizer:
             return super().sample(input_ids, **kwargs)
 
-        input_ids = input_ids[0]
 
-        # assert len(input_ids.size()) == 2, "sample only supports a single batch item"
+        input_ids = input_ids[0]
 
         if isinstance(input_ids, str):
             generated_output = input_ids
@@ -853,65 +854,40 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 tokenizer.decode(input_ids)
             )  # .decode_ngram_sequence(1)
 
+        if token_divider:
+            generated_output_with_divider = generated_output
+
         iterations = []
 
         self.eval()
 
         with torch.no_grad():
-            for i in range(num_chars):
+            for _ in range(max_length):
                 iteration = {}
-
-                # input_ids = self.prepare_inputs_for_generation(input_ids)["input_ids"]
 
                 iteration["input"] = str(tokenizer.decode(input_ids))
 
                 # One batch
                 input_ids = input_ids.unsqueeze(0)
 
+                # Reached max length
+                if input_ids.size(-1) > self.config.max_position_embeddings:
+                    print("Reached max length")
+                    break
+
                 output = self.forward(input_ids, return_dict=True)
                 next_token_logits = output.logits[0, -1, :]
 
-                if self.config.temperature == 0.0:
-                    # output = F.softmax(output, dim=0).cpu()
-                    # Just get highest confidence
-                    ngram_idx = torch.argmax(output)
-                else:
+                next_token_probs = (
+                    next_token_logits.squeeze().div(temperature)
+                )
 
-                    next_token_probs = (
-                        next_token_logits.squeeze().div(0.7)
-                    )
-
-                    next_token_probs = torch.softmax(next_token_logits, dim=-1)
-
-                    # next_token_probs_gen = (
-                    #     next_token_probs.squeeze().div(0.7).exp().cpu()
-                    # )
-
-                    target_idx = torch.multinomial(next_token_probs, 1)[0]
-
-                    sorted_ids = torch.argsort(
-                        next_token_probs, dim=-1, descending=True
-                    )
-                    # target_idx = sorted_ids[0]
-
-                    # for choice_idx in range(choices_per_step):
-                    #     token_id = sorted_ids[choice_idx].item()
-                    #     token_prob = next_token_probs[token_id].cpu().numpy()
-                    #
-                    #     if hasattr(tokenizer, "dictionary"):
-                    #         token_choice = tokenizer.dictionary.get_item_for_index(
-                    #             token_id
-                    #         )
-                    #     else:
-                    #         token_choice = tokenizer.decode(token_id)
-                    #
-                    #     token_choice = f"{repr(token_choice)} ({token_prob:.4f})"
-                    #     iteration[f"choice_{choice_idx}"] = token_choice
+                next_token_probs = torch.softmax(next_token_logits, dim=-1)
+                target_idx = torch.multinomial(next_token_probs, 1)[0]
 
                 iterations.append(iteration)
 
                 # # Get ngram word
-                # word = tokenizer._convert_id_to_token(target_idx.item())
                 if hasattr(tokenizer, "dictionary"):
                     word = tokenizer.dictionary.get_item_for_index(target_idx.item())
                 else:
@@ -920,15 +896,18 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 # # Append to generated sequence
                 generated_output = generated_output + word
 
+                if token_divider:
+                    generated_output_with_divider = generated_output + token_divider + word
+
                 # Use last 200 chars as sequence for new input
                 input_ids = (
                     (tokenizer(generated_output, return_tensors="pt")["input_ids"])
                     .to(self.device)
                     .squeeze(0)
                 )
-
-        # print(pd.DataFrame(iterations))
-        # print("Generated output: ", generated_output)
+        
+        if token_divider:
+            return generated_output_with_divider
 
         return generated_output
 

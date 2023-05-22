@@ -30,12 +30,9 @@ from transformers.testing_utils import CaptureLogger
 
 from src.models import GPTNGMEConfig, GPTNGMETokenizer
 from src.data import local_dataset_mapper
-from src.models.ngme import soft_n_hot
 from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
-
-USE_NGME = True
 
 
 @dataclass
@@ -111,6 +108,11 @@ class DataTrainingArguments:
         metadata={"help": "Whether to keep line breaks when using TXT files or not."},
     )
 
+    use_ngme: bool = field(
+        default=True,
+        metadata={"help": "Wether we are using N-Gram Mulithot Encoding"},
+    )
+
     def __post_init__(self):
         if (
             self.dataset_name is None
@@ -157,35 +159,19 @@ class TextGenerationCallback(WandbCallback):
             self.model.device
         )
 
-        stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=500)])
-        
         self.model.tokenizer = self.tokenizer
-
-        text = self.model.sample(
-            input_ids,
-            tokenizer=self.tokenizer,
-            num_chars=1000
-        )
+        
+        # TODO: Pass max_length from config
+        text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, divider="·")
         print("Generated Output:")
         print(text)
 
-        # if not hasattr(self.tokenizer, "dictionary"):
-        if False:
-            outputs = self.model.sample(
-                input_ids,
-                tokenizer=None,
-                do_sample=True,
-                stopping_criteria=stopping_criteria,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
-            text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            print(text)
-
         self.model.train()
-        
-        table = wandb.Table(columns=["global_step", "text"], data=[[state.global_step, str(text)]])
-        # self._wandb.log({"text_generation": table})
+
+        table = wandb.Table(
+            columns=["global_step", "text"], data=[[state.global_step, str(text)]]
+        )
+        self._wandb.log({"text_generation": table})
 
 
 def ngme_data_collator(features) -> Dict[str, Any]:
@@ -233,9 +219,6 @@ def ngme_data_collator(features) -> Dict[str, Any]:
 
 
 def main():
-
-    # config = GPTNGMEConfig()
-    # model = GPTNGMEModel(config)
 
     parser = HfArgumentParser((DataTrainingArguments, TrainingArguments))
 
@@ -348,23 +331,25 @@ def main():
                 **dataset_args,
             )
 
-    if USE_NGME:
-        # tokenizer = GPTNGMETokenizer(vocab_file="data/data-dict-2")
-        tokenizer = GPTNGMETokenizer(vocab_file="./../../Temp/flair/vocabs/vocab-2.json")
+    if data_args.use_ngme:
+        tokenizer = GPTNGMETokenizer(
+            vocab_file="./../../Temp/flair/vocabs/vocab-3.json"
+        )
 
     else:
-        # tokenizer = AutoTokenizer.from_pretrained("google/byt5-base")
         tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
     config = GPTNGMEConfig(
         vocab_size=tokenizer.vocab_size,
-        hidden_size=1024,
-        num_hidden_layers=4,
-        num_attention_heads=4,
+        hidden_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=2,
         intermediate_size=512,
         eos_token_id=tokenizer.eos_token_id,
-        use_ngme=USE_NGME,
-        unk_token_id=tokenizer.dictionary.ngram2word2idx[1]["<unk>"] if hasattr(tokenizer, "dictionary") else None
+        use_ngme=data_args.use_ngme,
+        unk_token_id=tokenizer.dictionary.ngram2word2idx[1]["<unk>"]
+        if hasattr(tokenizer, "dictionary")
+        else None
         # dictionary=tokenizer.dictionary
     )
 
@@ -395,14 +380,13 @@ def main():
             output = tokenizer(examples[text_column_name])
             # output input_ids should be same amount as examples to tokenizer
 
-            if USE_NGME:
+            if data_args.use_ngme:
                 assert len(examples[text_column_name]) == len(output["input_ids"])
                 # Attention mask should be as long as first input ids
                 if len(output["input_ids"][0]) > 0:
                     assert len(output["input_ids"][0][0]) == len(
                         output["attention_mask"][0]
                     )
-
 
         # clm input could be much much longer than block_size
         if "Token indices sequence length is longer than the" in cl.out:
@@ -421,7 +405,7 @@ def main():
                 remove_columns=column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on dataset",
-                drop_last_batch=True
+                drop_last_batch=True,
             )
         else:
             tokenized_datasets = raw_datasets.map(
@@ -453,7 +437,7 @@ def main():
 
         concatenated_examples = {}
         for k in examples.keys():
-            if USE_NGME and k == "input_ids":
+            if data_args.use_ngme and k == "input_ids":
                 concatenated_examples[k] = np.concatenate(
                     [np.array(example) for example in examples[k] if len(example) > 0],
                     axis=1,
@@ -471,13 +455,13 @@ def main():
 
         # Split by chunks of max_len.
         for k, t in concatenated_examples.items():
-            if k == "input_ids" and USE_NGME:
+            if k == "input_ids" and data_args.use_ngme:
                 result[k] = [
-                     t[:, i : i + block_size] for i in range(0, total_length, block_size)
+                    t[:, i : i + block_size] for i in range(0, total_length, block_size)
                 ]
             else:
                 result[k] = [
-                     t[i : i + block_size] for i in range(0, total_length, block_size)
+                    t[i : i + block_size] for i in range(0, total_length, block_size)
                 ]
 
         result["labels"] = result["input_ids"].copy()
@@ -542,7 +526,9 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=ngme_data_collator if USE_NGME else default_data_collator,
+        data_collator=ngme_data_collator
+        if data_args.use_ngme
+        else default_data_collator,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval
@@ -550,7 +536,7 @@ def main():
     )
 
     trainer.add_callback(TextGenerationCallback(tokenizer, model))
- 
+
     # Training
     if training_args.do_train:
         checkpoint = None
