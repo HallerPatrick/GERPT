@@ -966,8 +966,12 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
             sequence_lengths = -1
         else:
             if input_ids is not None:
+
+                if isinstance(self.config.pad_token_id, list):
+                    self.config.pad_token_id = self.config.pad_token_id[0][0]
+
                 sequence_lengths = (
-                    torch.ne(input_ids, self.config.pad_token_id).sum(-1) - 1
+                        torch.ne(input_ids[:, 0, :], self.config.pad_token_id).sum(-1) - 1
                 ).to(logits.device)
             else:
                 sequence_lengths = -1

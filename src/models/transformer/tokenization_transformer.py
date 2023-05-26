@@ -57,6 +57,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
     vocab_files_names = {"vocab_file": vocab_file}
 
     def __init__(self, vocab_file, **kwargs):
+        print(vocab_file)
         if vocab_file.endswith(".json"):
             self.dictionary = Dictionary.load_from_file(vocab_file)
         else:

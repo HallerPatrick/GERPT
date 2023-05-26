@@ -34,6 +34,39 @@ from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class ModelParamArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    hidden_size: int = field(
+        default=512,
+        metadata={"help": "Attention head hidden size"},
+    )
+
+    num_hidden_layers: int = field(
+        default=2,
+        metadata={
+            "help": "Number of hidden layers."
+        },
+    )
+
+    num_attention_heads: int = field(
+        default=2,
+        metadata={
+            "help": "Number of attention heads."
+        },
+    )
+
+    intermediate_size: int = field(
+        default=512,
+        metadata={
+            "help": "FFN size"
+        },
+    )
+
+
 
 @dataclass
 class DataTrainingArguments:
@@ -162,7 +195,7 @@ class TextGenerationCallback(WandbCallback):
         self.model.tokenizer = self.tokenizer
         
         # TODO: Pass max_length from config
-        text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, divider="·")
+        text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, token_divider="·")
         print("Generated Output:")
         print(text)
 
@@ -220,9 +253,9 @@ def ngme_data_collator(features) -> Dict[str, Any]:
 
 def main():
 
-    parser = HfArgumentParser((DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((DataTrainingArguments, TrainingArguments, ModelParamArguments))
 
-    data_args, training_args = parser.parse_args_into_dataclasses()
+    data_args, training_args, model_args = parser.parse_args_into_dataclasses()
 
     # Setup logging
     logging.basicConfig(
@@ -341,16 +374,15 @@ def main():
 
     config = GPTNGMEConfig(
         vocab_size=tokenizer.vocab_size,
-        hidden_size=512,
-        num_hidden_layers=2,
-        num_attention_heads=2,
-        intermediate_size=512,
+        hidden_size=model_args.hidden_size,
+        num_hidden_layers=model_args.num_hidden_layers,
+        num_attention_heads=model_args.num_attention_heads,
+        intermediate_size=model_args.intermediate_size,
         eos_token_id=tokenizer.eos_token_id,
         use_ngme=data_args.use_ngme,
         unk_token_id=tokenizer.dictionary.ngram2word2idx[1]["<unk>"]
         if hasattr(tokenizer, "dictionary")
         else None
-        # dictionary=tokenizer.dictionary
     )
 
     model = AutoModelForCausalLM.from_config(config)

@@ -239,7 +239,7 @@ class Dictionary:
 
         ngrams = ngrams if ngrams else self.ngram
 
-        min_frequency = min_frequency if min_frequency else self.min_frequency
+        min_frequency = min_frequency if min_frequency else 0
 
         print(f"Total count: {len(self)}")
 
