@@ -502,7 +502,13 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             len_ids = 0
         else:
             len_ids = len(ids[0])
-        len_pair_ids = len(pair_ids) if pair else 0
+
+        if pair and len(pair_ids) == 0:
+            len_pair_ids = 0
+        elif pair and len(pair_ids) > 0:
+            len_pair_ids = len(pair_ids[0])
+        else:
+            len_pair_ids = 0
 
         if return_token_type_ids and not add_special_tokens:
             raise ValueError(
@@ -553,7 +559,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             sequence = self.build_inputs_with_special_tokens(ids, pair_ids)
             token_type_ids = self.create_token_type_ids_from_sequences(ids, pair_ids)
         else:
-            sequence = ids + pair_ids if pair else ids
+            sequence = self.build_inputs_with_special_tokens(ids, pair_ids)
             token_type_ids = [0] * len(ids) + ([0] * len(pair_ids) if pair else [])
 
         # Build output dictionary
@@ -587,6 +593,27 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         )
 
         return batch_outputs
+
+    def build_inputs_with_special_tokens(
+        self, token_ids_0: List[List[int]], token_ids_1: Optional[List[List[int]]] = None
+    ) -> List[List[int]]:
+        """
+        Concatenate nested ngram sequences.
+
+        Args:
+            token_ids_0 (`List[List[int]]`): The first tokenized sequence.
+            token_ids_1 (`List[List[int]]`, *optional*): The second tokenized sequence.
+
+        Returns:
+            `List[List[int]]`: The model input with special tokens.
+        """
+        if token_ids_1 is None or len(token_ids_1) == 0:
+            return token_ids_0
+
+        if len(token_ids_0) == 0:
+            return token_ids_1
+
+        return np.concatenate((np.array(token_ids_0), np.array(token_ids_1)), axis=1).tolist()
 
     def truncate_sequences(
         self,
@@ -668,28 +695,34 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
                     )
                 logger.error(error_msg)
         elif truncation_strategy == TruncationStrategy.LONGEST_FIRST:
-            raise NotImplementedError("PHA: I think we only truncate with longest first")
             logger.warning(
                 "Be aware, overflowing tokens are not returned for the setting you have chosen,"
                 f" i.e. sequence pairs with the '{TruncationStrategy.LONGEST_FIRST.value}' "
                 "truncation strategy. So the returned list will always be empty even if some "
                 "tokens have been removed."
             )
+            ids = np.array(ids)
+            pair_ids = np.array(pair_ids)
+
             for _ in range(num_tokens_to_remove):
-                if pair_ids is None or len(ids) > len(pair_ids):
+                if pair_ids is None or ids.shape[1] > pair_ids.shape[1]:
                     if self.truncation_side == "right":
-                        ids = ids[:-1]
+                        ids = ids[:, :-1]
                     elif self.truncation_side == "left":
-                        ids = ids[1:]
+                        ids = ids[:, 1:]
                     else:
                         raise ValueError("invalid truncation strategy:" + str(self.truncation_side))
                 else:
                     if self.truncation_side == "right":
-                        pair_ids = pair_ids[:-1]
+                        pair_ids = pair_ids[:, :-1]
                     elif self.truncation_side == "left":
-                        pair_ids = pair_ids[1:]
+                        pair_ids = pair_ids[:, 1:]
                     else:
                         raise ValueError("invalid truncation strategy:" + str(self.truncation_side))
+
+            ids = ids.tolist()
+            pair_ids = pair_ids.tolist()
+
         elif truncation_strategy == TruncationStrategy.ONLY_SECOND and pair_ids is not None:
             raise NotImplementedError("PHA: I think we only truncate with longest first")
             if len(pair_ids) > num_tokens_to_remove:

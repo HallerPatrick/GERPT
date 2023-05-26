@@ -367,6 +367,7 @@ def main():
     if data_args.use_ngme:
         tokenizer = GPTNGMETokenizer(
             vocab_file="./../../Temp/flair/vocabs/vocab-3.json"
+            # vocab_file="../flair/vocabs/vocab-3.json"
         )
 
     else:
