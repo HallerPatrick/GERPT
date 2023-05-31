@@ -1,5 +1,6 @@
 import json
 import sys
+from math import log as math_log
 from collections import Counter, defaultdict
 from typing import Iterator, List, Optional, Tuple, Union
 
@@ -457,10 +458,6 @@ class Dictionary:
 
         sequence = torch.cat([t[:min_length] for t in ngram_sequences])
         target = torch.cat([t[:min_length] for t in ngram_target_sequences])
-
-        if self.packed:
-            sequence = utils.pack_tensor(sequence)
-            target = utils.pack_tensor(target)
 
         if with_text:
             return_value = {"text": line, "source": sequence, "target": target}

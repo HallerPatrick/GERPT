@@ -498,6 +498,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         )
 
         pair = bool(pair_ids is not None)
+
         if len(ids) == 0:
             len_ids = 0
         else:

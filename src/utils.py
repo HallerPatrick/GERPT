@@ -36,23 +36,8 @@ from flair.embeddings.document import DocumentRNNEmbeddings
 from torch import manual_seed
 from flair import set_seed
 
-from src.models.flair_models import (load_corpus, patch_flair_lstm, patch_flair_trans)
-
-strats = {
-    "linear": lambda x: x,
-    "log": lambda x: math_log(x + 1),
-    "exp": lambda x: x**2,
-}
-
-
-def n_dist(n: int, strategy: str) -> List[float]:
-    """dist of ngram weight is logarithmic"""
-    ns = list(range(1, n + 1))
-    xs = list(map(strats[strategy], ns))
-    result = list(map(lambda x: x / sum(xs), xs))
-    return result
-
 def train_task(task_settings, seed, model_name, saved_model):
+    from src.models.flair_models import (load_corpus, patch_flair_lstm, patch_flair_trans)
     # Seed everything
     set_seed(int(seed))
     manual_seed(int(seed))

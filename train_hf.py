@@ -24,6 +24,9 @@ from transformers import (
     StoppingCriteriaList,
     MaxLengthCriteria,
 )
+from transformers import AdamW 
+from transformers import get_constant_schedule
+
 from transformers.integrations import WandbCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.testing_utils import CaptureLogger
@@ -366,7 +369,7 @@ def main():
 
     if data_args.use_ngme:
         tokenizer = GPTNGMETokenizer(
-            vocab_file="./../../Temp/flair/vocabs/vocab-3.json"
+            vocab_file="./../../Temp/flair/vocabs/vocab-1.json"
             # vocab_file="../flair/vocabs/vocab-3.json"
         )
 
@@ -550,10 +553,12 @@ def main():
             preds = preds[:, :-1].reshape(-1)
 
             return metric.compute(predictions=preds, references=labels)
-
+    
+    optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
+        optimizers=(optimizer, get_constant_schedule(optimizer)),
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,

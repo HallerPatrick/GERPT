@@ -64,6 +64,12 @@ local_dataset_mapper = {
         "test": "data/obw_news/test.txt",
         "valid": "data/obw_news/valid.txt",
     },
+    "babylm10M_hf": {
+        "train": baby_lm_train("babylm_10M"),
+        "test": baby_lm_test(),
+        # For the pipeline, which expects a validation set
+        "validation": baby_lm_dev(),
+    },
     "babylm10M": {
         "train": baby_lm_train("babylm_10M"),
         "test": baby_lm_test(),

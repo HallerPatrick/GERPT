@@ -41,8 +41,11 @@ def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict],
             )
             return dataset_iterator(train_paths), write_strategy
 
-        write_strategy = local_dataset_mapper[subset]["strategy"]
-        dataset = ld("text", data_files=local_dataset_mapper[subset]["splits"])
+        if subset.endswith("_hf"):
+            dataset = ld("text", data_files=local_dataset_mapper[subset])
+        else:
+            write_strategy = local_dataset_mapper[subset]["strategy"]
+            dataset = ld("text", data_files=local_dataset_mapper[subset]["splits"])
 
     # Special case
     elif prefix.startswith("wikipedia"):
@@ -58,7 +61,7 @@ def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict],
         del dataset["validation"]
         dataset["valid"] = valid_split
 
-    assert write_strategy is not None, "Write strategy not found"
+    # assert write_strategy is not None, "Write strategy not found"
 
     return dataset, write_strategy
 

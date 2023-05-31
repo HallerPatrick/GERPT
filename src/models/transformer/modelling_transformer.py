@@ -56,7 +56,7 @@ class GPTNGMEPreTrainedModel(PreTrainedModel):
             module.weight.data.fill_(1.0)
 
     def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, GPTNeoXModel):
+        if isinstance(module, GPTNGMEModel):
             module.gradient_checkpointing = value
 
 
@@ -853,6 +853,8 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             generated_output = str(
                 tokenizer.decode(input_ids)
             )  # .decode_ngram_sequence(1)
+        
+        generated_output_with_divider = None
 
         if token_divider:
             generated_output_with_divider = generated_output
@@ -897,7 +899,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 generated_output = generated_output + word
 
                 if token_divider:
-                    generated_output_with_divider = generated_output + token_divider + word
+                    generated_output_with_divider = generated_output_with_divider + token_divider + word
 
                 # Use last 200 chars as sequence for new input
                 input_ids = (
@@ -906,7 +908,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     .squeeze(0)
                 )
         
-        if token_divider:
+        if token_divider and generated_output_with_divider:
             return generated_output_with_divider
 
         return generated_output
