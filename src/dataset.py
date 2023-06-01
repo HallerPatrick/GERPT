@@ -1,11 +1,11 @@
+import functools
+import itertools
 from collections.abc import Iterable
 from typing import Iterator
+
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import functools
-import itertools
-
 from datasets import Dataset
 from datasets.dataset_dict import DatasetDict
 from torch.utils.data import ConcatDataset, IterableDataset
@@ -281,9 +281,12 @@ class TextIteratorDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         for i, split in enumerate(self.ds_iterator):
             print(f"Split {i}")
-            yield from iter(SplitIterator(
-                split["train"], self.batch_size, self.bptt, self.pad_tokens
-            ))
+            yield from iter(
+                SplitIterator(
+                    split["train"], self.batch_size, self.bptt, self.pad_tokens
+                )
+            )
+
 
 class SplitDataModule(pl.LightningDataModule):
     def __init__(self, data_dir, batch_size, bptt_size, pad_tokens, cpus=1):
@@ -294,7 +297,9 @@ class SplitDataModule(pl.LightningDataModule):
         self.pad_tokens = pad_tokens
         self.cpus = cpus
 
-        self.dataset_iterator = Processor.from_strategy("split").read_dataset(self.data_dir)
+        self.dataset_iterator = Processor.from_strategy("split").read_dataset(
+            self.data_dir
+        )
         self.current_split = 0
 
     def train_dataloader(self):
@@ -305,7 +310,9 @@ class SplitDataModule(pl.LightningDataModule):
         try:
             next_ds = next(self.dataset_iterator)["train"]
         except StopIteration:
-            self.dataset_iterator = Processor.from_strategy("split").read_dataset(self.data_dir)
+            self.dataset_iterator = Processor.from_strategy("split").read_dataset(
+                self.data_dir
+            )
             next_ds = next(self.dataset_iterator)["train"]
             self.current_split = 0
 
@@ -316,4 +323,3 @@ class SplitDataModule(pl.LightningDataModule):
             num_workers=self.cpus,
             pin_memory=True,
         )
-

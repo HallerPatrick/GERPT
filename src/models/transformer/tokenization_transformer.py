@@ -1,109 +1,144 @@
+import json
 import os
-from typing import Dict, List, Optional, Tuple, Union, Sized
-
-from pathlib import Path
+from collections import Counter
+from typing import Dict, List, Optional, Sized, Tuple, Union
 
 import torch
-
 import numpy as np
-
 from nltk import ngrams as ngram_tokenizer
 from tokenizers import AddedToken
 from transformers import PreTrainedTokenizer
-from transformers.tokenization_utils_base import BatchEncoding, EncodedInput, TruncationStrategy
-from transformers.utils.generic import PaddingStrategy, TensorType, to_py_obj
-
-
-from src.dictionary import load_vocab, Dictionary
-
-from typing import TYPE_CHECKING, List, Optional, Tuple
-
-
-from transformers import PreTrainedTokenizer
+from transformers.tokenization_utils_base import (BatchEncoding, EncodedInput,
+                                                  TruncationStrategy)
 from transformers.utils import logging
-
+from transformers.utils.generic import PaddingStrategy, TensorType, to_py_obj
 
 logger = logging.get_logger(__name__)
 
-VOCAB_FILES_NAMES = {
-    "vocab_file": "vocab.json",
-    "merges_file": "merges.txt",
-    "tokenizer_file": "tokenizer.json",
-}
 
-class DecodedOuput:
-
-    def __init__(self, ids: List, tokenizer):
-        self.ids = ids
-        self.tokenizer = tokenizer
-
-    def decode_ngram_sequence(self, ngram: int):
-        continuous_ids = []
-        for i_id in range(0, len(self.ids[ngram - 1]), ngram):
-            continuous_ids.append(self.ids[ngram - 1][i_id])
-        return "".join(self.tokenizer.convert_ids_to_tokens(continuous_ids))
-
-    def __repr__(self) -> str:
-        return self.decode_ngram_sequence(1)
-
-    def __str__(self) -> str:
-        return self.decode_ngram_sequence(1)
+def load_vocab(vocab_file):
+    """Loads a vocabulary file into a dictionary."""
+    return json.load(open(vocab_file, "r", encoding="utf-8"))
 
 
 class GPTNGMETokenizer(PreTrainedTokenizer):
-
     model_input_names = ["input_ids", "attention_mask"]
-    vocab_file = "vocab.pt"
+    vocab_file = "vocab.json"
     vocab_files_names = {"vocab_file": vocab_file}
 
-    def __init__(self, vocab_file, **kwargs):
-        print(vocab_file)
-        if vocab_file.endswith(".json"):
-            self.dictionary = Dictionary.load_from_file(vocab_file)
+    def __init__(
+        self, vocab_file, eos_token="\n", pad_token="\n", unk_token="<unk>", **kwargs
+    ):
+        eos_token = (
+            AddedToken(
+                eos_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(eos_token, str)
+            else eos_token
+        )
+        pad_token = (
+            AddedToken(
+                pad_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(pad_token, str)
+            else pad_token
+        )
+        unk_token = (
+            AddedToken(
+                unk_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(unk_token, str)
+            else unk_token
+        )
+
+        super().__init__(
+            eos_token=eos_token, pad_token=pad_token, unk_token=unk_token, **kwargs
+        )
+
+        self._ngram2word2idx = {}
+        self._ngram2idx2word = {}
+        self._current_max_idx = 0
+        self._frequencies: Counter = Counter()
+
+        self._load_from_file(vocab_file)
+
+    def _load_from_file(self, filename: str):
+        """Loads a dictionary from a file."""
+        vocab_file = load_vocab(filename)
+        self.ngram = vocab_file["ngram"]
+
+        if "\n" not in vocab_file["vocab"]:
+            self._add_ngram("\n", 1)
+
+        for token in vocab_file["vocab"]:
+            self._add_ngram(token["token"], token["ngram"])
+            self._frequencies.update({token["token"]: token["frequency"]})
+
+    def _add_ngram(self, word, ngram: int) -> int:
+        """Add a new n-gram token to the dictionary."""
+        self._frequencies.update({word: 1})
+
+        if ngram not in self._ngram2idx2word:
+            self._ngram2idx2word[ngram] = {self._current_max_idx: word}
+            self._ngram2word2idx[ngram] = {word: self._current_max_idx}
+            self._current_max_idx += 1
         else:
-            self.dictionary = torch.load(vocab_file)
+            if word not in self._ngram2word2idx[ngram]:
+                self._ngram2idx2word[ngram][self._current_max_idx] = word
+                self._ngram2word2idx[ngram][word] = self._current_max_idx
+                self._current_max_idx += 1
 
-        self.dictionary = self.dictionary.unking()
-        # self.dictionary = self.dictionary.unking(ngrams=2, new_max_dict_size=1000, min_frequency=1000)
-
-        super().__init__(**kwargs)
-
-        if "\n" not in self.dictionary.ngram2word2idx[1]:
-            self.dictionary.add_ngram("\n", 1)
-
-        self.eos_token_id = self.dictionary.ngram2word2idx[1]["\n"]
-        self._pad_token_id = self.dictionary.ngram2word2idx[1]["\n"]
-        self.unk_token_id = self.dictionary.ngram2word2idx[1]["<unk>"]
-
-    @property
-    def pad_token_id(self):
-        if isinstance(self._pad_token_id, list):
-            pad_token_id = self._pad_token_id[0]
-            if isinstance(pad_token_id, list):
-                return pad_token_id[0]
-            return pad_token_id
-        return self._pad_token_id
+        return self._ngram2word2idx[ngram][word]
 
     def save_vocabulary(
         self, save_directory: str, filename_prefix: Optional[str] = None
     ) -> Tuple[str]:
-
         filename = os.path.join(
             save_directory,
             (filename_prefix + "-" if filename_prefix else ""),
             self.vocab_file,
         )
 
-        torch.save(self.dictionary, filename)
+        index = 0
+        vocab = {"ngram": self.ngram, "vocab": []}
+
+        for ngram in range(1, self.ngram + 1):
+            for idx, token in self._ngram2idx2word[ngram].items():
+                if index != idx:
+                    index = idx
+
+                if "\n" in token:
+                    token = token.replace("\n", "\\n")
+
+                try:
+                    frequency = self._frequencies[token]
+                except KeyError:
+                    frequency = -1
+
+                index += 1
+                vocab["vocab"].append(
+                    {
+                        "token": token,
+                        "index": idx,
+                        "frequency": frequency,
+                        "ngram": ngram,
+                    }
+                )
+
+        with open(filename, "w", encoding="utf-8") as writer:
+            json.dump(vocab, writer, indent=4, ensure_ascii=False)
 
         return (filename,)
 
     @property
-    def vocab_size(self):
-        return len(self.dictionary)
-
-    def name_or_path(self):
-        return ""
+    def vocab_size(self) -> int:
+        return self._current_max_idx
 
     def retokenize(self, input_ids, *args, **kwargs):
         decoded = self.convert_ids_to_tokens(input_ids)
@@ -113,8 +148,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
 
     def _tokenize(self, text):
         ngram_sequences = []
-        for n in range(1, self.dictionary.ngram + 1):
-
+        for n in range(1, self.ngram + 1):
             words = ["<start>" for _ in range(1, n)]
             words.extend(list(text))
 
@@ -128,11 +162,18 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
 
         return ngram_sequences
 
-    def get_idx(self, token) -> int:
-        for ngram in range(1, self.dictionary.ngram + 1):
-            if token in self.dictionary.ngram2word2idx[ngram]:
-                return self.dictionary.ngram2word2idx[ngram][token]
-        return self.dictionary.ngram2word2idx[1]["<unk>"]
+    def get_idx(self, token: str, ngram: Optional[int] = None) -> int:
+        if ngram:
+            if token in self._ngram2word2idx[ngram]:
+                return self._ngram2word2idx[ngram][token]
+            else:
+                return self._ngram2word2idx[1]["<unk>"]
+
+        for ngram in range(1, self.ngram + 1):
+            if token in self._ngram2word2idx[ngram]:
+                return self._ngram2word2idx[ngram][token]
+
+        return self._ngram2word2idx[1]["<unk>"]
 
     def _convert_ngram_tokens_to_ids(self, ngram_tokens: List[str]) -> List[int]:
         return [self.get_idx(token) for token in ngram_tokens]
@@ -140,24 +181,29 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
     def convert_tokens_to_ids(self, tokens: List[List[str]]):
         if not tokens:
             return []
+
+        if isinstance(tokens, str):
+            return self.get_idx(tokens)
+
         return [
             self._convert_ngram_tokens_to_ids(ngram_tokens) for ngram_tokens in tokens
         ]
 
     def _convert_id_to_token(self, index: int) -> str:
-        return self.dictionary.get_item_for_index(index)
+        return self.get_item_for_index(index)
 
-    def __call__(self, *args, **kwargs):
-        output = super().__call__(*args, **kwargs)
-        # Hacky: Just return the attention mask of the first ngram sequence, they should all be the same
-        # output["attention_mask"] = output["attention_mask"][0]
-        return output
+    def get_item_for_index(self, idx) -> str:
+        """Return the token for a given index."""
+        for idxs in self._ngram2idx2word.values():
+            if idx in idxs:
+                return idxs[idx]
+
+        return self.unk_token
 
     def _decode(
         self, token_ids: List[List[int]], skip_special_tokens: bool = False, **kwargs
     ) -> str:
         return "".join(self.convert_ids_to_tokens(token_ids[0]))
-
     def _pad(
         self,
         encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
@@ -218,7 +264,7 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             padding_strategy != PaddingStrategy.DO_NOT_PAD
             and len(required_input[0]) != max_length
         )
-        
+
         # Initialize attention mask if not present.
         if return_attention_mask and "attention_mask" not in encoded_inputs:
             if len(required_input) == 0:
@@ -231,7 +277,6 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
 
             if self.padding_side == "right":
                 if return_attention_mask:
-
                     encoded_inputs["attention_mask"] = (
                         encoded_inputs["attention_mask"] + [0] * difference
                     )
@@ -411,10 +456,12 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         )
 
         required_input = encoded_inputs[self.model_input_names[0]]
-        
+
         if required_input:
             if isinstance(required_input[0], (list, tuple)):
-                if len(required_input[0]) > 0 and not isinstance(required_input[0][0], (list, tuple)):
+                if len(required_input[0]) > 0 and not isinstance(
+                    required_input[0][0], (list, tuple)
+                ):
                     encoded_inputs = self._pad(
                         encoded_inputs,
                         max_length=max_length,
@@ -488,7 +535,12 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         """
 
         # Backward compatibility for 'truncation_strategy', 'pad_to_max_length'
-        padding_strategy, truncation_strategy, max_length, kwargs = self._get_padding_truncation_strategies(
+        (
+            padding_strategy,
+            truncation_strategy,
+            max_length,
+            kwargs,
+        ) = self._get_padding_truncation_strategies(
             padding=padding,
             truncation=truncation,
             max_length=max_length,
@@ -538,11 +590,19 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         encoded_inputs = {}
 
         # Compute the total size of the returned encodings
-        total_len = len_ids + len_pair_ids + (self.num_special_tokens_to_add(pair=pair) if add_special_tokens else 0)
+        total_len = (
+            len_ids
+            + len_pair_ids
+            + (self.num_special_tokens_to_add(pair=pair) if add_special_tokens else 0)
+        )
 
         # Truncation: Handle max sequence length
         overflowing_tokens = []
-        if truncation_strategy != TruncationStrategy.DO_NOT_TRUNCATE and max_length and total_len > max_length:
+        if (
+            truncation_strategy != TruncationStrategy.DO_NOT_TRUNCATE
+            and max_length
+            and total_len > max_length
+        ):
             ids, pair_ids, overflowing_tokens = self.truncate_sequences(
                 ids,
                 pair_ids=pair_ids,
@@ -569,12 +629,16 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             encoded_inputs["token_type_ids"] = token_type_ids
         if return_special_tokens_mask:
             if add_special_tokens:
-                encoded_inputs["special_tokens_mask"] = self.get_special_tokens_mask(ids, pair_ids)
+                encoded_inputs["special_tokens_mask"] = self.get_special_tokens_mask(
+                    ids, pair_ids
+                )
             else:
                 encoded_inputs["special_tokens_mask"] = [0] * len(sequence)
 
         # Check lengths
-        self._eventual_warn_about_too_long_sequence(encoded_inputs["input_ids"], max_length, verbose)
+        self._eventual_warn_about_too_long_sequence(
+            encoded_inputs["input_ids"], max_length, verbose
+        )
 
         # Padding
         if padding_strategy != PaddingStrategy.DO_NOT_PAD or return_attention_mask:
@@ -590,13 +654,17 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             encoded_inputs["length"] = len(encoded_inputs["input_ids"])
 
         batch_outputs = BatchEncoding(
-            encoded_inputs, tensor_type=return_tensors, prepend_batch_axis=prepend_batch_axis
+            encoded_inputs,
+            tensor_type=return_tensors,
+            prepend_batch_axis=prepend_batch_axis,
         )
 
         return batch_outputs
 
     def build_inputs_with_special_tokens(
-        self, token_ids_0: List[List[int]], token_ids_1: Optional[List[List[int]]] = None
+        self,
+        token_ids_0: List[List[int]],
+        token_ids_1: Optional[List[List[int]]] = None,
     ) -> List[List[int]]:
         """
         Concatenate nested ngram sequences.
@@ -614,7 +682,9 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         if len(token_ids_0) == 0:
             return token_ids_1
 
-        return np.concatenate((np.array(token_ids_0), np.array(token_ids_1)), axis=1).tolist()
+        return np.concatenate(
+            (np.array(token_ids_0), np.array(token_ids_1)), axis=1
+        ).tolist()
 
     def truncate_sequences(
         self,
@@ -667,7 +737,6 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         if truncation_strategy == TruncationStrategy.ONLY_FIRST or (
             truncation_strategy == TruncationStrategy.LONGEST_FIRST and pair_ids is None
         ):
-
             ids = np.array(ids)
 
             # PHA: I think we only truncate with longest first
@@ -680,7 +749,9 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
                     overflowing_tokens = ids[-window_len:]
                     ids = ids[:, :-num_tokens_to_remove]
                 else:
-                    raise ValueError(f"invalid truncation strategy: {self.truncation_side}, use 'left' or 'right'.")
+                    raise ValueError(
+                        f"invalid truncation strategy: {self.truncation_side}, use 'left' or 'right'."
+                    )
 
                 ids = ids.tolist()
 
@@ -712,20 +783,29 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
                     elif self.truncation_side == "left":
                         ids = ids[:, 1:]
                     else:
-                        raise ValueError("invalid truncation strategy:" + str(self.truncation_side))
+                        raise ValueError(
+                            "invalid truncation strategy:" + str(self.truncation_side)
+                        )
                 else:
                     if self.truncation_side == "right":
                         pair_ids = pair_ids[:, :-1]
                     elif self.truncation_side == "left":
                         pair_ids = pair_ids[:, 1:]
                     else:
-                        raise ValueError("invalid truncation strategy:" + str(self.truncation_side))
+                        raise ValueError(
+                            "invalid truncation strategy:" + str(self.truncation_side)
+                        )
 
             ids = ids.tolist()
             pair_ids = pair_ids.tolist()
 
-        elif truncation_strategy == TruncationStrategy.ONLY_SECOND and pair_ids is not None:
-            raise NotImplementedError("PHA: I think we only truncate with longest first")
+        elif (
+            truncation_strategy == TruncationStrategy.ONLY_SECOND
+            and pair_ids is not None
+        ):
+            raise NotImplementedError(
+                "PHA: I think we only truncate with longest first"
+            )
             if len(pair_ids) > num_tokens_to_remove:
                 window_len = min(len(pair_ids), stride + num_tokens_to_remove)
                 if self.truncation_side == "right":
@@ -735,7 +815,9 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
                     overflowing_tokens = pair_ids[:window_len]
                     pair_ids = pair_ids[num_tokens_to_remove:]
                 else:
-                    raise ValueError("invalid truncation strategy:" + str(self.truncation_side))
+                    raise ValueError(
+                        "invalid truncation strategy:" + str(self.truncation_side)
+                    )
             else:
                 logger.error(
                     f"We need to remove {num_tokens_to_remove} to truncate the input "
@@ -745,3 +827,29 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
                 )
 
         return (ids, pair_ids, overflowing_tokens)
+
+    def _token_to_n_order(self, token: str) -> int:
+        """Get N-gram order for a token"""
+        for n_gram, word2idx in self._ngram2word2idx.items():
+            if token in word2idx:
+                return n_gram
+
+        return 0
+
+    def create_weight_tensor(self) -> torch.Tensor:
+        unked_freqs = self._frequencies.most_common()
+
+        t = torch.ones(len(self))
+
+        for token, freq in unked_freqs:
+            t[self._ngram2word2idx[self._token_to_n_order(token)][token]] = freq
+
+        normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
+
+        marker_tokens = [self.get_idx("<unk>", n) for n in range(1, self.ngram+1)]
+        marker_tokens.extend([self.get_idx("<start>", n) for n in range(1, self.ngram+1)])
+        # Instead of explicit ignore indexes, we use the weight vector and set target idxs to 0
+        for marker in marker_tokens:
+            normed_weights[marker] = 0
+
+        return normed_weights

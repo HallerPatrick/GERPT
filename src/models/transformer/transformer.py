@@ -1,14 +1,15 @@
 import math
 from typing import Optional
 
-import torch
 import pytorch_lightning as pl
+import torch
 from rich import print
 from rich.panel import Panel
 
 import wandb
 from src.dictionary import Dictionary
 from src.models.ngme import soft_n_hot
+
 # from src.models.transformer import TransformerConfig, TransformerTransformer
 
 DEBUG = False

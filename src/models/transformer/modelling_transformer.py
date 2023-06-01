@@ -1,30 +1,21 @@
+from typing import Optional, Tuple, Union
+
 import pandas as pd
-
 import torch
+import torch.utils.checkpoint
 from torch import nn
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
 from transformers import PreTrainedModel
-from transformers.modeling_outputs import SequenceClassifierOutputWithPast
-
-from torch.nn import BCEWithLogitsLoss
+from transformers.activations import ACT2FN
+from transformers.modeling_outputs import (BaseModelOutputWithPast,
+                                           CausalLMOutputWithPast,
+                                           SequenceClassifierOutputWithPast)
+from transformers.modeling_utils import PreTrainedModel
+from transformers.utils import logging
 
 from src.loss import CrossEntropyLossSoft
 from src.models.ngme import NGramsEmbedding, soft_n_hot
 
-from typing import Optional, Tuple, Union
-
-import torch
-import torch.utils.checkpoint
-from torch import nn
-from torch.nn import CrossEntropyLoss
-
-from transformers.activations import ACT2FN
-
-from transformers.modeling_outputs import (
-    BaseModelOutputWithPast,
-    CausalLMOutputWithPast,
-)
-from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
 from .configuration_transformer import GPTNGMEConfig
 
 logger = logging.get_logger(__name__)
@@ -337,7 +328,6 @@ class GPTNGMELayer(nn.Module):
         layer_past=None,
         output_attentions=False,
     ):
-
         attention_layer_outputs = self.attention(
             self.input_layernorm(hidden_states),
             attention_mask=attention_mask,
@@ -620,7 +610,6 @@ class GPTNGMEModel(GPTNGMEPreTrainedModel):
 
 
 def shift_inplace(tensor):
-
     shifted_labels = []
     for i in range(tensor.size(1)):
         shifted = tensor[:, i, (i + 1) :].squeeze(0)
@@ -674,7 +663,9 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         print("Post-Setting tokenizer and calculating token weight tensor...")
         print("This may take a while...")
         print("Move this logic somewhere else")
-        self.loss_fct = CrossEntropyLossSoft(weight=self.tokenizer.dictionary.create_weight_tensor())
+        self.loss_fct = CrossEntropyLossSoft(
+            weight=self.tokenizer.create_weight_tensor()
+        )
 
     def set_output_embeddings(self, new_embeddings):
         self.embed_out = new_embeddings
@@ -755,7 +746,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             # we are doing next-token prediction; shift prediction scores and input ids by one
 
             if self.config.use_ngme:
-
                 shift_logits = lm_logits[:, :-1, :].contiguous()
 
                 labels = shift_inplace(labels)
@@ -838,11 +828,17 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             )
         return reordered_past
 
-    def sample(self, input_ids, tokenizer=None, max_length=20, temperature=0.7, token_divider=None,**kwargs):
-
+    def sample(
+        self,
+        input_ids,
+        tokenizer=None,
+        max_length=20,
+        temperature=0.7,
+        token_divider=None,
+        **kwargs,
+    ):
         if not tokenizer:
             return super().sample(input_ids, **kwargs)
-
 
         input_ids = input_ids[0]
 
@@ -853,7 +849,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
             generated_output = str(
                 tokenizer.decode(input_ids)
             )  # .decode_ngram_sequence(1)
-        
+
         generated_output_with_divider = None
 
         if token_divider:
@@ -880,9 +876,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 output = self.forward(input_ids, return_dict=True)
                 next_token_logits = output.logits[0, -1, :]
 
-                next_token_probs = (
-                    next_token_logits.squeeze().div(temperature)
-                )
+                next_token_probs = next_token_logits.squeeze().div(temperature)
 
                 next_token_probs = torch.softmax(next_token_logits, dim=-1)
                 target_idx = torch.multinomial(next_token_probs, 1)[0]
@@ -890,16 +884,15 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                 iterations.append(iteration)
 
                 # # Get ngram word
-                if hasattr(tokenizer, "dictionary"):
-                    word = tokenizer.dictionary.get_item_for_index(target_idx.item())
-                else:
-                    word = tokenizer.decode(target_idx.item())
+                word = tokenizer.get_item_for_index(target_idx.item())
 
                 # # Append to generated sequence
                 generated_output = generated_output + word
 
                 if token_divider:
-                    generated_output_with_divider = generated_output_with_divider + token_divider + word
+                    generated_output_with_divider = (
+                        generated_output_with_divider + token_divider + word
+                    )
 
                 # Use last 200 chars as sequence for new input
                 input_ids = (
@@ -907,7 +900,7 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
                     .to(self.device)
                     .squeeze(0)
                 )
-        
+
         if token_divider and generated_output_with_divider:
             return generated_output_with_divider
 
@@ -968,12 +961,11 @@ class GPTNGMEForSequenceClassification(GPTNGMEPreTrainedModel):
             sequence_lengths = -1
         else:
             if input_ids is not None:
-
                 if isinstance(self.config.pad_token_id, list):
                     self.config.pad_token_id = self.config.pad_token_id[0][0]
 
                 sequence_lengths = (
-                        torch.ne(input_ids[:, 0, :], self.config.pad_token_id).sum(-1) - 1
+                    torch.ne(input_ids[:, 0, :], self.config.pad_token_id).sum(-1) - 1
                 ).to(logits.device)
             else:
                 sequence_lengths = -1

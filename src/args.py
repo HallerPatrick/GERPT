@@ -82,9 +82,7 @@ def argparser_train() -> argparse.Namespace:
     Returns:
         Namespace
     """
-    parser = argparse.ArgumentParser(
-        description=""
-    )
+    parser = argparse.ArgumentParser(description="")
 
     parser.add_argument(
         "--online",
@@ -139,15 +137,9 @@ def argparser_train() -> argparse.Namespace:
         action="store_true",
         help="Use a weighted target labels for n-gram",
     )
-    parser.add_argument(
-        "--weight-strat",
-        type=str
-    )
+    parser.add_argument("--weight-strat", type=str)
 
-    parser.add_argument(
-        "--loss-type",
-        type=str
-    )
+    parser.add_argument("--loss-type", type=str)
 
     parser.add_argument("--embedding-size", type=int, help="size of word embeddings")
     parser.add_argument(
@@ -204,20 +196,18 @@ def argparse_flair_train() -> argparse.Namespace:
 def argparse_generate():
     """Argparser for standalone generator"""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model-path",
-        type=str,
-        required=True
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.7
-    )
+    parser.add_argument("--model-path", type=str, required=True)
+    parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--mode", type=str, default="gen")
-    parser.add_argument("--num-iters", type=int, default=1, help="How often to generate")
-    parser.add_argument("--num-chars", type=int, default=1000, help="How many chars to generate")
-    parser.add_argument("--seed", type=str, default="Hello ", help="Seed text for generation")
+    parser.add_argument(
+        "--num-iters", type=int, default=1, help="How often to generate"
+    )
+    parser.add_argument(
+        "--num-chars", type=int, default=1000, help="How many chars to generate"
+    )
+    parser.add_argument(
+        "--seed", type=str, default="Hello ", help="Seed text for generation"
+    )
 
     return parser.parse_args()
 
@@ -225,19 +215,10 @@ def argparse_generate():
 def argparse_babylm():
     """Argparser for eval babylm"""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config",
-        type=str
-    )
-    parser.add_argument(
-        "--model",
-        type=str
-    )
+    parser.add_argument("--config", type=str)
+    parser.add_argument("--model", type=str)
 
-    parser.add_argument(
-        "--dict",
-        type=str
-    )
+    parser.add_argument("--dict", type=str)
 
     parser.add_argument(
         "--dataset",
@@ -260,32 +241,15 @@ def argparse_babylm():
 
 
 def argparse_build_dict():
-
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        required=True
-    )
+    parser.add_argument("--dataset", type=str, required=True)
 
-    parser.add_argument(
-        "--ngrams",
-        type=int,
-        required=True
-    )
+    parser.add_argument("--ngrams", type=int, required=True)
 
-    parser.add_argument(
-        "--max-dict-size",
-        type=int,
-        required=True
-    )
+    parser.add_argument("--max-dict-size", type=int, required=True)
 
-    parser.add_argument(
-        "--ngme",
-        type=str,
-        required=True
-    )
+    parser.add_argument("--ngme", type=str, required=True)
 
     parser.add_argument(
         "--output",
@@ -295,6 +259,5 @@ def argparse_build_dict():
     )
 
     args = parser.parse_args()
-    
-    return args
 
+    return args

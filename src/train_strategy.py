@@ -1,4 +1,4 @@
-from src.dataset import GenericDataModule, SplitDataModule, ShardedDataModule
+from src.dataset import GenericDataModule, ShardedDataModule, SplitDataModule
 from src.processor import Processor
 
 

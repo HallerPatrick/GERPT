@@ -9,7 +9,8 @@ from torch import manual_seed
 import wandb
 from src.args import argparse_flair_train, read_config
 from src.models.flair_models import (NGMETransformerWordEmbeddings,
-                                     load_corpus, patch_flair_lstm, patch_flair_trans)
+                                     load_corpus, patch_flair_lstm,
+                                     patch_flair_trans)
 
 
 def train_ds(args: Optional[Namespace] = None, wandb_run_id: Optional[str] = None):

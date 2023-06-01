@@ -1,5 +1,5 @@
-from collections.abc import Callable
 import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import List, Union
 
@@ -13,8 +13,7 @@ from pytorch_lightning.utilities import rank_zero
 
 from src.loss import AdaptiveLogSoftmaxWithLossSoft, CrossEntropyLossSoft
 
-from .ngme import NGramsEmbedding, soft_n_hot, CanineEmbeddings
-
+from .ngme import CanineEmbeddings, NGramsEmbedding, soft_n_hot
 
 DEBUG = False
 
@@ -35,12 +34,11 @@ def bce_loss(pred, target):
 
 
 class Decoder(pl.LightningModule):
-    
     def __init__(self, weight) -> None:
         super().__init__()
         self.weight = weight
         self.bias = nn.Parameter(torch.zeros(self.weight.size(0)))
-    
+
     def forward(self, x):
         return torch.mm(x, self.weight.t()) + self.bias
 
@@ -69,7 +67,7 @@ class RNNModel(pl.LightningModule):
         cell_type: str = "lstm",
         packed: bool = False,
         loss_type: str = "cross_entropy",
-        has_decoder: bool = True
+        has_decoder: bool = True,
     ):
         super(RNNModel, self).__init__()
 
@@ -123,7 +121,7 @@ class RNNModel(pl.LightningModule):
             self.rnn = MogLSTM(embedding_size, hidden_size, 5)
 
         self.drop = nn.Dropout(dropout)
-        
+
         # self.decoder = Decoder(self.encoder.weight)
         if loss_type != "adaptive_softmax":
             self.decoder = nn.Linear(
@@ -148,13 +146,11 @@ class RNNModel(pl.LightningModule):
         self.proj = None
 
     def setup(self, stage) -> None:
-
         if self.loss_type == "cross_entropy":
             self.criterion = CrossEntropyLossSoft(
                 weight=self.dictionary.create_weight_tensor(self.weighted_loss),
             )
         elif self.loss_type == "adaptive_softmax":
-
             # Using len of ngram vocabs as cutoffs
             vocabs = self.dictionary.vocab_size_per_ngram()
 
@@ -167,7 +163,7 @@ class RNNModel(pl.LightningModule):
                 in_features=self.hidden_size,
                 n_classes=self.ntokens,
                 cutoffs=cutoffs,
-                weight=self.dictionary.create_weight_tensor(self.weighted_loss)
+                weight=self.dictionary.create_weight_tensor(self.weighted_loss),
             )
 
         elif self.loss_type == "split_cross_entropy":
@@ -235,7 +231,6 @@ class RNNModel(pl.LightningModule):
             loss = self.criterion(decoded, target)
             # 158 secs
         elif self.loss_type == "split_cross_entropy":
-
             # source = source.view((source.size(0), -1))
             target = target.reshape((target.size(0), -1))
             loss = self.subset_cross_entropy(decoded, target)
@@ -256,7 +251,6 @@ class RNNModel(pl.LightningModule):
         for i, (subset, n_gram_target) in enumerate(
             zip(subsets, self._map_n_gram_id(target))
         ):
-
             # if self.criterion[i].weight.device != subset.device:
             #     self.criterion[i].weight = self.criterion[i].weight.to(subset.device)
             n_gram_target = soft_n_hot(
@@ -268,7 +262,7 @@ class RNNModel(pl.LightningModule):
                 False,
                 # self.encoder.packed,
             )
-            
+
             loss = self.criterion[i](subset, n_gram_target)
             losses.append(loss)
 
@@ -502,7 +496,9 @@ class RNNModel(pl.LightningModule):
         output, hidden = self.rnn(emb, hidden)
 
         if self.has_decoder:
-            output = self.decoder(output.view(-1, output.size(-1))) # .view(-1, self.ntokens)
+            output = self.decoder(
+                output.view(-1, output.size(-1))
+            )  # .view(-1, self.ntokens)
 
         return output, hidden
 
@@ -517,7 +513,7 @@ class RNNModel(pl.LightningModule):
 
         if self.proj is not None:
             output = self.proj(output)
-    
+
         if self.has_decoder:
             decoded = self.decoder(
                 output.view(output.size(0) * output.size(1), output.size(2))
@@ -586,9 +582,9 @@ class RNNModel(pl.LightningModule):
                 is_forward_lm=d["is_forward_lm"],
                 document_delimiter=d["document_delimiter"],
                 dropout=d["dropout"],
-                has_decoder=d["has_decoder"]
+                has_decoder=d["has_decoder"],
             )
-            
+
             print("Loading state dict")
             print(d)
             language_model.load_state_dict(d["state_dict"], strict=False)
@@ -616,7 +612,7 @@ class RNNModel(pl.LightningModule):
             "document_delimiter": self.document_delimiter,
             "dropout": self.dropout,
             "ngrams": self.ngrams,
-            "has_decoder": self.has_decoder
+            "has_decoder": self.has_decoder,
         }
 
         if isinstance(file, str):
@@ -705,9 +701,8 @@ class RNNModel(pl.LightningModule):
 
 try:
     import lm_eval
-    from lm_eval.base import BaseLM
-
     from einops import rearrange
+    from lm_eval.base import BaseLM
 
     def decode(dictionary, tokens):
         """Just take the unigram tokens and decode"""

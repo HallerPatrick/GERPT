@@ -12,16 +12,11 @@ from pytorch_lightning.strategies import DDPStrategy
 
 import wandb
 from src.args import parse_args, print_args, read_config, write_to_yaml
-from src.models import load_model
 from src.dictionary import Dictionary
-
+from src.models import load_model
 from src.train_strategy import TrainStrategy
-from src.utils import (
-    FlairDownstreamCallback,
-    TextGenerationCallback,
-    TimePerEpochCallback,
-    EarlyStoppingOnLRCallback,
-)
+from src.utils import (EarlyStoppingOnLRCallback, FlairDownstreamCallback,
+                       TextGenerationCallback, TimePerEpochCallback)
 from train_ds import train_ds
 
 TEST = False

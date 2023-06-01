@@ -1,38 +1,29 @@
 import logging
 import math
+import os
+import sys
 from dataclasses import dataclass, field
 from itertools import chain
-from typing import Any, Optional, Dict, Mapping
-import sys
-import os
+from typing import Any, Dict, Mapping, Optional
 
-import torch
-import numpy as np
-import wandb
 import datasets
 import evaluate
-from datasets import load_dataset
+import numpy as np
+import torch
 import transformers
-from transformers import (
-    HfArgumentParser,
-    TrainingArguments,
-    AutoModelForCausalLM,
-    set_seed,
-    Trainer,
-    default_data_collator,
-    AutoTokenizer,
-    StoppingCriteriaList,
-    MaxLengthCriteria,
-)
-from transformers import AdamW 
-from transformers import get_constant_schedule
-
+from datasets import load_dataset
+from transformers import (AdamW, AutoModelForCausalLM, AutoTokenizer,
+                          HfArgumentParser, MaxLengthCriteria,
+                          StoppingCriteriaList, Trainer, TrainingArguments,
+                          default_data_collator, get_constant_schedule,
+                          set_seed)
 from transformers.integrations import WandbCallback
-from transformers.trainer_utils import get_last_checkpoint
 from transformers.testing_utils import CaptureLogger
+from transformers.trainer_utils import get_last_checkpoint
 
-from src.models import GPTNGMEConfig, GPTNGMETokenizer
+import wandb
 from src.data import local_dataset_mapper
+from src.models import GPTNGMEConfig, GPTNGMETokenizer
 from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
@@ -382,11 +373,10 @@ def main():
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=model_args.num_attention_heads,
         intermediate_size=model_args.intermediate_size,
-        eos_token_id=tokenizer.eos_token_id,
         use_ngme=data_args.use_ngme,
-        unk_token_id=tokenizer.dictionary.ngram2word2idx[1]["<unk>"]
-        if hasattr(tokenizer, "dictionary")
-        else None
+        eos_token_id=tokenizer.eos_token_id,
+        unk_token_id=tokenizer.unk_token_id,
+        pad_token_id=tokenizer.pad_token_id
     )
 
     model = AutoModelForCausalLM.from_config(config)

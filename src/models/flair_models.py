@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 import torch
-from transformers.models.auto.tokenization_auto import AutoTokenizer
-from transformers import AutoModel, AutoConfig
 import wrapt
 from flair.data import Corpus, Sentence, Token
 from flair.embeddings.token import TransformerWordEmbeddings
+from transformers import AutoConfig, AutoModel
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 
 
 class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
@@ -23,7 +23,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
     @classmethod
     def create_from_state(cls, **state):
-
         del state["is_token_embedding"]
 
         if "vocab_file" not in state:
@@ -50,7 +49,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         return self.model.embedding_size
 
     def _reconstruct_tokens_from_subtokens(self, sentence, subtokens):
-
         """
 
         sentence: Hello World
@@ -72,7 +70,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
         # Iter through unigram seq,
         for subtoken_id, subtoken in enumerate(subtokens[0]):
-
             # subtoken == char
 
             # remove special markup
@@ -95,7 +92,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
             # check if reconstructed token is the same as current token
             if reconstructed_token.lower() == token_text:
-
                 # if so, add subtoken count
                 token_subtoken_lengths.append(subtoken_count)
 
@@ -132,7 +128,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         subtoken_lengths = []
 
         for sentence in sentences:
-
             # subtokenize the sentence
             tokenized_string = sentence.to_tokenized_string()
 
@@ -167,7 +162,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         return tokenized_sentences, all_token_subtoken_lengths, subtoken_lengths
 
     def _add_embeddings_to_sentences(self, sentences: List[Sentence]):
-
         (
             tokenized_sentences,
             all_token_subtoken_lengths,
@@ -201,7 +195,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
         input_ids = input_ids.permute((1, 2, 0))
 
         with gradient_context:
-
             hidden_states = self.model.forward_hidden(input_ids, **model_kwargs)
 
             # Out: (seq, batch, hid) -> (batch, seq, hid)
@@ -251,7 +244,6 @@ class NGMETransformerWordEmbeddings(TransformerWordEmbeddings):
 
 
 def patch_flair_lstm():
-
     import flair
     import torch
 
@@ -260,7 +252,7 @@ def patch_flair_lstm():
     @wrapt.patch_function_wrapper(flair.models.LanguageModel, "load_language_model")
     def load_language_model(wrapped, instance, args, kwargs):
         """Monkey patch load_language_model to load our RNNModel"""
-        
+
         model = RNNModel.load_from_checkpoint(args[0], strict=False)
         # state = torch.load(str(args[0]), map_location=flair.device)
         #
@@ -281,8 +273,8 @@ def patch_flair_lstm():
 
         return model
 
-def patch_flair_trans():
 
+def patch_flair_trans():
     import flair
     import torch
 
@@ -291,24 +283,29 @@ def patch_flair_trans():
     @wrapt.patch_function_wrapper(flair.models.LanguageModel, "load_language_model")
     def load_language_model(wrapped, instance, args, kwargs):
         """Monkey patch load_language_model to load our RNNModel"""
-        
+
         print("LOAD TRANSFORMER")
         print(str(args[0]))
-        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(str(args[0]), vocab_file=str(args[0]) + "/vocab.txt", **kwargs)
-        config = AutoConfig.from_pretrained(str(args[0]), output_hidden_states=True, **kwargs)
+        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
+            str(args[0]), vocab_file=str(args[0]) + "/vocab.txt", **kwargs
+        )
+        config = AutoConfig.from_pretrained(
+            str(args[0]), output_hidden_states=True, **kwargs
+        )
         model = AutoModel.from_pretrained(str(args[0]), config=config)
         model.is_forward_lm = True
         model.tokenizer = tokenizer
         model.to(flair.device)
         return model
 
+
 def load_corpus(
     corpus_name: str, base_path: Optional[Union[str, Path]] = None
 ) -> Corpus:
-
-    from flair.datasets import CONLL_03, CONLL_03_GERMAN, IMDB, UD_ENGLISH, UD_GERMAN
-    from flair.datasets.document_classification import (SENTEVAL_CR,
-                                                        SENTEVAL_SST_BINARY, GERMEVAL_2018_OFFENSIVE_LANGUAGE)
+    from flair.datasets import (CONLL_03, CONLL_03_GERMAN, IMDB, UD_ENGLISH,
+                                UD_GERMAN)
+    from flair.datasets.document_classification import (
+        GERMEVAL_2018_OFFENSIVE_LANGUAGE, SENTEVAL_CR, SENTEVAL_SST_BINARY)
 
     corpus_mapper = {
         "conll_03": {"corpus": CONLL_03, "args": [base_path]},
@@ -316,11 +313,10 @@ def load_corpus(
         "imdb": {"corpus": IMDB, "args": []},
         "glue/sst2": {"corpus": SENTEVAL_SST_BINARY, "args": []},
         "senteval": {"corpus": SENTEVAL_CR, "args": []},
-
         # German
         "conll_03_de": {"corpus": CONLL_03_GERMAN, "args": [base_path]},
         "germeval_2010": {"corpus": GERMEVAL_2018_OFFENSIVE_LANGUAGE, "args": []},
-        "ud_german": {"corpus": UD_GERMAN, "args": []}
+        "ud_german": {"corpus": UD_GERMAN, "args": []},
     }
 
     return corpus_mapper[corpus_name]["corpus"](*corpus_mapper[corpus_name]["args"])

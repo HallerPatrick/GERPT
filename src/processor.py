@@ -1,18 +1,16 @@
 """Processor for the dataset"""
 import os
-
-from typing import Dict, Union, Iterable, List
-from pathlib import Path
-
 from functools import partial
+from pathlib import Path
+from typing import Dict, Iterable, List, Union
 
-import h5py
 import braceexpand
-import torch
+import h5py
 import numpy as np
-from tqdm import tqdm
-from datasets import DatasetDict
+import torch
 import webdataset as wds
+from datasets import DatasetDict
+from tqdm import tqdm
 
 from src.dictionary import Dictionary
 from src.utils import split_range
@@ -21,14 +19,17 @@ from src.utils import split_range
 class InvalidPathError(Exception):
     """Raised when the path is invalid for specific processor""" ""
 
+
 def filter_empty_row(example):
     return len(example["text"]) > 0
+
 
 def tokenize(row, dictionary: Dictionary):
     result = dictionary.tokenize_line(
         row["text"], id_type=torch.int16, return_tensor="np", suffix_token="\n"
     )
     return {**result, "text_len": len(row["text"])}
+
 
 class Processor:
     def __init__(
@@ -80,7 +81,9 @@ class Processor:
         """
 
         dataset = dataset.filter(filter_empty_row, num_proc=self.num_procs)
-        dataset = dataset.map(partial(tokenize, dictionary=self.dictionary), num_proc=self.num_procs)
+        dataset = dataset.map(
+            partial(tokenize, dictionary=self.dictionary), num_proc=self.num_procs
+        )
 
         return dataset
 
@@ -109,6 +112,7 @@ class Processor:
         """Creates the directory if it does not exist"""
         if not os.path.exists(path):
             os.makedirs(path)
+
 
 def concat_from_split(split):
     source = split["source"]
@@ -161,7 +165,6 @@ class DefaultProcessor(Processor):
     def write_dataset(self, dataset: DatasetDict()):
         """Writes the dataset to the file path"""
 
-        
         with open(f"{self.target_path}/strategy", "w") as f:
             f.write("default")
 
@@ -197,8 +200,6 @@ class DefaultProcessor(Processor):
 
 
 class MmapProcessor(Processor):
-
-
     @staticmethod
     def read_dataset(file_path: str) -> Dict[str, Dict[str, np.ndarray]]:
         dataset = {"train": {}, "test": {}, "valid": {}}
@@ -269,25 +270,25 @@ class MmapProcessor(Processor):
 
 
 class HDF5Processor(Processor):
-
     def write_dataset(self, dataset):
         f = h5py.File(self.target_path + ".h5", "w")
 
         for split in ["train", "test", "validation"]:
-
             ngram = len(dataset[split]["source"][0])
             total_train_len = sum(dataset[split]["text_len"])
 
             for seq_name in ["source", "target"]:
-
-                h5_dataset = f.create_dataset(split.replace("validation", "valid") + "_" + seq_name, (ngram, total_train_len))
+                h5_dataset = f.create_dataset(
+                    split.replace("validation", "valid") + "_" + seq_name,
+                    (ngram, total_train_len),
+                )
 
                 offset = 0
                 # print(split, seq_name)
                 for lst in tqdm(dataset[split][seq_name]):
                     array = np.array(lst)
                     array_len = array.shape[1]
-                    h5_dataset[:, offset: (offset + array_len)] = array[:]
+                    h5_dataset[:, offset : (offset + array_len)] = array[:]
                     offset += array_len
                     del array
 
@@ -308,9 +309,10 @@ class HDF5Processor(Processor):
 
 
 class ShardProcessor(Processor):
-
     def __init__(self, target_path, dictionary, ngram, is_forward, num_procs, **kwargs):
-        super().__init__(target_path, dictionary, ngram, is_forward, num_procs, **kwargs)
+        super().__init__(
+            target_path, dictionary, ngram, is_forward, num_procs, **kwargs
+        )
 
         if "row_threshold" in kwargs:
             self.rows_threshold = kwargs["rows_threshold"]
@@ -326,7 +328,7 @@ class ShardProcessor(Processor):
                 sample[split_name] = {
                     "source": split[0],
                     "target": split[1],
-                    "split": split_name
+                    "split": split_name,
                 }
             return sample
 
@@ -345,10 +347,9 @@ class ShardProcessor(Processor):
         return dataset
 
     def write_dataset(self, dataset: Union[DatasetDict, Iterable[DatasetDict]]):
-        
         if isinstance(dataset, DatasetDict):
             dataset_iterator = self._split_dataset(dataset)
-        
+
         shard_path = f"{self.target_path}-%0d.tar"
 
         with wds.ShardWriter(shard_path) as sink:
@@ -379,7 +380,9 @@ class ShardProcessor(Processor):
         if not hasattr(self, "rows_threshold"):
             self.rows_threshold = train_len
 
-        extra_split = (train_len / self.rows_threshold) != (train_len // self.rows_threshold)
+        extra_split = (train_len / self.rows_threshold) != (
+            train_len // self.rows_threshold
+        )
         num_splits = train_len // self.rows_threshold
 
         num_splits = train_len // self.rows_threshold
@@ -389,13 +392,9 @@ class ShardProcessor(Processor):
 
         for i in range(num_splits + 1):
             print(f"Processing split {i}/{num_splits}")
-            train_start, train_end = split_range(
-                i, dataset["train"], num_splits
-            )
+            train_start, train_end = split_range(i, dataset["train"], num_splits)
             test_start, test_end = split_range(i, dataset["test"], num_splits)
-            valid_start, valid_end = split_range(
-                i, dataset["valid"], num_splits
-            )
+            valid_start, valid_end = split_range(i, dataset["valid"], num_splits)
 
             print(
                 f"Taking splits:\n    \
@@ -437,22 +436,21 @@ class ShardProcessor(Processor):
 
 
 class SplitProcessor(Processor):
-
     @staticmethod
     def read_dataset(file_path: str):
         path = Path(file_path)
 
-        idxs = [int(file.stem.removeprefix("train-")) for file in path.iterdir() if file.is_file() and file.stem != "strategy"]
+        idxs = [
+            int(file.stem.removeprefix("train-"))
+            for file in path.iterdir()
+            if file.is_file() and file.stem != "strategy"
+        ]
         idxs.sort()
 
         for idx in idxs:
             ds_dict = torch.load(path / f"train-{str(idx)}")
             empty_split = {"source": np.array([]), "target": np.array([])}
-            yield {
-                "train": ds_dict,
-                "test": empty_split, 
-                "valid": empty_split
-            }
+            yield {"train": ds_dict, "test": empty_split, "valid": empty_split}
 
     def run(self, dataset: Iterable[DatasetDict]):
         self._mkdir(path=self.target_path)
@@ -462,14 +460,13 @@ class SplitProcessor(Processor):
 
         for idx, ds in enumerate(dataset):
             print(f"Processing split {idx}")
-            print("-"*80)
+            print("-" * 80)
             print(dataset)
             ds = self.process_data(ds)
             self._write_dataset(ds, idx)
-            print("-"*80)
-            
-    def _write_dataset(self, dataset: Iterable[DatasetDict], idx: int):
+            print("-" * 80)
 
+    def _write_dataset(self, dataset: Iterable[DatasetDict], idx: int):
         for train_split in ["train", "test", "valid"]:
             if train_split not in dataset:
                 print(f"Split {train_split} not found. Skipping.")
@@ -480,8 +477,4 @@ class SplitProcessor(Processor):
     def _write_split(self, source, target, idx: int, split: str):
         target_file = Path(self.target_path) / f"{split}-{str(idx)}"
         print(f"Saving split {str(idx)} to {target_file}")
-        torch.save({
-            "source": source,
-            "target": target
-        }, target_file)
-        
+        torch.save({"source": source, "target": target}, target_file)

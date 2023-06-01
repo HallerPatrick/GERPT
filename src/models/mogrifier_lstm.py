@@ -1,5 +1,5 @@
-from typing import Tuple, Optional
 from enum import IntEnum
+from typing import Optional, Tuple
 
 import torch
 from torch import nn

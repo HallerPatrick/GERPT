@@ -1,7 +1,7 @@
 import json
 import sys
-from math import log as math_log
 from collections import Counter, defaultdict
+from math import log as math_log
 from typing import Iterator, List, Optional, Tuple, Union
 
 import flair
@@ -626,7 +626,7 @@ class Dictionary:
             normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
         else:
             normed_weights = t
-        
+
         # Instead of explicit ignore indexes, we use the weight vector and set target idxs to 0
         for marker in self.get_marker_tokens():
             if (

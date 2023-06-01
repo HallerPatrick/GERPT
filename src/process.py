@@ -3,21 +3,24 @@
 from typing import Iterable, Optional, Tuple, Union
 
 import braceexpand
+import torch
 from datasets import load_dataset as ld
 from datasets.dataset_dict import DatasetDict
-import torch
 from tqdm import tqdm
 
 from src.data import local_dataset_mapper
 from src.dictionary import Dictionary
 from src.processor import Processor
 
+
 def dataset_iterator(paths):
     for path in paths:
-        yield ld("text", data_files={"train": path}) #, sample_by="document")
+        yield ld("text", data_files={"train": path})  # , sample_by="document")
 
 
-def load_dataset_from_source(ds_path: str) -> Tuple[Union[Iterable[DatasetDict], DatasetDict], str]:
+def load_dataset_from_source(
+    ds_path: str,
+) -> Tuple[Union[Iterable[DatasetDict], DatasetDict], str]:
     """We using the HF dataset path convenientions.
     Usually:
     <dataset>/<subset>

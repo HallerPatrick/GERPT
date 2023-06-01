@@ -54,9 +54,13 @@ def load_model(dictionary, args: Namespace, print_params: bool = True):
 
     return model
 
-from transformers import AutoConfig, AutoModel, AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
+
+from transformers import (AutoConfig, AutoModel, AutoModelForCausalLM,
+                          AutoModelForSequenceClassification, AutoTokenizer)
+
 from src.models.transformer.configuration_transformer import GPTNGMEConfig
-from src.models.transformer.modelling_transformer import GPTNGMEModel, GPTNGMEForCausalLM, GPTNGMEForSequenceClassification
+from src.models.transformer.modelling_transformer import (
+    GPTNGMEForCausalLM, GPTNGMEForSequenceClassification, GPTNGMEModel)
 from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
 
 AutoConfig.register("gpt_ngme", GPTNGMEConfig)
@@ -65,7 +69,15 @@ AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
 AutoModel.register(GPTNGMEConfig, GPTNGMEModel)
 # AutoModel.register(GPTNGMEConfig, GPTNGMEForCausalLM)
 AutoModelForCausalLM.register(GPTNGMEConfig, GPTNGMEForCausalLM)
-AutoModelForSequenceClassification.register(GPTNGMEConfig, GPTNGMEForSequenceClassification)
+AutoModelForSequenceClassification.register(
+    GPTNGMEConfig, GPTNGMEForSequenceClassification
+)
 
 # Export load_model and all HF transformer files
-__all__ = ["load_model", "GPTNGMEConfig", "GPTNGMEModel", "GPTNGMETokenizer", "GPTNGMEForCausalLM"]
+__all__ = [
+    "load_model",
+    "GPTNGMEConfig",
+    "GPTNGMEModel",
+    "GPTNGMETokenizer",
+    "GPTNGMEForCausalLM",
+]

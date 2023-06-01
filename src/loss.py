@@ -4,6 +4,7 @@ from typing import Optional, Union
 import torch
 from torch import nn
 
+
 def logsigsoftmax(logits):
     """
     Computes sigsoftmax from the paper - https://arxiv.org/pdf/1805.10829.pdf
@@ -38,16 +39,19 @@ class AdaptiveLogSoftmaxWithLossSoft(nn.AdaptiveLogSoftmaxWithLoss):
         )
 
         self.weight = weight
-        
+
         # We cannot just simply apply the weights to a general output probability
         # Construct weight vectors for head and tails
         if self.weight is not None:
-            self.head_weight = torch.concat((self.weight[0:self.cutoffs[0]], torch.ones((self.n_clusters))))
+            self.head_weight = torch.concat(
+                (self.weight[0 : self.cutoffs[0]], torch.ones((self.n_clusters)))
+            )
             # self.head_weight = self.weight[0:self.cutoffs[0]]
             self.tail_weights = []
             for i in range(0, len(cutoffs)):
-                self.tail_weights.append(self.weight[self.cutoffs[i]:self.cutoffs[i+1]])
-
+                self.tail_weights.append(
+                    self.weight[self.cutoffs[i] : self.cutoffs[i + 1]]
+                )
 
     def forward(self, input_, target_):
         targ_dim = target_.dim()
@@ -92,7 +96,6 @@ class AdaptiveLogSoftmaxWithLossSoft(nn.AdaptiveLogSoftmaxWithLoss):
 
         cutoff_values = [0] + self.cutoffs
         for i in range(len(cutoff_values) - 1):
-
             low_idx = cutoff_values[i]
             high_idx = cutoff_values[i + 1]
 
@@ -128,7 +131,6 @@ class AdaptiveLogSoftmaxWithLossSoft(nn.AdaptiveLogSoftmaxWithLoss):
             else:
                 if use_ngme:
                     for row, target_mask in zip(row_indices, target_masks):
-
                         # if self.ignore_indexes:
                         #     for ignore_index in self.ignore_indexes:
                         #         row = row[row != ignore_index]
@@ -148,10 +150,15 @@ class AdaptiveLogSoftmaxWithLossSoft(nn.AdaptiveLogSoftmaxWithLoss):
                             cluster_output, dim=1
                         )
                         if self.weight is not None:
-                            if self.tail_weights[i-1].device != cluster_logprob.device:
-                                self.tail_weights[i-1] = self.tail_weights[i-1].to(cluster_logprob.device)
+                            if (
+                                self.tail_weights[i - 1].device
+                                != cluster_logprob.device
+                            ):
+                                self.tail_weights[i - 1] = self.tail_weights[i - 1].to(
+                                    cluster_logprob.device
+                                )
 
-                            cluster_logprob = cluster_logprob * self.tail_weights[i-1]
+                            cluster_logprob = cluster_logprob * self.tail_weights[i - 1]
 
                         local_logprob = cluster_logprob.gather(
                             1, relative_target.unsqueeze(1)
@@ -192,7 +199,7 @@ class AdaptiveLogSoftmaxWithLossSoft(nn.AdaptiveLogSoftmaxWithLoss):
 
         head_output = self.head(input)
         head_logprob = nn.functional.log_softmax(head_output, dim=1)
-        
+
         if self.weight is not None:
             if self.head_weight.device != head_logprob.device:
                 self.head_weight = self.head_weight.to(head_logprob.device)

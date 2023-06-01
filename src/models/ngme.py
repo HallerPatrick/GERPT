@@ -1,6 +1,6 @@
 from functools import lru_cache
-from typing import Optional, List
 from math import log
+from typing import List, Optional
 
 import torch
 import torch.nn.functional as F
@@ -36,7 +36,7 @@ n_dists = {
     4: [0.1, 0.15, 0.2, 0.25, 0.3],
 }
 
-strats = {"linear": lambda x: x, "log": lambda x: log(x + 1), "exp": lambda x: x ** 2}
+strats = {"linear": lambda x: x, "log": lambda x: log(x + 1), "exp": lambda x: x**2}
 
 
 @lru_cache(maxsize=5)
@@ -60,7 +60,6 @@ def soft_n_hot(
     weighted=False,
     packed=False,
 ):
-
     if packed:
         input = utils.unpack_batched_tensor(input)
 
@@ -208,7 +207,6 @@ class CanineEmbeddings(nn.Module):
     def forward(
         self, input_ids: Optional[torch.LongTensor] = None
     ) -> torch.FloatTensor:
-
         inputs_embeds = self._embed_hash_buckets(
             input_ids, self.hidden_size, self.num_hash_functions, self.num_hash_buckets
         )

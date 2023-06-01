@@ -1,6 +1,6 @@
+import sys
 from typing import Optional
 
-import sys
 sys.path.append("..")
 
 
@@ -9,10 +9,12 @@ import torch.nn.functional as F
 
 from src.models import RNNModel
 
+
 def load_model(model_path):
     model = RNNModel.load_from_checkpoint(model_path)
     model.eval()
     return model
+
 
 def generate(model, temp: float, seed: Optional[str], chars: int):
     """Generation tasks for a given seed text"""
@@ -61,7 +63,7 @@ def generate(model, temp: float, seed: Optional[str], chars: int):
                 ngram_order = model.dictionary.get_ngram_order(ngram_idx.item())
 
                 token = model.dictionary.get_item_for_index(ngram_idx.item())
-            
+
             generated_tokens.append(token)
 
             # Append to generated sequence

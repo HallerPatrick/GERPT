@@ -1,43 +1,37 @@
 import sys
 import timeit
 from argparse import Namespace
-from math import log as math_log
 from datetime import timedelta
-from typing import Any, Callable, Optional, List, Union
+from math import log as math_log
+from typing import Any, Callable, List, Optional, Union
 
-import pytorch_lightning as pl
-from pytorch_lightning.utilities.rank_zero import rank_zero_only
-from sqlitedict import tempfile
-import torch
-from torch import Tensor
-
-import pyarrow as pa
 import numpy as np
-
-from datasets.features.features import _ArrayXDExtensionType, _is_zero_copy_only
-from datasets.formatting.formatting import (
-    _is_array_with_nulls,
-    _unnest,
-    Formatter,
-    BaseArrowExtractor,
-)
-
+import pyarrow as pa
+import pytorch_lightning as pl
+import torch
 import torch.nn.functional as F
-
-from rich import print as rich_print
-from rich.panel import Panel
+from datasets.features.features import (_ArrayXDExtensionType,
+                                        _is_zero_copy_only)
+from datasets.formatting.formatting import (BaseArrowExtractor, Formatter,
+                                            _is_array_with_nulls, _unnest)
+from flair import set_seed
+from flair.embeddings.document import DocumentRNNEmbeddings
+from lightning_fabric.utilities.rank_zero import _get_rank
 from prettytable import PrettyTable
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.utilities.rank_zero import rank_prefixed_message
-from lightning_fabric.utilities.rank_zero import _get_rank
-from flair.embeddings.document import DocumentRNNEmbeddings
+from pytorch_lightning.utilities.rank_zero import (rank_prefixed_message,
+                                                   rank_zero_only)
+from rich import print as rich_print
+from rich.panel import Panel
+from sqlitedict import tempfile
+from torch import Tensor, manual_seed
 
-from torch import manual_seed
-from flair import set_seed
 
 def train_task(task_settings, seed, model_name, saved_model):
-    from src.models.flair_models import (load_corpus, patch_flair_lstm, patch_flair_trans)
+    from src.models.flair_models import (load_corpus, patch_flair_lstm,
+                                         patch_flair_trans)
+
     # Seed everything
     set_seed(int(seed))
     manual_seed(int(seed))
@@ -58,9 +52,7 @@ def train_task(task_settings, seed, model_name, saved_model):
     label_dict = corpus.make_label_dictionary(label_type=settings.task_name)
 
     if settings.task_name in ["ner", "upos"]:
-
         if model_name == "rnn":
-            
             # if hasattr(args, "saved_model_backward"):
             #     print("Using forward and backwards models")
             #     embds = [
@@ -73,12 +65,9 @@ def train_task(task_settings, seed, model_name, saved_model):
                 FlairEmbeddings(saved_model),
                 # WordEmbeddings("glove")
             ]
-                
-            embeddings = StackedEmbeddings(
-                embeddings=embds
-            )
-        else:
 
+            embeddings = StackedEmbeddings(embeddings=embds)
+        else:
             embeddings = FlairEmbeddings(saved_model)
             # embeddings = NGMETransformerWordEmbeddings(
             #     args.saved_model,
@@ -97,7 +86,6 @@ def train_task(task_settings, seed, model_name, saved_model):
         )
 
     elif settings.task_name in ["sentiment", "class"]:
-
         if model_name in ["rnn", "lstm"]:
             document_embeddings = DocumentRNNEmbeddings(
                 embeddings=[FlairEmbeddings(saved_model)]
@@ -128,7 +116,7 @@ def train_task(task_settings, seed, model_name, saved_model):
         learning_rate=settings.lr,
         mini_batch_size=settings.mini_batch_size,
         max_epochs=settings.max_epochs,
-        use_final_model_for_eval=True
+        use_final_model_for_eval=True,
     )
 
     if isinstance(score, dict):
@@ -147,6 +135,7 @@ def train_task(task_settings, seed, model_name, saved_model):
         return f"{settings.task_name}/f1-score", test_score
     else:
         raise ValueError("Score is not a dict")
+
 
 def split_range(i, ds_split, num_splits):
     split_len = len(ds_split)
@@ -178,8 +167,8 @@ def pack_tensor(tensor: Tensor) -> Tensor:
 
     return torch.tensor([pack(tensor[:, col_i]) for col_i in range(tensor.size(1))])
 
-def pack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
 
+def pack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
     if isinstance(sequence, Tensor):
         return pack_tensor(sequence)
 
@@ -205,8 +194,8 @@ def unpack_tensor(tensor: Tensor) -> Tensor:
 
     return torch.tensor(unpacked_sequence, dtype=torch.int64).t().to(tensor.device)
 
-def unpack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
 
+def unpack_sequence(sequence: Union[list, Tensor]) -> Union[list, Tensor]:
     if isinstance(sequence, Tensor):
         return unpack_tensor(sequence)
 
@@ -279,8 +268,8 @@ class EarlyStoppingOnLRCallback(Callback):
         if rank is None or not log_rank_zero_only or rank == 0:
             print(message)
 
-class FlairDownstreamCallback(Callback):
 
+class FlairDownstreamCallback(Callback):
     def __init__(self, interval: int, enabled: bool) -> None:
         super().__init__()
 
@@ -296,7 +285,7 @@ class FlairDownstreamCallback(Callback):
             "mini_batch_size": 32,
             "save": "resources/taggers/conll_03-ner",
             "task_name": "ner",
-            "use": True
+            "use": True,
         }
         self.task_settings = Namespace(**task_settings)
 
@@ -306,21 +295,18 @@ class FlairDownstreamCallback(Callback):
         if not self.enabled:
             return super().on_train_epoch_end(trainer, pl_module)
 
-        if (
-            trainer.current_epoch != 0
-            and trainer.current_epoch % self.interval == 0
-        ):
+        if trainer.current_epoch != 0 and trainer.current_epoch % self.interval == 0:
             if torch.cuda.is_available():
 
                 @rank_zero_only
                 def _train_ds():
-                    result = self._train_downstream(trainer) 
+                    result = self._train_downstream(trainer)
                     return result
 
                 task, score = _train_ds()
             else:
                 task, score = self._train_downstream(trainer)
-            
+
             trainer.logger.log_metrics({task: score}, step=trainer.global_step)
 
             trainer.lightning_module.train()
@@ -332,7 +318,7 @@ class FlairDownstreamCallback(Callback):
         trainer.save_checkpoint(file_path)
         print(f"Train downstream!")
         return train_task(self.task_settings, 1111, "rnn", file_path)
-            
+
 
 class TextGenerationCallback(Callback):
     def __init__(self, interval: int, enabled: bool) -> None:
