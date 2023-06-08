@@ -13,9 +13,9 @@ import torch
 import transformers
 from datasets import load_dataset
 from transformers import (AdamW, AutoModelForCausalLM, AutoTokenizer,
-                          HfArgumentParser, MaxLengthCriteria,
-                          StoppingCriteriaList, Trainer, TrainingArguments,
-                          default_data_collator, get_constant_schedule,
+                          HfArgumentParser,
+                          Trainer, TrainingArguments,
+                          default_data_collator, get_constant_schedule_with_warmup,
                           set_seed)
 from transformers.integrations import WandbCallback
 from transformers.testing_utils import CaptureLogger
@@ -303,7 +303,7 @@ def main():
     # download the dataset.
     if data_args.dataset_name.startswith("babylm"):
         local_dataset = local_dataset_mapper[data_args.dataset_name]
-        raw_datasets = load_dataset("text", data_files=local_dataset)
+        raw_datasets = load_dataset("text", data_files=local_dataset, keep_linebreaks=True)
 
     elif data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
@@ -360,7 +360,7 @@ def main():
 
     if data_args.use_ngme:
         tokenizer = GPTNGMETokenizer(
-            vocab_file="./../../Temp/flair/vocabs/vocab-1.json"
+            vocab_file="vocabs/3-gram-babylm.json"
             # vocab_file="../flair/vocabs/vocab-3.json"
         )
 
@@ -548,7 +548,7 @@ def main():
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
-        optimizers=(optimizer, get_constant_schedule(optimizer)),
+        optimizers=(optimizer, get_constant_schedule_with_warmup(optimizer)),
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
