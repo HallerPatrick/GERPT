@@ -96,6 +96,19 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
 
         return self._ngram2word2idx[ngram][word]
 
+    def _is_contiguous(self):
+        vocab_size = len(self)
+        return list(range(vocab_size)) == [
+            idx for idx, token in self._get_all_tokens()
+        ]
+
+
+    def _get_all_tokens(self):
+        """Returns all tokens in the dictionary."""
+        for ngram in range(1, self.ngram + 1):
+            for idx, token in self._ngram2idx2word[ngram].items():
+                yield idx, token
+
     def save_vocabulary(
         self, save_directory: str, filename_prefix: Optional[str] = None
     ) -> Tuple[str]:
@@ -112,9 +125,6 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             for idx, token in self._ngram2idx2word[ngram].items():
                 if index != idx:
                     index = idx
-
-                if "\n" in token:
-                    token = token.replace("\n", "\\n")
 
                 try:
                     frequency = self._frequencies[token]
@@ -204,6 +214,11 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         self, token_ids: List[List[int]], skip_special_tokens: bool = False, **kwargs
     ) -> str:
         return "".join(self.convert_ids_to_tokens(token_ids[0]))
+
+    def debug_decode(self, token_ids: List[List[int]]):
+        for n in range(1, self.ngram+1):
+            print(f"{n}-gram: {self.convert_ids_to_tokens(token_ids[n-1])}")
+
     def _pad(
         self,
         encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
@@ -843,6 +858,9 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
 
         for token, freq in unked_freqs:
             t[self._ngram2word2idx[self._token_to_n_order(token)][token]] = freq
+
+        # Ensure the only whitespace character is weighted
+        t[self._ngram2word2idx[1][" "]] = 1.0
 
         normed_weights = torch.tensor([(1 - (x / (max(t) + 1))).item() for x in t])
 

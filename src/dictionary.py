@@ -49,7 +49,7 @@ class Dictionary:
         vocab_file = load_vocab(filename)
 
         ngram = vocab_file["ngram"]
-        ngme_type = vocab_file["ngme"]
+        ngme_type = "explicit"
 
         # TODO: Not sufficient, save more meta data in dict file
         dictionary = cls(ngram, len(vocab_file["vocab"]), 0, ngme_type, False)
@@ -67,8 +67,6 @@ class Dictionary:
         ngram: int,
         max_dict_size: int,
         min_frequency: int,
-        ngme: str,
-        packed: bool,
     ) -> Tuple["Dictionary", List[Dataset]]:
         """Builds a dictionary from a dataset.
 
@@ -76,28 +74,25 @@ class Dictionary:
         dataset. If we would not return it, we would have to recreate the
         iterator.
         """
-        dictionary = cls(ngram, max_dict_size, min_frequency, ngme, packed)
+        dictionary = cls(ngram, max_dict_size, min_frequency, "explicit", False)
 
         # Populate dictionary
-        if ngme == "compositional":
-            dictionary.populate_compositional()
-        elif ngme == "explicit":
-            # If dataset is an generator, we need to copy it
-            if isinstance(dataset, Iterator):
-                processed_dataset = []
-                for dataset_for_dict in dataset:
-                    dictionary.populate_explicit(dataset_for_dict["train"]["text"])
-                    processed_dataset.append(dataset_for_dict)
-                dataset = processed_dataset
-            else:
-                dictionary.populate_explicit(dataset["train"]["text"])
+        # If dataset is an generator, we need to copy it
+        if isinstance(dataset, Iterator):
+            processed_dataset = []
+            for dataset_for_dict in dataset:
+                dictionary.populate_explicit(dataset_for_dict["train"]["text"])
+                processed_dataset.append(dataset_for_dict)
+            dataset = processed_dataset
         else:
-            raise ValueError(f"Unknown ngme type: {ngme}")
+            dictionary.populate_explicit(dataset["train"]["text"])
 
         # Check if we need to apply unking
         if dictionary.max_dict_size == 0:
             dictionary.max_dict_size = len(dictionary)
-
+        
+        print(dictionary.max_dict_size)
+        print(len(dictionary))
         if dictionary.max_dict_size < len(dictionary):
             print("Apply unking...", end="")
             dictionary = dictionary.unking()
@@ -128,13 +123,10 @@ class Dictionary:
 
         assert "\n" in self.ngram2word2idx[1]
 
-        # Add new n-gram token only if all uni-gram parts exist
-        for n in range(1, self.ngram + 1):
-            start_idx = self.add_ngram("<start>", n)
-            pad_idx = self.add_ngram("<pad>", n)
-            unk_idx = self.add_ngram("<unk>", n)
-            self.add_ngram(" " * n, n)
-            self._marker_tokens[n] = [start_idx, pad_idx, unk_idx]
+        pad_idx = self.add_ngram("<pad>", 1)
+        unk_idx = self.add_ngram("<unk>", 1)
+
+        self._marker_tokens[1] = [pad_idx, unk_idx]
 
         ngram_list = list(range(1, self.ngram + 1))
 
@@ -363,7 +355,7 @@ class Dictionary:
         """Save the vocabulary to a file."""
 
         index = 0
-        vocab = {"ngram": ngram, "ngme": self.ngme, "vocab": []}
+        vocab = {"ngram": ngram, "vocab": []}
 
         for ngram in range(1, self.ngram + 1):
             for idx, token in self.ngram2idx2word[ngram].items():

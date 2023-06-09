@@ -16,10 +16,13 @@ def main():
     dataset, write_strategy = load_dataset_from_source(args.dataset)
 
     dictionary, dataset = Dictionary.build_from_dataset(
-        dataset, args.ngrams, args.max_dict_size, 0, args.ngme, packed=False
+        dataset, args.ngrams, args.max_dict_size, 7000
     )
 
+    dictionary = dictionary.unking(ngrams=3, min_frequency=1000, remove_whitespace_tokens=True)
+
     dictionary.save_vocabulary(args.output, args.ngrams)
+    print(len(dictionary))
 
 
 if __name__ == '__main__':

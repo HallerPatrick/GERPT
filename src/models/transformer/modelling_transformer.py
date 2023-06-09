@@ -855,7 +855,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
         if token_divider:
             generated_output_with_divider = generated_output
 
-        iterations = []
 
         self.eval()
 
@@ -880,8 +879,6 @@ class GPTNGMEForCausalLM(GPTNGMEPreTrainedModel):
 
                 next_token_probs = torch.softmax(next_token_logits, dim=-1)
                 target_idx = torch.multinomial(next_token_probs, 1)[0]
-
-                iterations.append(iteration)
 
                 # # Get ngram word
                 word = tokenizer.get_item_for_index(target_idx.item())
