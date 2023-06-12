@@ -200,6 +200,19 @@ class TextGenerationCallback(WandbCallback):
         )
         self._wandb.log({"text_generation": table})
 
+class NumTokensCallback(WandbCallback):
+    def __init__(self, num_processes: int, block_size: int):
+        super().__init__()
+        self.num_processes = num_processes
+        self.block_size = block_size
+
+    def on_log(self, args: TrainingArguments, state, control, **kwargs):
+        if state.is_local_process_zero:
+            g_step = state.global_step
+            total_batch_size = args.per_device_train_batch_size * self.num_processes * args.gradient_accumulation_steps
+            num_tokens = self.block_size * total_batch_size * g_step
+            self._wandb.log({"num_tokens": num_tokens})
+
 
 def ngme_data_collator(features) -> Dict[str, Any]:
     # features: list
@@ -548,7 +561,7 @@ def main():
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
-        optimizers=(optimizer, get_constant_schedule_with_warmup(optimizer)),
+        optimizers=(optimizer, get_constant_schedule_with_warmup(optimizer, 300)),
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
@@ -564,6 +577,7 @@ def main():
     )
 
     trainer.add_callback(TextGenerationCallback(tokenizer, model))
+    # trainer.add_callback(NumTokensCallback(trainer.args.world_size, block_size))
 
     # Training
     if training_args.do_train:
