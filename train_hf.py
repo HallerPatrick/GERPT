@@ -67,7 +67,11 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-
+    
+    vocab_file: Optional[str] = field(
+        default="./vocabs/3-gram-babylm.json",
+        metadata={"help": "Path to vocab file"},
+    )
     dataset_name: Optional[str] = field(
         default=None,
         metadata={"help": "The name of the dataset to use (via the datasets library)."},
@@ -372,11 +376,7 @@ def main():
             )
 
     if data_args.use_ngme:
-        tokenizer = GPTNGMETokenizer(
-            vocab_file="vocabs/3-gram-babylm.json"
-            # vocab_file="../flair/vocabs/vocab-3.json"
-        )
-
+        tokenizer = GPTNGMETokenizer(vocab_file=data_args.vocab_file)
     else:
         tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
