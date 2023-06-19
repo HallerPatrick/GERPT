@@ -64,14 +64,32 @@ from src.models.transformer.modelling_transformer import (
 from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
 
 AutoConfig.register("gpt_ngme", GPTNGMEConfig)
-# AutoTokenizer.register(GPTNGMEConfig, slow_tokenizer_class=GPTNGMETokenizerFast)
 AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
 AutoModel.register(GPTNGMEConfig, GPTNGMEModel)
-# AutoModel.register(GPTNGMEConfig, GPTNGMEForCausalLM)
 AutoModelForCausalLM.register(GPTNGMEConfig, GPTNGMEForCausalLM)
 AutoModelForSequenceClassification.register(
     GPTNGMEConfig, GPTNGMEForSequenceClassification
 )
+
+
+from src.models.char_former.configuration_transformer import CharFormerConfig
+from src.models.char_former.modelling_transformer import (
+        NextCharTransformerForCausalLM, NextCharTransformer)
+from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
+
+AutoConfig.register("char_former", CharFormerConfig)
+# AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
+AutoModel.register(CharFormerConfig, NextCharTransformer)
+AutoModelForCausalLM.register(CharFormerConfig, NextCharTransformerForCausalLM)
+
+
+from src.models.rwkv.configuration_rwkv import NGMERwkvConfig
+from src.models.rwkv.modeling_rwkv import RwkvModel, RwkvForCausalLM
+
+AutoConfig.register("ngme_rwkv", NGMERwkvConfig)
+# AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
+AutoModel.register(NGMERwkvConfig, RwkvModel)
+AutoModelForCausalLM.register(NGMERwkvConfig, RwkvForCausalLM)
 
 # Export load_model and all HF transformer files
 __all__ = [
@@ -80,4 +98,12 @@ __all__ = [
     "GPTNGMEModel",
     "GPTNGMETokenizer",
     "GPTNGMEForCausalLM",
+
+    "CharFormerConfig",
+    "NextCharTransformer",
+    "NextCharTransformerForCausalLM",
+
+    "RwkvConfig",
+    "RwkvModel",
+    "RwkvForCausalLM"
 ]

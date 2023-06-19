@@ -151,9 +151,10 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
         return self._current_max_idx
 
     def retokenize(self, input_ids, *args, **kwargs):
+        print(input_ids.shape)
         decoded = self.convert_ids_to_tokens(input_ids)
         sequence = "".join(decoded)
-        new_decoded = self(sequence, *args, **kwargs)
+        new_decoded = self(sequence, *args, **kwargs).input_ids
         return new_decoded
 
     def _tokenize(self, text):

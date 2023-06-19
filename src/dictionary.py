@@ -198,10 +198,11 @@ class Dictionary:
             total_occurences.append(occurence)
 
         total_occurences = np.array(total_occurences)
+        return total_occurences.tolist()
 
-        rel_occurences = total_occurences / total_occurences.sum()
-        new_occurences = rel_occurences * (200 / rel_occurences[0])
-        return new_occurences.astype(int)
+        # rel_occurences = total_occurences / total_occurences.sum()
+        # new_occurences = rel_occurences * (200 / rel_occurences[0])
+        # return new_occurences.astype(int)
 
     def _remove_whitespace_tokens(self):
         """Remove n+1gram tokens that contain unigram tokens we dont want"""
@@ -245,7 +246,7 @@ class Dictionary:
         print(f"Min occurence {min_frequency}: {len(min_frequency)}")
 
         # Pre-define the number of tokens per ngram
-        if ngrams <= 4:
+        if ngrams <= 6:
             n_tokens_per_ngram = self._calculate_ngram_order_dict_size(
                 ngrams, new_max_dict_size
             )
@@ -270,12 +271,12 @@ class Dictionary:
                 freq_dict[token] = freq
 
         frequency.update(freq_dict)
-        most_common = frequency.most_common(200)
+        # most_common = frequency.most_common(200)
 
-        frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
-        frequencies.append(most_common)
+        # frequencies_tokens.append(list(map(lambda x: x[0], most_common)))
+        # frequencies.append(most_common)
 
-        for ngram in range(2, ngrams + 1):
+        for ngram in range(1, ngrams + 1):
             frequency = Counter()
 
             freq_dict = {}

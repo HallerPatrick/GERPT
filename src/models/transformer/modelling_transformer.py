@@ -129,6 +129,7 @@ class GPTNeoXAttention(nn.Module):
         present = (key, value) if use_cache else None
 
         # Compute attention
+        breakpoint()
         attn_output, attn_weights = self._attn(
             query, key, value, attention_mask, head_mask
         )

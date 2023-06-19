@@ -2,6 +2,7 @@ import logging
 import math
 import os
 import sys
+import string
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Any, Dict, Mapping, Optional
@@ -16,14 +17,16 @@ from transformers import (AdamW, AutoModelForCausalLM, AutoTokenizer,
                           HfArgumentParser,
                           Trainer, TrainingArguments,
                           default_data_collator, get_constant_schedule_with_warmup,
-                          set_seed)
+                          set_seed, AutoConfig)
 from transformers.integrations import WandbCallback
-from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
 
 import wandb
 from src.data import local_dataset_mapper
-from src.models import GPTNGMEConfig, GPTNGMETokenizer
+from src.models import GPTNGMEConfig, GPTNGMETokenizer, CharFormerConfig
+from src.models import NGMERwkvConfig, RwkvForCausalLM
+from src.models.char_former.modelling_transformer import NextCharTransformerForCausalLM
+from src.models.char_former.tokenization_transformer import CharacterTokenizer
 from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
 
 logger = logging.getLogger(__name__)
@@ -183,24 +186,28 @@ class TextGenerationCallback(WandbCallback):
         self.model.eval()
 
         self.model.config.pad_token_id = self.tokenizer.eos_token_id
-        self.model.generation_config.pad_token_id = self.tokenizer.eos_token_id
+        # self.model.generation_config.pad_token_id = self.tokenizer.eos_token_id
         input_prompt = "It might be possible to"
 
         input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
             self.model.device
         )
 
-        self.model.tokenizer = self.tokenizer
+        # self.model.tokenizer = self.tokenizer
+
+        output = self.model.sample(input_ids)
         
         # TODO: Pass max_length from config
-        text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, token_divider="·")
+        # text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, token_divider="·")
         print("Generated Output:")
-        print(text)
+        decoded = self.tokenizer.convert_ids_to_tokens(output.squeeze(0)[0])
+        sequence = "".join(decoded)
+        print(sequence)
 
         self.model.train()
 
         table = wandb.Table(
-            columns=["global_step", "text"], data=[[state.global_step, str(text)]]
+            columns=["global_step", "text"], data=[[state.global_step, str(sequence)]]
         )
         self._wandb.log({"text_generation": table})
 
@@ -377,24 +384,52 @@ def main():
 
     if data_args.use_ngme:
         tokenizer = GPTNGMETokenizer(vocab_file=data_args.vocab_file)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        # config = GPTNGMEConfig(
+        #     vocab_size=tokenizer.vocab_size,
+        #     hidden_size=model_args.hidden_size,
+        #     num_hidden_layers=model_args.num_hidden_layers,
+        #     num_attention_heads=model_args.num_attention_heads,
+        #     intermediate_size=model_args.intermediate_size,
+        #     use_ngme=data_args.use_ngme,
+        #     eos_token_id=tokenizer.eos_token_id,
+        #     unk_token_id=tokenizer.unk_token_id,
+        #     pad_token_id=tokenizer.pad_token_id
+        # )
 
-    config = GPTNGMEConfig(
-        vocab_size=tokenizer.vocab_size,
-        hidden_size=model_args.hidden_size,
-        num_hidden_layers=model_args.num_hidden_layers,
-        num_attention_heads=model_args.num_attention_heads,
-        intermediate_size=model_args.intermediate_size,
-        use_ngme=data_args.use_ngme,
-        eos_token_id=tokenizer.eos_token_id,
-        unk_token_id=tokenizer.unk_token_id,
-        pad_token_id=tokenizer.pad_token_id
-    )
+        config = NGMERwkvConfig(
+            vocab_size=tokenizer.vocab_size,
+            hidden_size=model_args.hidden_size,
+            num_hidden_layers=model_args.num_hidden_layers,
+            intermediate_size=model_args.intermediate_size,
+            unk_token_id=tokenizer.unk_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id
+        )
+    else:
+        chars = string.ascii_letters + " "# This character vocab!
+        model_max_length = 2048
+        tokenizer = CharacterTokenizer(chars, model_max_length)
+        # tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-70m")
+        # config = AutoConfig.from_pretrained("EleutherAI/pythia-70m")
+
+        config = CharFormerConfig(
+            vocab_size=tokenizer.vocab_size,
+            hidden_size=model_args.hidden_size,
+            num_hidden_layers=model_args.num_hidden_layers,
+            num_attention_heads=model_args.num_attention_heads,
+            intermediate_size=model_args.intermediate_size,
+            use_ngme=data_args.use_ngme,
+            unk_token_id=tokenizer.unk_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
 
     model = AutoModelForCausalLM.from_config(config)
 
-    model.set_tokenizer(tokenizer)
+    print(model)
+
+    if hasattr(model, "set_tokenizer"):
+        model.set_tokenizer(tokenizer)
 
     n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
     logger.info(
@@ -415,24 +450,16 @@ def main():
     )
 
     def tokenize_function(examples):
-        with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
-            # output input_ids should be same amount as examples to tokenizer
+        output = tokenizer(examples[text_column_name])
+        # output input_ids should be same amount as examples to tokenizer
 
-            if data_args.use_ngme:
-                assert len(examples[text_column_name]) == len(output["input_ids"])
-                # Attention mask should be as long as first input ids
-                if len(output["input_ids"][0]) > 0:
-                    assert len(output["input_ids"][0][0]) == len(
-                        output["attention_mask"][0]
-                    )
-
-        # clm input could be much much longer than block_size
-        if "Token indices sequence length is longer than the" in cl.out:
-            tok_logger.warning(
-                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
-                " before being passed to the model."
-            )
+        if data_args.use_ngme:
+            assert len(examples[text_column_name]) == len(output["input_ids"])
+            # Attention mask should be as long as first input ids
+            if len(output["input_ids"][0]) > 0:
+                assert len(output["input_ids"][0][0]) == len(
+                    output["attention_mask"][0]
+                )
         return output
 
     with training_args.main_process_first(desc="dataset map tokenization"):
