@@ -12,18 +12,22 @@ try:
     from ngme_cpp import n_hot
 except ImportError:
 
-    def n_hot(t, num_clases, packed=False):
-        if packed:
-            t = utils.unpack_batched_tensor(t)
-
-        shape = list(t.size())[1:]
-
-        shape.append(num_clases)
-        ret = torch.zeros(shape).to(t.device)
-
-        # Expect that first dimension is for all n-grams
-        for seq in t:
-            ret.scatter_(-1, seq.unsqueeze(-1), 1)
+    def n_hot(t, num_clases, ngram_sequences: Optional[torch.Tensor] = None):
+        
+        if ngram_sequences is not None:
+            shape = list(t.size())
+            shape.append(num_clases)
+            ret = torch.zeros(shape).to(t.device)
+            ret.scatter_(-1, t.unsqueeze(-1), 1)
+            for seq in ngram_sequences:
+                ret.scatter_(-1, seq.unsqueeze(-1), 1)
+        else:
+            shape = list(t.size())[1:]
+            shape.append(num_clases)
+            ret = torch.zeros(shape).to(t.device)
+            # Expect that first dimension is for all n-grams
+            for seq in t:
+                ret.scatter_(-1, seq.unsqueeze(-1), 1)
 
         return ret
 
@@ -58,10 +62,7 @@ def soft_n_hot(
     num_classes: int,
     strategy: str,
     weighted=False,
-    packed=False,
 ):
-    if packed:
-        input = utils.unpack_batched_tensor(input)
 
     shape = list(input.size())[1:]
 
@@ -79,8 +80,51 @@ def soft_n_hot(
 
     return ret
 
-
 class NGramsEmbedding(nn.Embedding):
+    """N-Hot encoder"""
+
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        padding_idx: Optional[int] = None,
+        max_norm: Optional[float] = None,
+        norm_type: float = 2,
+        scale_grad_by_freq: bool = False,
+        sparse: bool = False,
+        _weight: Optional[Tensor] = None,
+        device=None,
+        dtype=None,
+        packed=False,
+        freeze: bool = False,
+    ) -> None:
+        super().__init__(
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
+            max_norm=max_norm,
+            norm_type=norm_type,
+            scale_grad_by_freq=scale_grad_by_freq,
+            sparse=sparse,
+            _weight=_weight,
+            device=device,
+            dtype=dtype,
+        )
+
+        self.num_classes = num_embeddings
+        self.packed = packed
+
+        self.weight.requires_grad = not freeze
+
+    def forward(self, input: torch.Tensor, ngram_sequences: Optional[torch.Tensor] = None):
+        return self._forward(
+            n_hot(input, self.num_classes, ngram_sequences)
+        )
+
+    def _forward(self, n_hot: torch.Tensor) -> torch.Tensor:
+        return F.linear(n_hot, self.weight.t())
+
+class OldNGramsEmbedding(nn.Embedding):
     """N-Hot encoder"""
 
     def __init__(

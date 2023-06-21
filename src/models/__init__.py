@@ -71,6 +71,19 @@ AutoModelForSequenceClassification.register(
     GPTNGMEConfig, GPTNGMEForSequenceClassification
 )
 
+from src.models.simple.configuration_gpt_neox import SimpleGPTConfig
+from src.models.simple.modeling_gpt_neox import (
+    SimpleGPTForCausalLM, SimpleGPTModel
+)
+# from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
+
+AutoConfig.register("simple_gpt", SimpleGPTConfig)
+AutoModel.register(SimpleGPTConfig, SimpleGPTModel)
+AutoModelForCausalLM.register(SimpleGPTConfig, SimpleGPTForCausalLM)
+# AutoModelForSequenceClassification.register(
+#     GPTNGMEConfig, GPTNGMEForSequenceClassification
+# )
+
 
 from src.models.char_former.configuration_transformer import CharFormerConfig
 from src.models.char_former.modelling_transformer import (

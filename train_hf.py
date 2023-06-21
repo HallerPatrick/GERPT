@@ -20,6 +20,7 @@ from transformers import (AdamW, AutoModelForCausalLM, AutoTokenizer,
                           set_seed, AutoConfig)
 from transformers.integrations import WandbCallback
 from transformers.trainer_utils import get_last_checkpoint
+from transformers import LogitsProcessorList, MinLengthLogitsProcessor
 
 import wandb
 from src.data import local_dataset_mapper
@@ -187,27 +188,22 @@ class TextGenerationCallback(WandbCallback):
 
         self.model.config.pad_token_id = self.tokenizer.eos_token_id
         # self.model.generation_config.pad_token_id = self.tokenizer.eos_token_id
-        input_prompt = "It might be possible to"
+        import string
+        import random
+        input_prompt = random.sample(string.ascii_letters, 1)[0]
 
         input_ids = self.tokenizer(input_prompt, return_tensors="pt").input_ids.to(
             self.model.device
         )
 
-        # self.model.tokenizer = self.tokenizer
-
-        output = self.model.sample(input_ids)
-        
-        # TODO: Pass max_length from config
-        # text = self.model.sample(input_ids, tokenizer=self.tokenizer, max_length=2000, token_divider="·")
-        print("Generated Output:")
-        decoded = self.tokenizer.convert_ids_to_tokens(output.squeeze(0)[0])
-        sequence = "".join(decoded)
-        print(sequence)
+        output = self.model.sample(input_ids, max_length=100)
+        text = self.tokenizer.batch_decode(output)[0]
+        print(text)
 
         self.model.train()
 
         table = wandb.Table(
-            columns=["global_step", "text"], data=[[state.global_step, str(sequence)]]
+            columns=["global_step", "text"], data=[[state.global_step, text]]
         )
         self._wandb.log({"text_generation": table})
 
@@ -383,8 +379,11 @@ def main():
             )
 
     if data_args.use_ngme:
+        from src.models.transformer.tokenization_transformer import NGMETokenizer
+        from src.models.simple.configuration_gpt_neox import SimpleGPTConfig
+        # tokenizer = NGMETokenizer(vocab_file=data_args.vocab_file)
         tokenizer = GPTNGMETokenizer(vocab_file=data_args.vocab_file)
-        # config = GPTNGMEConfig(
+        # config = SimpleGPTConfig(
         #     vocab_size=tokenizer.vocab_size,
         #     hidden_size=model_args.hidden_size,
         #     num_hidden_layers=model_args.num_hidden_layers,
@@ -396,15 +395,18 @@ def main():
         #     pad_token_id=tokenizer.pad_token_id
         # )
 
-        config = NGMERwkvConfig(
+        config = GPTNGMEConfig(
             vocab_size=tokenizer.vocab_size,
             hidden_size=model_args.hidden_size,
             num_hidden_layers=model_args.num_hidden_layers,
+            num_attention_heads=model_args.num_attention_heads,
             intermediate_size=model_args.intermediate_size,
+            use_ngme=data_args.use_ngme,
+            eos_token_id=tokenizer.eos_token_id,
             unk_token_id=tokenizer.unk_token_id,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.pad_token_id
         )
+        print(config)
     else:
         chars = string.ascii_letters + " "# This character vocab!
         model_max_length = 2048
@@ -431,6 +433,10 @@ def main():
     if hasattr(model, "set_tokenizer"):
         model.set_tokenizer(tokenizer)
 
+    if hasattr(model, "set_label_weights"):
+        print("Setting label weights")
+        model.set_label_weights(tokenizer.create_weight_tensor())
+
     n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
     logger.info(
         f"Training new model from scratch - Total size={n_params/2**20:.2f}M params"
@@ -444,22 +450,10 @@ def main():
         column_names = list(raw_datasets["validation"].features)
     text_column_name = "text" if "text" in column_names else column_names[0]
 
-    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
-    tok_logger = transformers.utils.logging.get_logger(
-        "transformers.tokenization_utils_base"
-    )
 
     def tokenize_function(examples):
-        output = tokenizer(examples[text_column_name])
-        # output input_ids should be same amount as examples to tokenizer
-
-        if data_args.use_ngme:
-            assert len(examples[text_column_name]) == len(output["input_ids"])
-            # Attention mask should be as long as first input ids
-            if len(output["input_ids"][0]) > 0:
-                assert len(output["input_ids"][0][0]) == len(
-                    output["attention_mask"][0]
-                )
+        output = tokenizer(examples[text_column_name], return_ngram_sequences=True)
+        # clm input could be much much longer than block_size
         return output
 
     with training_args.main_process_first(desc="dataset map tokenization"):
@@ -497,39 +491,20 @@ def main():
                 f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
+
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-
-        concatenated_examples = {}
-        for k in examples.keys():
-            if data_args.use_ngme and k == "input_ids":
-                concatenated_examples[k] = np.concatenate(
-                    [np.array(example) for example in examples[k] if len(example) > 0],
-                    axis=1,
-                )
-            else:
-                concatenated_examples[k] = list(chain(*examples[k]))
-
-        total_length = len(concatenated_examples["attention_mask"])
-        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-        # customize this part to your needs.
-        if total_length >= block_size:
-            total_length = (total_length // block_size) * block_size
-
-        result = {}
-
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        total_length = (total_length // block_size) * block_size
         # Split by chunks of max_len.
-        for k, t in concatenated_examples.items():
-            if k == "input_ids" and data_args.use_ngme:
-                result[k] = [
-                    t[:, i : i + block_size] for i in range(0, total_length, block_size)
-                ]
-            else:
-                result[k] = [
-                    t[i : i + block_size] for i in range(0, total_length, block_size)
-                ]
-
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
         result["labels"] = result["input_ids"].copy()
         return result
 
@@ -585,6 +560,8 @@ def main():
             return metric.compute(predictions=preds, references=labels)
     
     optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
+
+    training_args.label_names = [f"ngram_{n}_sequence" for n in range(2, tokenizer.ngram+1)]
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -594,16 +571,17 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         # Data collator will default to DataCollatorWithPadding, so we change it.
-        data_collator=ngme_data_collator
-        if data_args.use_ngme
-        else default_data_collator,
+        # data_collator=ngme_data_collator
+        # if data_args.use_ngme
+        # else default_data_collator,
+        data_collator=default_data_collator,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics
         if training_args.do_eval
         else None,
     )
 
-    trainer.add_callback(TextGenerationCallback(tokenizer, model))
+    # trainer.add_callback(TextGenerationCallback(tokenizer, model))
     # trainer.add_callback(NumTokensCallback(trainer.args.world_size, block_size))
 
     # Training

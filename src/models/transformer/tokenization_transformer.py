@@ -1,7 +1,7 @@
 import json
 import os
 from collections import Counter
-from typing import Dict, List, Optional, Sized, Tuple, Union
+from typing import Dict, List, Optional, Sized, Tuple, Union, Any
 
 import torch
 import numpy as np
@@ -20,8 +20,10 @@ def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
     return json.load(open(vocab_file, "r", encoding="utf-8"))
 
+def all_same(items):
+    return all(x == items[0] for x in items)
 
-class GPTNGMETokenizer(PreTrainedTokenizer):
+class NGMETokenizer(PreTrainedTokenizer):
     model_input_names = ["input_ids", "attention_mask"]
     vocab_file = "vocab.json"
     vocab_files_names = {"vocab_file": vocab_file}
@@ -29,6 +31,11 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
     def __init__(
         self, vocab_file, eos_token="\n", pad_token="\n", unk_token="<unk>", **kwargs
     ):
+        super().__init__(
+            eos_token=eos_token, pad_token=pad_token, unk_token=unk_token, **kwargs
+        )
+
+
         eos_token = (
             AddedToken(
                 eos_token,
@@ -57,16 +64,93 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
             else unk_token
         )
 
-        super().__init__(
-            eos_token=eos_token, pad_token=pad_token, unk_token=unk_token, **kwargs
-        )
-
         self._ngram2word2idx = {}
         self._ngram2idx2word = {}
         self._current_max_idx = 0
         self._frequencies: Counter = Counter()
 
         self._load_from_file(vocab_file)
+
+        for n in range(2, self.ngram+1):
+            self.model_input_names.append(f"ngram_{n}_sequence")
+
+        # TODO: COuld also be whitespace if n+1gram dont contain it
+        self._special_token = "Ġ"
+        assert self._special_token not in self._ngram2word2idx[1]
+
+    def __call__(self, *args, **kwargs) -> BatchEncoding:
+        if "return_ngram_sequences" in kwargs:
+            return_ngram_sequences = kwargs["return_ngram_sequences"]
+            # del kwargs["return_ngram_sequences"]
+        else:
+            return_ngram_sequences = False
+
+        # We could check the args and kwargs beforehand and apply extra ngram sequences based on it, but
+        # we let HF handle all logic and reverse take the char sequence from the ids
+        batch_encoding = super().__call__(*args, **kwargs)
+
+        if return_ngram_sequences:
+            input_ids = batch_encoding.input_ids
+            ngram_sequences = self.create_ngram_sequences(input_ids)
+            batch_encoding.update(ngram_sequences)
+
+        if "return_tensors" in kwargs:
+            batch_encoding.convert_to_tensors(kwargs["return_tensors"])
+
+        return batch_encoding
+
+    def create_ngram_sequences(self, input_ids: List[int]) -> Dict[str, Any]:
+
+        input_ids_lengths = self._seq_size(input_ids)
+
+        ngram_sequences_output = {}
+
+
+
+        if len(input_ids) > 0:
+            if isinstance(input_ids[0], list):
+                char_sequences = self.batch_decode(input_ids, clean_up_tokenization_spaces=False)
+            elif isinstance(input_ids, torch.Tensor):
+                char_sequences = self.batch_decode(input_ids, clean_up_tokenization_spaces=False)
+            else:
+                char_sequences = self.decode(input_ids, clean_up_tokenization_spaces=False)
+        else:
+            char_sequences = self.decode(input_ids, clean_up_tokenization_spaces=False)
+
+        if isinstance(char_sequences, str):
+            char_sequences = char_sequences.replace("<unk>", self._special_token)
+            char_sequences = [char_sequences]
+            is_single = True
+        else:
+            char_sequences = [seq.replace("<unk>", self._special_token)
+ for seq in char_sequences]
+            is_single = False
+
+        for n in range(2, self.ngram+1):
+            ngram_sequences = []
+            for char_sequence in char_sequences:
+                ngrams = ["".join(ngram) for ngram in ngram_tokenizer(char_sequence, n)]
+                # Fill in the front with existign unigrams, for same length and
+                # because the timestep t should not look ahead
+                ngrams = list(char_sequence[:n-1]) + ngrams
+                encoded_ngrams = self.encode(ngrams) if len(ngrams) > 0 else []
+                ngram_sequences.append(encoded_ngrams)
+            ngram_ids_lengths = self._seq_size(ngram_sequences)
+            if input_ids_lengths != ngram_ids_lengths:
+                raise ValueError((input_ids_lengths, ngram_ids_lengths))
+            ngram_sequences_output[f"gram_{n}_sequence"] = ngram_sequences[0] if is_single else ngram_sequences
+
+        return ngram_sequences_output
+
+    def _seq_size(self, encoded) -> Union[int, List[int]]:
+        if len(encoded) == 0:
+            return 0
+
+        if isinstance(encoded[0], list):
+            return [len(enc) for enc in encoded]
+
+        return len(encoded)
+
 
     def _load_from_file(self, filename: str):
         """Loads a dictionary from a file."""
@@ -150,8 +234,210 @@ class GPTNGMETokenizer(PreTrainedTokenizer):
     def vocab_size(self) -> int:
         return self._current_max_idx
 
+    def _tokenize(self, text: str) -> List[str]:
+        return list(text)
+
+    def get_idx(self, token: str, ngram: Optional[int] = None) -> int:
+        if ngram:
+            if token in self._ngram2word2idx[ngram]:
+                return self._ngram2word2idx[ngram][token]
+            else:
+                return self._ngram2word2idx[1]["<unk>"]
+
+        for ngram in range(1, self.ngram + 1):
+            if token in self._ngram2word2idx[ngram]:
+                return self._ngram2word2idx[ngram][token]
+
+        return self._ngram2word2idx[1]["<unk>"]
+
+    def _convert_ngram_tokens_to_ids(self, ngram_tokens: List[str]) -> List[int]:
+        return [self.get_idx(token) for token in ngram_tokens]
+
+    def convert_tokens_to_ids(self, tokens: List[str]):
+        if not tokens:
+            return []
+
+        if isinstance(tokens, str):
+            return self.get_idx(tokens)
+
+        return self._convert_ngram_tokens_to_ids(tokens)
+
+    def _convert_id_to_token(self, index: int) -> str:
+        return self.get_item_for_index(index)
+
+    def get_item_for_index(self, idx) -> str:
+
+        """Return the token for a given index."""
+        for idxs in self._ngram2idx2word.values():
+            if idx in idxs:
+                return idxs[idx]
+
+        return self.unk_token
+
+    def convert_tokens_to_string(self, tokens):
+        return "".join(tokens)
+
+    def create_weight_tensor(self) -> torch.Tensor:
+        unked_freqs = self._frequencies.most_common()
+
+        t = torch.ones(len(self))
+
+        for token, freq in unked_freqs:
+            t[self._ngram2word2idx[self._token_to_n_order(token)][token]] = freq
+
+        # Ensure the only whitespace character is weighted
+        t[self._ngram2word2idx[1][" "]] = 1.0
+
+        max_t = max(t)
+
+        normed_weights = torch.tensor([(1 - (x / (max_t + 1))).item() for x in t])
+
+        marker_tokens = [self.get_idx("<unk>", n) for n in range(1, self.ngram+1)]
+        marker_tokens.extend([self.get_idx("<start>", n) for n in range(1, self.ngram+1)])
+        # Instead of explicit ignore indexes, we use the weight vector and set target idxs to 0
+        for marker in marker_tokens:
+            normed_weights[marker] = 0
+
+        return normed_weights
+
+    def _token_to_n_order(self, token: str) -> int:
+        """Get N-gram order for a token"""
+        for n_gram, word2idx in self._ngram2word2idx.items():
+            if token in word2idx:
+                return n_gram
+
+        return 0
+
+
+class GPTNGMETokenizer(PreTrainedTokenizer):
+    model_input_names = ["input_ids", "attention_mask"]
+    vocab_file = "vocab.json"
+    vocab_files_names = {"vocab_file": vocab_file}
+
+    def __init__(
+        self, vocab_file, eos_token="\n", pad_token="\n", unk_token="<unk>", **kwargs
+    ):
+        eos_token = (
+            AddedToken(
+                eos_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(eos_token, str)
+            else eos_token
+        )
+        pad_token = (
+            AddedToken(
+                pad_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(pad_token, str)
+            else pad_token
+        )
+        unk_token = (
+            AddedToken(
+                unk_token,
+                lstrip=False,
+                rstrip=False,
+            )
+            if isinstance(unk_token, str)
+            else unk_token
+        )
+
+        super().__init__(
+            eos_token=eos_token, pad_token=pad_token, unk_token=unk_token, **kwargs
+        )
+
+        self._ngram2word2idx = {}
+        self._ngram2idx2word = {}
+        self._current_max_idx = 0
+        self._frequencies: Counter = Counter()
+
+        self._load_from_file(vocab_file)
+
+    def _load_from_file(self, filename: str):
+        """Loads a dictionary from a file."""
+        vocab_file = load_vocab(filename)
+        self.ngram = vocab_file["ngram"]
+
+        if "\n" not in vocab_file["vocab"]:
+            self._add_ngram("\n", 1)
+
+        for token in vocab_file["vocab"]:
+            self._add_ngram(token["token"], token["ngram"])
+            self._frequencies.update({token["token"]: token["frequency"]})
+
+    def _add_ngram(self, word, ngram: int) -> int:
+        """Add a new n-gram token to the dictionary."""
+        self._frequencies.update({word: 1})
+
+        if ngram not in self._ngram2idx2word:
+            self._ngram2idx2word[ngram] = {self._current_max_idx: word}
+            self._ngram2word2idx[ngram] = {word: self._current_max_idx}
+            self._current_max_idx += 1
+        else:
+            if word not in self._ngram2word2idx[ngram]:
+                self._ngram2idx2word[ngram][self._current_max_idx] = word
+                self._ngram2word2idx[ngram][word] = self._current_max_idx
+                self._current_max_idx += 1
+
+        return self._ngram2word2idx[ngram][word]
+
+    def _is_contiguous(self):
+        vocab_size = len(self)
+        return list(range(vocab_size)) == [
+            idx for idx, token in self._get_all_tokens()
+        ]
+
+    def _get_all_tokens(self):
+        """Returns all tokens in the dictionary."""
+        for ngram in range(1, self.ngram + 1):
+            for idx, token in self._ngram2idx2word[ngram].items():
+                yield idx, token
+
+    def save_vocabulary(
+        self, save_directory: str, filename_prefix: Optional[str] = None
+    ) -> Tuple[str]:
+        filename = os.path.join(
+            save_directory,
+            (filename_prefix + "-" if filename_prefix else ""),
+            self.vocab_file,
+        )
+
+        index = 0
+        vocab = {"ngram": self.ngram, "vocab": []}
+
+        for ngram in range(1, self.ngram + 1):
+            for idx, token in self._ngram2idx2word[ngram].items():
+                if index != idx:
+                    index = idx
+
+                try:
+                    frequency = self._frequencies[token]
+                except KeyError:
+                    frequency = -1
+
+                index += 1
+                vocab["vocab"].append(
+                    {
+                        "token": token,
+                        "index": idx,
+                        "frequency": frequency,
+                        "ngram": ngram,
+                    }
+                )
+
+        with open(filename, "w", encoding="utf-8") as writer:
+            json.dump(vocab, writer, indent=4, ensure_ascii=False)
+
+        return (filename,)
+
+    @property
+    def vocab_size(self) -> int:
+        return self._current_max_idx
+
     def retokenize(self, input_ids, *args, **kwargs):
-        print(input_ids.shape)
         decoded = self.convert_ids_to_tokens(input_ids)
         sequence = "".join(decoded)
         new_decoded = self(sequence, *args, **kwargs).input_ids
