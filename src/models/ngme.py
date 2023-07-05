@@ -13,16 +13,21 @@ try:
 except ImportError:
 
     def n_hot(t, num_clases, ngram_sequences: Optional[torch.Tensor] = None):
+
+        shape = list(t.size())
         
         if ngram_sequences is not None:
-            shape = list(t.size())
             shape.append(num_clases)
             ret = torch.zeros(shape).to(t.device)
             ret.scatter_(-1, t.unsqueeze(-1), 1)
             for seq in ngram_sequences:
                 ret.scatter_(-1, seq.unsqueeze(-1), 1)
+            return ret
+
+        elif len(shape) == 2:
+            return F.one_hot(t, num_classes=num_clases).float()
         else:
-            shape = list(t.size())[1:]
+            shape = shape[1:]
             shape.append(num_clases)
             ret = torch.zeros(shape).to(t.device)
             # Expect that first dimension is for all n-grams

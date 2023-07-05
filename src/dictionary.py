@@ -192,9 +192,12 @@ class Dictionary:
 
         for ngram in range(1, ngrams + 1):
             occurence = 0
-            for word, occurences in self.frequencies.items():
-                if word in self.ngram2word2idx[ngram]:
-                    occurence += 1
+            try:
+                for word, occurences in self.frequencies.items():
+                    if word in self.ngram2word2idx[ngram]:
+                        occurence += 1
+            except:
+                pass
             total_occurences.append(occurence)
 
         total_occurences = np.array(total_occurences)

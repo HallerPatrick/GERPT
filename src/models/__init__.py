@@ -73,16 +73,17 @@ AutoModelForSequenceClassification.register(
 
 from src.models.simple.configuration_gpt_neox import SimpleGPTConfig
 from src.models.simple.modeling_gpt_neox import (
-    SimpleGPTForCausalLM, SimpleGPTModel
+    SimpleGPTForCausalLM, SimpleGPTModel, SimpleGPTForSequenceClassification
 )
-# from src.models.transformer.tokenization_transformer import GPTNGMETokenizer
+from src.models.transformer.tokenization_transformer import NGMETokenizer
 
 AutoConfig.register("simple_gpt", SimpleGPTConfig)
 AutoModel.register(SimpleGPTConfig, SimpleGPTModel)
 AutoModelForCausalLM.register(SimpleGPTConfig, SimpleGPTForCausalLM)
-# AutoModelForSequenceClassification.register(
-#     GPTNGMEConfig, GPTNGMEForSequenceClassification
-# )
+AutoTokenizer.register("simple_gpt", NGMETokenizer)
+AutoModelForSequenceClassification.register(
+    SimpleGPTConfig, SimpleGPTForSequenceClassification
+)
 
 
 from src.models.char_former.configuration_transformer import CharFormerConfig
@@ -96,13 +97,13 @@ AutoModel.register(CharFormerConfig, NextCharTransformer)
 AutoModelForCausalLM.register(CharFormerConfig, NextCharTransformerForCausalLM)
 
 
-from src.models.rwkv.configuration_rwkv import NGMERwkvConfig
-from src.models.rwkv.modeling_rwkv import RwkvModel, RwkvForCausalLM
 
-AutoConfig.register("ngme_rwkv", NGMERwkvConfig)
-# AutoTokenizer.register("gpt_ngme", GPTNGMETokenizer)
-AutoModel.register(NGMERwkvConfig, RwkvModel)
-AutoModelForCausalLM.register(NGMERwkvConfig, RwkvForCausalLM)
+from src.models.opt.modeling_opt import NGMEOPTForCausalLM, NGMEOPTModel
+from src.models.opt.configuration_opt import NGMEOPTConfig
+
+AutoConfig.register("ngme_opt", NGMEOPTConfig)
+AutoModel.register(NGMEOPTConfig, NGMEOPTModel)
+AutoModelForCausalLM.register(NGMEOPTConfig, NGMEOPTForCausalLM)
 
 # Export load_model and all HF transformer files
 __all__ = [
@@ -116,7 +117,4 @@ __all__ = [
     "NextCharTransformer",
     "NextCharTransformerForCausalLM",
 
-    "RwkvConfig",
-    "RwkvModel",
-    "RwkvForCausalLM"
 ]

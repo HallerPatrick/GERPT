@@ -700,13 +700,13 @@ class SimpleGPTForCausalLM(GPTNeoXPreTrainedModel):
         return reordered_past
 
 
-class GPTNeoXForSequenceClassification(GPTNeoXPreTrainedModel):
+class SimpleGPTForSequenceClassification(GPTNeoXPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.gpt_neox = GPTNeoXModel(config)
+        self.gpt_neox = SimpleGPTModel(config)
         self.score = nn.Linear(config.hidden_size, self.num_labels, bias=False)
 
         # Initialize weights and apply final processing
@@ -725,6 +725,9 @@ class GPTNeoXForSequenceClassification(GPTNeoXPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        gram_2_sequence: Optional[torch.LongTensor] = None,
+        gram_3_sequence: Optional[torch.LongTensor] = None,
+        gram_4_sequence: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutputWithPast]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -734,8 +737,15 @@ class GPTNeoXForSequenceClassification(GPTNeoXPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        ngram_sequences = self._collect_n_gram_sequences(
+            gram_2_sequence=gram_2_sequence,
+            gram_3_sequence=gram_3_sequence,
+            gram_4_sequence=gram_4_sequence,
+        ) 
+
         outputs = self.gpt_neox(
             input_ids,
+            ngram_sequences=ngram_sequences,
             attention_mask=attention_mask,
             position_ids=position_ids,
             head_mask=head_mask,
@@ -804,6 +814,17 @@ class GPTNeoXForSequenceClassification(GPTNeoXPreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+    def _collect_n_gram_sequences(self, **kwargs):
+        sequences = []
+        for n in range(2, len(kwargs)+2):
+            s = kwargs[f"gram_{n}_sequence"]
+            if s is not None:
+                sequences.append(s)
+            else:
+                break
+
+        return sequences
 
 
 class GPTNeoXForTokenClassification(GPTNeoXPreTrainedModel):

@@ -24,11 +24,10 @@ from transformers import LogitsProcessorList, MinLengthLogitsProcessor
 
 import wandb
 from src.data import local_dataset_mapper
-from src.models import GPTNGMEConfig, GPTNGMETokenizer, CharFormerConfig
-from src.models import NGMERwkvConfig, RwkvForCausalLM
-from src.models.char_former.modelling_transformer import NextCharTransformerForCausalLM
+from src.models import CharFormerConfig
 from src.models.char_former.tokenization_transformer import CharacterTokenizer
 from src.models.transformer.modelling_transformer import GPTNGMEForCausalLM
+from src.models import NGMEOPTConfig, NGMEOPTForCausalLM
 
 logger = logging.getLogger(__name__)
 
@@ -381,8 +380,7 @@ def main():
     if data_args.use_ngme:
         from src.models.transformer.tokenization_transformer import NGMETokenizer
         from src.models.simple.configuration_gpt_neox import SimpleGPTConfig
-        # tokenizer = NGMETokenizer(vocab_file=data_args.vocab_file)
-        tokenizer = GPTNGMETokenizer(vocab_file=data_args.vocab_file)
+        tokenizer = NGMETokenizer(vocab_file=data_args.vocab_file)
         # config = SimpleGPTConfig(
         #     vocab_size=tokenizer.vocab_size,
         #     hidden_size=model_args.hidden_size,
@@ -395,12 +393,17 @@ def main():
         #     pad_token_id=tokenizer.pad_token_id
         # )
 
-        config = GPTNGMEConfig(
+        # tokenizer = GPTNGMETokenizer(vocab_file=data_args.vocab_file)
+        #
+        # chars = string.ascii_letters + " "# This character vocab!
+        # model_max_length = 2048
+        # tokenizer = CharacterTokenizer(chars, model_max_length)
+        config = NGMEOPTConfig(
             vocab_size=tokenizer.vocab_size,
             hidden_size=model_args.hidden_size,
             num_hidden_layers=model_args.num_hidden_layers,
             num_attention_heads=model_args.num_attention_heads,
-            intermediate_size=model_args.intermediate_size,
+            ffn_dim=model_args.intermediate_size,
             use_ngme=data_args.use_ngme,
             eos_token_id=tokenizer.eos_token_id,
             unk_token_id=tokenizer.unk_token_id,
@@ -581,7 +584,7 @@ def main():
         else None,
     )
 
-    # trainer.add_callback(TextGenerationCallback(tokenizer, model))
+    trainer.add_callback(TextGenerationCallback(tokenizer, model))
     # trainer.add_callback(NumTokensCallback(trainer.args.world_size, block_size))
 
     # Training
